@@ -89,9 +89,11 @@ class GameDetailPage(QWidget):
         self._disarm_timer.setSingleShot(True)
         self._disarm_timer.timeout.connect(self._disarm_uninstall)
         self.downloading = False
+        self._fetching_size = False
         self._progress_timer = QTimer(self)
         self._progress_timer.timeout.connect(self.poll_progress)
         self.refresh()
+        self._fetch_size()
         if not game.installed and self._silent and self.service.install_progress(game.appid).state != "missing":
             self._start_watching()  # a download queued earlier is still running
 
@@ -103,7 +105,7 @@ class GameDetailPage(QWidget):
         lines = [
             state,
             format_playtime(g.playtime_minutes),
-            f"Size on disk: {format_size(g.size_on_disk)}" if g.installed else None,
+            self.size_text(),
             f"Released: {format_date(g.release_date)}",
             f"Price: {format_price(g.price_cents, g.currency)}",
             f"Latest update: {format_date(g.last_updated)}",
@@ -113,6 +115,32 @@ class GameDetailPage(QWidget):
         self.main_button.setEnabled(g.installed or not self.downloading)
         self.uninstall_button.setVisible(g.installed)
         self.no_options.setVisible(not g.installed)
+
+    def size_text(self) -> str:
+        g = self.game
+        if g.installed and g.size_on_disk:
+            return f"Size on disk: {format_size(g.size_on_disk)}"
+        if g.store_size:
+            return f"Size: ~{format_size(g.store_size)} (store)"
+        return "Size: loading…" if self._fetching_size else "Size: unknown"
+
+    def _fetch_size(self) -> None:
+        """Not installed and no size yet: ask the store now instead of waiting for the library."""
+        needs = getattr(self.service, "needs_metadata", None)
+        if self.game.store_size or (self.game.installed and self.game.size_on_disk) or not callable(needs) \
+                or not needs(self.game):
+            return
+        self._fetching_size = True
+        self.refresh()  # "Size: loading…"
+        appid = self.game.appid
+        run_async(lambda: self.service.fetch_metadata(appid), self._size_fetched,
+                  lambda _e: self._size_fetched(None), owner=self)
+
+    def _size_fetched(self, _meta) -> None:
+        self._fetching_size = False
+        if _meta is not None:
+            self.service.apply_metadata(self.game)
+        self.refresh()
 
     @property
     def _silent(self) -> bool:

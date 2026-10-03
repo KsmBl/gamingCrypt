@@ -36,6 +36,7 @@ your Steam library.
   - Sort by **name, release date, playtime, price or latest update**, ascending or descending
   - The title and sort bar fold away while you scroll down and come back when you scroll up (also on Games, Store and Downloads)
   - Game page: **Play** or **Download**, plus **Options → Uninstall** (tap twice to confirm, no Steam popup)
+  - Game size: size on disk for installed games, the store's storage requirement for the others
   - **Downloads without opening Steam**: owned games are queued straight onto the encrypted drive while Steam runs minimised, with progress shown in GamingCrypt
   - **Store**: search the Steam store, install free or owned games, or open a paid game's purchase page in Steam
 - Built for touch: big targets, kinetic flick scrolling, an on-screen keyboard and double-tap confirmation for destructive actions
@@ -145,7 +146,12 @@ How it works:
 Some things still need a Steam window: buying, the first install of a free game, and
 Steam's login. GamingCrypt minimises itself when it opens one, so the Steam window isn't
 hidden behind it. Start GamingCrypt again (launcher icon or `gamingcrypt`) to bring it
-back. A second start never opens a second copy.
+back.
+
+**Only one GamingCrypt at a time:** a lock file (`~/.cache/gamingcrypt/instance.lock`) is
+taken atomically when GamingCrypt starts and held until it exits. A second start, even at
+the same moment, only brings the running copy to the front and quits. Two copies would
+fight over the controller, Steam and the volume.
 
 ### Several Steam accounts
 

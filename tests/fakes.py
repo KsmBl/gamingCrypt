@@ -109,6 +109,7 @@ class FakeService:
             game.price_cents = meta.get("price_cents")
             game.release_date = meta.get("release_date")
             game.currency = meta.get("currency", "")
+            game.store_size = meta.get("storage_bytes")
         return game
 
     def search_store(self, term):

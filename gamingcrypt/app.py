@@ -207,6 +207,44 @@ class MainWindow(QMainWindow):
 SOCKET_NAME = f"gamingcrypt-{os.getuid()}"
 
 
+def acquire_instance_lock(path):
+    """Hold an exclusive lock for the whole lifetime of GamingCrypt.
+
+    Atomic (flock): two starts at the same moment can never both win - unlike
+    only checking for the running copy's activation socket. Returns the open
+    lock file (keep it referenced!) or None if another GamingCrypt runs.
+    """
+    import fcntl
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(path, "a+")  # noqa: SIM115 - must stay open
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    handle.seek(0)
+    handle.truncate()
+    handle.write(f"{os.getpid()}\n")
+    handle.flush()
+    return handle
+
+
+def wait_and_activate(name: str = SOCKET_NAME, timeout: float = 5.0, sleep=None) -> bool:
+    """The other copy may still be starting up - keep asking it for a moment."""
+    import time
+
+    sleep = sleep or time.sleep
+    deadline = time.monotonic() + timeout
+    while True:
+        if activate_running_instance(name):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        sleep(0.2)
+
+
 def activate_running_instance(name: str = SOCKET_NAME) -> bool:
     """True if GamingCrypt already runs; it is asked to come to the front."""
     from PySide6.QtNetwork import QLocalSocket
@@ -301,11 +339,14 @@ def main(argv: list[str] | None = None) -> int:
 
     from gamingcrypt.log import setup as setup_log
 
-    log_path = setup_log(config_mod.cache_dir())
+    lock = acquire_instance_lock(config_mod.cache_dir() / "instance.lock")
     app = QApplication([sys.argv[0], *qt_args])
     app.setApplicationName("GamingCrypt")
-    if activate_running_instance():
-        return 0  # the running GamingCrypt came to the front
+    if lock is None:
+        # Never two copies (they'd fight over the controller, Steam and the volume).
+        wait_and_activate()
+        return 0
+    log_path = setup_log(config_mod.cache_dir())
     app.setStyleSheet(theme.STYLESHEET)
     from gamingcrypt.system.controls import SystemControls
     from gamingcrypt.ui.tasks import run_async

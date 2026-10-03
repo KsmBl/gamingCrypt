@@ -21,6 +21,8 @@ class SteamGame:
     currency: str = ""
     update_pending: bool = False
     description: str = ""
+    # Disk space the store asks for (system requirements) - for games that aren't installed
+    store_size: int | None = None
 
     @property
     def playtime_hours(self) -> float:

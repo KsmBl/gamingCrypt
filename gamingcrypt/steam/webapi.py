@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+import re
+
 import requests
 
 API = "https://api.steampowered.com"
@@ -43,6 +45,29 @@ def parse_release_date(text: str | None) -> int | None:
         except ValueError:
             continue
         return int(dt.timestamp())
+    return None
+
+
+STORAGE_RE = re.compile(
+    r"(?:Storage|Hard Drive|Hard Disk(?: Space)?|Disk Space|HDD)\s*:\s*([\d]+(?:[.,]\d+)?)\s*(TB|GB|MB)",
+    re.I,
+)
+UNITS = {"TB": 1024**4, "GB": 1024**3, "MB": 1024**2}
+
+
+def parse_storage(*requirements) -> int | None:
+    """Disk space from the store's system requirements (Linux first, then Windows).
+
+    Steam's store API has no size field, but every game states "Storage: 20 GB available space".
+    """
+    for req in requirements:
+        if not isinstance(req, dict):
+            continue  # Steam sends [] when a platform has no requirements
+        for part in ("minimum", "recommended"):
+            text = re.sub(r"<[^>]+>", " ", str(req.get(part) or ""))
+            match = STORAGE_RE.search(text)
+            if match:
+                return int(float(match.group(1).replace(",", ".")) * UNITS[match.group(2).upper()])
     return None
 
 
@@ -114,6 +139,7 @@ class SteamWebAPI:
             "release_date": None if release.get("coming_soon") else parse_release_date(release.get("date")),
             "description": d.get("short_description", ""),
             "header_image": d.get("header_image", ""),
+            "storage_bytes": parse_storage(d.get("linux_requirements"), d.get("pc_requirements")),
         }
 
     def latest_news_date(self, appid: int) -> int | None:
