@@ -25,7 +25,9 @@ your Steam library.
 - **Key derivation**: every secret is hardened with scrypt and a per-volume salt before it reaches VeraCrypt
 - **Settings → Reset authentication method**: switch between PIN, password, swipe pattern and 5×5 pattern at any time
 - **Tabs**: Games, Movies, Series, Music, Pictures, Settings (the media tabs show *coming soon*)
+- **Downloads tab**: every queued, running and paused Steam download with progress, and a count in the tab bar
 - **Device settings**: resolution, refresh rate, brightness, max power consumption (TDP), audio output and input device and their volume
+- **Controller**: calibrate the analog sticks and triggers and map every button; games get a virtual Xbox controller with your setup
 - **Games**
   - Search your installed games
   - **Steam** card with your whole library (installed, plus every owned game when a Web API key is set)
@@ -50,6 +52,7 @@ The installer:
 1. creates a virtualenv in `~/.local/share/gamingcrypt` and installs the app (PySide6, requests)
 2. adds the `gamingcrypt` launcher to `~/.local/bin` and a desktop entry
 3. installs a **restricted root helper** and a sudoers rule so the volume can be mounted without a password prompt (asks for sudo once)
+4. allows the logged-in user to create the virtual controller (`/dev/uinput` udev rule)
 
 Uninstall with `./install.sh --uninstall` (your config and cache are kept).
 
@@ -174,6 +177,31 @@ so when something isn't available:
   GamingCrypt starts.
 - **Not supported:** gamescope (Steam's game mode) and GNOME can't be controlled this way yet.
 
+## Controller: calibration and button mapping
+
+*Settings → Controller* shows both sticks live: the raw position (grey) and what games
+will get (blue).
+
+**Calibrate sticks and triggers:**
+1. Leave everything untouched. GamingCrypt measures the resting position and the noise,
+   which sets the deadzone.
+2. Rotate both sticks in full circles and press both triggers fully, which measures the
+   range. You can still fine-tune the deadzone with a slider afterwards.
+
+**Buttons:** tap *Remap* next to any button, D-pad direction or trigger, then press the
+button (or push the stick or trigger) that should act as it. *Reset to defaults* undoes everything.
+
+**Use my calibration and mapping** turns on the virtual controller:
+- GamingCrypt takes the built-in controller exclusively and publishes a virtual Xbox 360
+  controller (`uinput`) that Steam and every game understand.
+- Profiles are stored per controller model.
+- If Steam reads the built-in controller directly and inputs arrive twice, turn off Steam
+  Input for it.
+- `install.sh` allows the logged-in user to use `/dev/uinput`.
+
+The controller code needs no compiled libraries (pure Python on the kernel's evdev and
+uinput interfaces), so it also runs on read-only systems like SteamOS.
+
 ## Configuration
 
 `~/.config/gamingcrypt/config.json` (created by the setup wizard):
@@ -193,6 +221,7 @@ so when something isn't available:
 | `steam.command` | command used for `steam://` URIs (empty = auto-detect) |
 | `steam.auto_library` | add the unlocked container as Steam library (default `true`) |
 | `system.display`, `system.power_limit_w` | display mode and power limit restored at start (set from Settings) |
+| `input.enabled`, `input.profiles` | virtual controller on/off, mapping and calibration per controller (set from Settings) |
 | `steam.silent_install` | download owned games without Steam's dialog (default `true`) |
 
 ## Security notes
@@ -247,7 +276,7 @@ and API clients, sorting, and every UI page via pytest-qt.
 
 - More game sources (Heroic/Epic/GOG, Lutris, emulators)
 - Movies, Series, Music, Pictures
-- Gamepad navigation
+- Navigating the GamingCrypt UI with the gamepad
 - More settings
 
 ## License
