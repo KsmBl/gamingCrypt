@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, Qt, QTimer, Signal
+from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPoint, QPointF, QPropertyAnimation, Qt, QTimer, Signal
 from PySide6.QtGui import QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -25,6 +25,7 @@ from gamingcrypt.input import evdev as e
 
 STICK_PRESS, STICK_RELEASE = 0.6, 0.35
 REPEAT_DELAY_MS, REPEAT_RATE_MS = 380, 110
+SCROLL_MS = 140  # shorter than the repeat rate: holding the D-pad glides continuously
 
 _paused = False
 
@@ -52,6 +53,8 @@ class GamepadNavigator(QObject):
         self.held: tuple[int, int] | None = None
         self.repeat = QTimer(self)
         self.repeat.timeout.connect(self._repeat)
+        self._scroll_anims: dict[int, QPropertyAnimation] = {}
+        self._scroll_targets: dict[int, int] = {}
 
     # input -------------------------------------------------------------------
     @property
@@ -136,8 +139,49 @@ class GamepadNavigator(QObject):
         parent = w.parentWidget()
         while parent is not None:
             if isinstance(parent, QScrollArea):
-                parent.ensureWidgetVisible(w, 40, 40)
+                self.scroll_to(parent, w)
             parent = parent.parentWidget()
+
+    def scroll_to(self, area: QScrollArea, w: QWidget, margin: int = 40) -> None:
+        """Glide (instead of jumping) so ``w`` is fully visible."""
+        from gamingcrypt.ui.widgets import FoldingHeader
+
+        content = area.widget()
+        if content is None:
+            return
+        bar = area.verticalScrollBar()
+        top = w.mapTo(content, QPoint(0, 0)).y()
+        bottom = top + w.height()
+        view = area.viewport().height()
+        start = self._scroll_targets.get(id(bar), bar.value())
+        target = start
+        if top - margin < start:
+            target = top - margin
+        elif bottom + margin > start + view:
+            target = bottom + margin - view
+        target = max(bar.minimum(), min(bar.maximum(), target))
+        if target == start:
+            return
+        self._scroll_targets[id(bar)] = target
+        anim = self._scroll_anims.get(id(bar))
+        if anim is None:
+            anim = QPropertyAnimation(bar, b"value", self)
+            anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            anim.finished.connect(lambda b=id(bar): self._scroll_targets.pop(b, None))
+            anim.finished.connect(self._scroll_done)
+            self._scroll_anims[id(bar)] = anim
+        anim.stop()
+        anim.setDuration(SCROLL_MS)
+        anim.setStartValue(bar.value())
+        anim.setEndValue(target)
+        FoldingHeader.programmatic = True
+        anim.start()
+
+    def _scroll_done(self) -> None:
+        from gamingcrypt.ui.widgets import FoldingHeader
+
+        if not any(a.state() == QPropertyAnimation.State.Running for a in self._scroll_anims.values()):
+            FoldingHeader.programmatic = False
 
     @staticmethod
     def _send_key(target: QWidget, key: Qt.Key) -> None:

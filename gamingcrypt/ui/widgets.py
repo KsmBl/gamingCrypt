@@ -60,8 +60,16 @@ class FlowLayout(QLayout):
         super().__init__(parent)
         self._items = []
         self._spacing = spacing
+        # Qt asks heightForWidth() constantly (every resize / animation frame); with
+        # hundreds of game cards recomputing it each time makes scrolling choppy.
+        self._height_cache: dict[int, int] = {}
+
+    def invalidate(self):
+        self._height_cache.clear()
+        super().invalidate()
 
     def addItem(self, item):  # noqa: N802 (Qt API)
+        self._height_cache.clear()
         self._items.append(item)
 
     def count(self):
@@ -71,6 +79,7 @@ class FlowLayout(QLayout):
         return self._items[index] if 0 <= index < len(self._items) else None
 
     def takeAt(self, index):  # noqa: N802
+        self._height_cache.clear()
         return self._items.pop(index) if 0 <= index < len(self._items) else None
 
     def expandingDirections(self):  # noqa: N802
@@ -80,7 +89,9 @@ class FlowLayout(QLayout):
         return True
 
     def heightForWidth(self, width):  # noqa: N802
-        return self._do_layout(QRect(0, 0, width, 0), apply=False)
+        if width not in self._height_cache:
+            self._height_cache[width] = self._do_layout(QRect(0, 0, width, 0), apply=False)
+        return self._height_cache[width]
 
     def setGeometry(self, rect):  # noqa: N802
         super().setGeometry(rect)
@@ -100,9 +111,11 @@ class FlowLayout(QLayout):
         """Remove all widgets from the layout without deleting them (for re-ordering)."""
         widgets = [item.widget() for item in self._items if item.widget()]
         self._items = []
+        self._height_cache.clear()
         return widgets
 
     def clear(self) -> None:
+        self._height_cache.clear()
         while self._items:
             item = self._items.pop()
             if item.widget():
@@ -264,6 +277,9 @@ class FoldingHeader(QObject):
     START_PX = 60  # don't fold for tiny scrolls near the top
     UP_PX = 12  # scrolling up at least this much unfolds again
     SETTLE_MS = 300  # ignore the scroll jump that folding itself causes
+    # Set while the controller navigation scrolls: stepping up through a grid must not
+    # unfold (and re-layout) the header on every step - only at the very top.
+    programmatic = False
 
     def __init__(self, scroll_area: QAbstractScrollArea, header: QWidget):
         super().__init__(header)
@@ -289,6 +305,10 @@ class FoldingHeader(QObject):
             self.anchor = value  # lowest point of this downward move
             if not self.folded and value > self.START_PX:
                 self.fold()
+        elif FoldingHeader.programmatic:
+            if self.folded and value <= self.START_PX:
+                self.unfold()
+            self.anchor = value
         elif value < self.anchor - self.UP_PX or value <= 0:
             if self.folded:
                 self.unfold()

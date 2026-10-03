@@ -77,7 +77,9 @@ QProgressBar::chunk {{ background: {ACCENT}; border-radius: 6px; }}
 QLabel#section {{ font-size: 28px; font-weight: 700; }}
 QFrame#card {{ background: {SURFACE}; border-radius: 18px; border: 3px solid transparent; }}
 QFrame#card:focus {{ border: 3px solid {ACCENT}; background: {SURFACE_HI}; }}
-QPushButton:focus {{ border: 3px solid {ACCENT_HI}; }}
+QPushButton:focus {{ border: 4px solid {TEXT}; }}
+QPushButton#primary:focus {{ background: {ACCENT_HI}; border: 4px solid {TEXT}; }}
+QPushButton#danger:focus {{ background: #ff6b6f; border: 4px solid {TEXT}; }}
 QPushButton#tab:focus {{ border: none; border-bottom: 4px solid {ACCENT_HI}; color: {TEXT}; }}
 QComboBox:focus {{ border-color: {ACCENT}; }}
 QSlider:focus {{ background: {SURFACE_HI}; border-radius: 10px; }}
