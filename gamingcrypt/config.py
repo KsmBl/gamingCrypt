@@ -34,6 +34,11 @@ DEFAULTS: dict[str, Any] = {
         "display": None,  # {"output", "width", "height", "refresh"}
         "power_limit_w": None,
     },
+    "input": {
+        # Apply calibration + button mapping through a virtual controller.
+        "enabled": False,
+        "profiles": {},  # per controller model: mapping + calibration
+    },
     "steam": {
         # Steam installation root. Empty = auto-detect.
         "root": "",
