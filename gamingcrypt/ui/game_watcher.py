@@ -29,12 +29,17 @@ class GameWatcher(QObject):
     visible = Signal(int)   # its window should be up -> step aside now
     finished = Signal(int)  # the game exited
     failed = Signal(int)    # the game never showed up
+    phase_text = Signal(str)  # what's happening right now (for the loading screen)
 
     def __init__(self, processes: Callable[[int], set[int]] = game_processes,
                  gpu: Callable[[set[int]], bool] = uses_gpu,
-                 clock: Callable[[], float] = time.monotonic, parent: QObject | None = None):
+                 clock: Callable[[], float] = time.monotonic, parent: QObject | None = None,
+                 describe: Callable[[int], str] | None = None):
         super().__init__(parent)
         self.processes = processes
+        # appid -> "Compiling shaders…" etc. (set by the app, which knows Steam's folder)
+        self.describe = describe
+        self.last_phase = ""
         self.gpu = gpu
         self.clock = clock
         self.appid: int | None = None
@@ -54,6 +59,7 @@ class GameWatcher(QObject):
         self.appid = int(appid)
         self.phase = "launching"
         self.started_at = self.clock()
+        self.last_phase = ""
         self.seen_at = 0.0
         self.gpu_at: float | None = None
         log.info("waiting for app %s to start", appid)
@@ -70,6 +76,8 @@ class GameWatcher(QObject):
                     log.warning("app %s did not start within %ss", appid, LAUNCH_TIMEOUT_S)
                     self._stop()
                     self.failed.emit(appid)
+                else:
+                    self._report_phase(appid)
                 return
             log.info("app %s exited", appid)
             self._stop()
@@ -88,6 +96,20 @@ class GameWatcher(QObject):
                     or now - self.seen_at >= NO_GPU_FALLBACK_S):
                 self.phase = "playing"
                 self.visible.emit(appid)
+                return
+            self._report_phase(appid)
+
+    def _report_phase(self, appid: int) -> None:
+        if self.phase == "playing" or self.describe is None:
+            return
+        try:
+            text = "Almost there…" if self.gpu_at is not None else self.describe(appid)
+        except Exception:  # noqa: BLE001 - a status line must never break launching
+            return
+        if text and text != self.last_phase:
+            self.last_phase = text
+            log.info("app %s: %s", appid, text)
+            self.phase_text.emit(text)
 
     def _stop(self) -> None:
         self.timer.stop()

@@ -43,7 +43,7 @@ def test_not_installed_game_offers_download(qtbot):
     page.main_button.click()
     assert tab.service.client.actions == [("install", 292030)]
     page.options_button.click()
-    assert page.uninstall_button.isHidden() and not page.no_options.isHidden()
+    assert page.uninstall_button.isHidden()  # nothing to uninstall, Proton can still be chosen
 
 
 def test_uninstall_requires_two_taps(qtbot):

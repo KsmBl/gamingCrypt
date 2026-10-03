@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from gamingcrypt.steam.installer import InstallResult
 from gamingcrypt.steam.models import SteamGame
@@ -70,12 +70,16 @@ class GameDetailPage(QWidget):
         self.options_panel = QFrame()
         self.options_panel.setObjectName("card")
         options = QVBoxLayout(self.options_panel)
+        proton_row = QHBoxLayout()
+        proton_row.addWidget(QLabel("Proton"))
+        self.proton_combo = QComboBox()
+        self.proton_combo.setMinimumWidth(360)
+        self.proton_combo.currentIndexChanged.connect(self.proton_chosen)
+        proton_row.addWidget(self.proton_combo, 1)
+        options.addLayout(proton_row)
         self.uninstall_button = big_button("🗑 Uninstall", "danger")
         self.uninstall_button.clicked.connect(self.uninstall_tapped)
         options.addWidget(self.uninstall_button, alignment=Qt.AlignmentFlag.AlignLeft)
-        self.no_options = QLabel("No options available - the game is not installed")
-        self.no_options.setObjectName("detailMeta")
-        options.addWidget(self.no_options)
         self.options_panel.hide()
         info.addWidget(self.options_panel)
 
@@ -115,7 +119,38 @@ class GameDetailPage(QWidget):
         self.main_button.setText("▶  Play" if g.installed else ("Downloading…" if self.downloading else "⬇  Download"))
         self.main_button.setEnabled(g.installed or not self.downloading)
         self.uninstall_button.setVisible(g.installed)
-        self.no_options.setVisible(not g.installed)
+
+
+    # Proton ---------------------------------------------------------------------------
+    def fill_proton_choices(self) -> None:
+        """Default + every installed Proton (official and custom like GE-Proton)."""
+        tools = self.service.compat_tools() if hasattr(self.service, "compat_tools") else []
+        current = self.service.compat_tool(self.game.appid) if hasattr(self.service, "compat_tool") else None
+        self.proton_combo.blockSignals(True)
+        self.proton_combo.clear()
+        self.proton_combo.addItem("Default (Steam decides)", "")
+        for tool in tools:
+            self.proton_combo.addItem(tool.display, tool.name)
+        if current and self.proton_combo.findData(current) < 0:
+            self.proton_combo.addItem(f"{current} (not installed)", current)
+        self.proton_combo.setCurrentIndex(max(0, self.proton_combo.findData(current or "")))
+        self.proton_combo.blockSignals(False)
+
+    def proton_chosen(self, _index: int) -> None:
+        name = self.proton_combo.currentData() or None
+        label = self.proton_combo.currentText()
+        self.proton_combo.setEnabled(False)
+        set_status(self.status, f"Switching to {label} - Steam restarts in the background…")
+        appid = self.game.appid
+        run_async(lambda: self.service.set_compat_tool(appid, name), self._proton_set,
+                  lambda exc: self._proton_set((False, str(exc))), owner=self)
+
+    def _proton_set(self, result) -> None:
+        ok, message = result
+        self.proton_combo.setEnabled(True)
+        set_status(self.status, message, error=not ok)
+        if not ok:
+            self.fill_proton_choices()  # show what's really set
 
     def game_session_ended(self, appid: int, failed: bool) -> None:
         """Called when the launched game exits (or never started)."""
@@ -225,6 +260,8 @@ class GameDetailPage(QWidget):
             set_status(self.status, "The download was cancelled in Steam", error=True)
 
     def toggle_options(self, visible: bool) -> None:
+        if visible:
+            self.fill_proton_choices()
         self.options_panel.setVisible(visible)
         if not visible:
             self._disarm_uninstall()

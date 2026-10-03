@@ -37,6 +37,7 @@ your Steam library.
   - The title and sort bar fold away while you scroll down and come back when you scroll up (also on Games, Store and Downloads)
   - Game page: **Play** or **Download**, plus **Options → Uninstall** (tap twice to confirm, no Steam popup)
   - Game size: size on disk for installed games, the store's storage requirement for the others
+  - **Options → Proton**: pick the Proton version per game (official builds and custom ones like GE-Proton), or *Default*
   - **Downloads without opening Steam**: owned games are queued straight onto the encrypted drive while Steam runs minimised, with progress shown in GamingCrypt
   - **Store**: search the Steam store, install free or owned games, or open a paid game's purchase page in Steam
 - Built for touch: big targets, kinetic flick scrolling, an on-screen keyboard and double-tap confirmation for destructive actions
@@ -132,6 +133,10 @@ When you press **Play**:
    Shortly after, GamingCrypt steps aside, so the game is on top, windowed or not.
 3. When the game exits, GamingCrypt comes back to fullscreen.
 
+The starting screen shows what's happening right now: *Starting Steam*, *Updating … 34%*,
+*Compiling shaders*, *Starting the Steam Linux Runtime*, *Starting Proton*, *Loading …*,
+*Almost there*. This is worked out from Steam's state and the game's processes.
+
 How it works:
 - **Detecting the game:** Steam starts every Linux game with `SteamLaunch AppId=<id>`, so
   the game's whole process tree is visible in `/proc`.
@@ -140,6 +145,16 @@ How it works:
 - **Fallbacks:** if the game never starts, GamingCrypt returns after 3 minutes. *Back to
   GamingCrypt* on the start screen cancels waiting.
 - **Troubleshooting:** what happened is logged to `~/.cache/gamingcrypt/gamingcrypt.log`.
+
+### Proton per game
+
+*Options → Proton* on a game page lists every installed Proton and *Default (Steam decides)*:
+- **Official builds:** Experimental, Hotfix, 9.0, 8.0, …, also from libraries on the encrypted drive.
+- **Custom builds** from `compatibilitytools.d`, such as GE-Proton.
+
+The choice is written to Steam's `config/config.vdf` (`CompatToolMapping`), just as Steam's
+own "Force the use of a specific compatibility tool" does. Steam rewrites that file when it
+exits, so it is closed briefly and started again minimised.
 
 ### Steam windows
 

@@ -82,3 +82,51 @@ def uses_gpu(pids: set[int], proc: Path = Path("/proc")) -> bool:
             if target.startswith(GPU_PREFIXES):
                 return True
     return False
+
+
+RUNTIME_NAMES = {"pressure-vessel-wrap", "pressure-vessel-adverb", "pv-bwrap", "srt-bwrap",
+                 "steam-runtime-launcher-service", "steam-runtime-launch-client"}
+PROTON_NAMES = {"wineserver", "wine", "wine64", "wine-preloader", "wine64-preloader", "proton"}
+SHADER_NAMES = {"fossilize_replay"}
+
+
+def process_names(pids: set[int] | None, proc: Path = Path("/proc")) -> set[str]:
+    """Short names (comm and argv[0] basename) of ``pids`` (all processes if None)."""
+    names: set[str] = set()
+    paths = [proc / str(p) for p in pids] if pids is not None else list(proc.glob("[0-9]*"))
+    for path in paths:
+        try:
+            names.add((path / "comm").read_text().strip())
+            argv0 = (path / "cmdline").read_bytes().split(b"\0", 1)[0].decode(errors="replace")
+        except OSError:
+            continue
+        if argv0:
+            names.add(argv0.replace("\\", "/").rsplit("/", 1)[-1])
+    return names
+
+
+def launch_phase(appid: int, root: Path | None = None, name: str = "the game",
+                 proc: Path = Path("/proc"), progress=None) -> str:
+    """Human readable "what is happening right now" while a game starts."""
+    if progress is not None:
+        p = progress(appid)
+        if p.state == "downloading" and p.total:
+            return f"Updating {name}… {p.percent:.0f}%"
+    pids = game_processes(appid, proc)
+    if not pids:
+        everything = process_names(None, proc)
+        if "steam" not in everything:
+            return "Starting Steam…"
+        if everything & SHADER_NAMES:
+            return "Compiling shaders…"
+        return f"Steam is preparing {name}…"
+    names = process_names(pids, proc)
+    if names & SHADER_NAMES:
+        return "Compiling shaders…"
+    if any(n.lower().endswith(".exe") for n in names):
+        return f"Loading {name}…"
+    if names & PROTON_NAMES or any(n.startswith("wine") for n in names):
+        return "Starting Proton…"
+    if names & RUNTIME_NAMES:
+        return "Starting the Steam Linux Runtime…"
+    return f"Starting {name}…"

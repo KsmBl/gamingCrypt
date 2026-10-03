@@ -73,6 +73,10 @@ class LaunchOverlay(QWidget):
         layout.addWidget(self.label)
         self.spinner = Spinner()
         layout.addWidget(self.spinner, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.phase = QLabel()
+        self.phase.setObjectName("cardTitle")
+        self.phase.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.phase)
         hint = QLabel("GamingCrypt steps aside as soon as the game is on screen\nand comes back when you quit it.")
         hint.setObjectName("subtitle")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -85,12 +89,16 @@ class LaunchOverlay(QWidget):
 
     def show_for(self, name: str, appid: int | None = None, service=None) -> None:
         self.label.setText(f"Starting {name}…")
+        self.phase.setText("Asking Steam to start the game…")
         self.cover.setPixmap(placeholder_cover(name, COVER_W, COVER_H))
         if service is not None and appid is not None:
             load_cover(service, appid, self.cover, COVER_W, COVER_H)
         self.setGeometry(self.parentWidget().rect())
         self.raise_()
         self.show()
+
+    def set_phase(self, text: str) -> None:
+        self.phase.setText(text)
 
     def gamepad_back(self) -> bool:
         if self.isVisible():

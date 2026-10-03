@@ -47,6 +47,7 @@ class MainWindow(QMainWindow):
         self.launch_overlay = LaunchOverlay(self)
         self.launch_overlay.cancelled.connect(self.stop_watching_game)
         self.game_watcher.visible.connect(lambda _appid: self.step_aside())
+        self.game_watcher.phase_text.connect(self.launch_overlay.set_phase)
         self.game_watcher.finished.connect(lambda appid: self.game_over(appid))
         self.game_watcher.failed.connect(lambda appid: self.game_over(appid, failed=True))
         # Device controls (display, power, audio); empty in tests unless given.
@@ -100,6 +101,12 @@ class MainWindow(QMainWindow):
     def game_launched(self, appid: int) -> None:
         """Stay visible ("Starting …") until the game draws, then step aside."""
         games = self.shell.pages.get("Games") if self.shell else None
+        service = getattr(games, "service", None)
+        if service is not None and hasattr(service, "install_progress"):
+            from gamingcrypt.steam.running import launch_phase
+
+            name = self.game_name(appid)
+            self.game_watcher.describe = lambda a: launch_phase(a, None, name, progress=service.install_progress)
         self.launch_overlay.show_for(self.game_name(appid), appid, getattr(games, "service", None))
         self.game_watcher.watch(appid)
 

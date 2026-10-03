@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from gamingcrypt.steam import accounts, installer, library, library_setup
+from gamingcrypt.steam import accounts, compat, installer, library, library_setup
 from gamingcrypt.steam.client import SteamClient
 from gamingcrypt.steam.models import SteamGame
 from gamingcrypt.steam.webapi import SteamAPIError, SteamWebAPI, StoreItem
@@ -284,6 +284,16 @@ class SteamService:
 
     def install_progress(self, appid: int) -> installer.InstallProgress:
         return installer.progress(self.root, appid)
+
+    # Proton per game ------------------------------------------------------------
+    def compat_tools(self) -> list[compat.CompatTool]:
+        return compat.available(self.root, self.home)
+
+    def compat_tool(self, appid: int) -> str | None:
+        return compat.current(self.root, appid)
+
+    def set_compat_tool(self, appid: int, name: str | None) -> tuple[bool, str]:
+        return compat.set_tool(self.root, appid, name, self.client)
 
     def downloads(self) -> list[installer.Download]:
         return installer.downloads(self.root)
