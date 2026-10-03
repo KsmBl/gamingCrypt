@@ -34,6 +34,7 @@ your Steam library.
   - Search your installed games
   - **Steam** card with your whole library (installed, plus every owned game when a Web API key is set)
   - Sort by **name, release date, playtime, price or latest update**, ascending or descending
+  - The title and sort bar fold away while you scroll down and come back when you scroll up (also on Games, Store and Downloads)
   - Game page: **Play** or **Download**, plus **Options → Uninstall** (tap twice to confirm, no Steam popup)
   - **Downloads without opening Steam**: owned games are queued straight onto the encrypted drive while Steam runs minimised, with progress shown in GamingCrypt
   - **Store**: search the Steam store, install free or owned games, or open a paid game's purchase page in Steam

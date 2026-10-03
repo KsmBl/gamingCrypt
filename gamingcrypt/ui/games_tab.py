@@ -11,6 +11,7 @@ from gamingcrypt.ui.game_widgets import GameCard, SourceCard
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import (
     FlowLayout,
+    FoldingHeader,
     KeyboardFocusFilter,
     OnScreenKeyboard,
     big_button,
@@ -33,16 +34,20 @@ class GamesHome(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 20, 30, 10)
 
+        self.header = QWidget()
+        header = QVBoxLayout(self.header)
+        header.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.header)
         self.search = QLineEdit()
         self.search.setPlaceholderText("🔍  Search installed games")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.refresh_results)
-        layout.addWidget(self.search)
+        header.addWidget(self.search)
         self.notice = QLabel("")
         self.notice.setObjectName("status")
         self.notice.setWordWrap(True)
         self.notice.hide()
-        layout.addWidget(self.notice)
+        header.addWidget(self.notice)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -74,6 +79,7 @@ class GamesHome(QWidget):
         self.content_layout.addStretch()
         scroll.setWidget(content)
         layout.addWidget(scroll, 1)
+        self.folding = FoldingHeader(scroll, self.header)
 
         self.keyboard = OnScreenKeyboard(self.search)
         self.keyboard.submitted.connect(self.keyboard.hide)

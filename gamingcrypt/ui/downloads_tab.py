@@ -9,7 +9,7 @@ from gamingcrypt.steam.installer import Download
 from gamingcrypt.system.io_stats import rate
 from gamingcrypt.ui.game_widgets import format_size, load_cover, placeholder_cover
 from gamingcrypt.ui.tasks import run_async
-from gamingcrypt.ui.widgets import enable_touch_scroll
+from gamingcrypt.ui.widgets import FoldingHeader, enable_touch_scroll
 
 REFRESH_MS = 1000
 COVER_W, COVER_H = 80, 120
@@ -88,9 +88,9 @@ class DownloadsTab(QWidget):
         self.loading = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 20, 30, 10)
-        title = QLabel("Downloads")
-        title.setObjectName("title")
-        layout.addWidget(title)
+        self.header = QLabel("Downloads")
+        self.header.setObjectName("title")
+        layout.addWidget(self.header)
         self.stats = QLabel("")
         self.stats.setObjectName("cardTitle")
         self.stats.hide()
@@ -111,6 +111,7 @@ class DownloadsTab(QWidget):
         self.list.addStretch()
         scroll.setWidget(content)
         layout.addWidget(scroll, 1)
+        self.folding = FoldingHeader(scroll, self.header)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
         self.timer.start(REFRESH_MS)

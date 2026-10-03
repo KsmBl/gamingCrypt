@@ -252,3 +252,69 @@ def set_status(label: QLabel, text: str, error: bool = False) -> None:
     label.setProperty("error", error)
     label.style().unpolish(label)
     label.style().polish(label)
+
+
+class FoldingHeader(QObject):
+    """Folds ``header`` away while scrolling down a list and brings it back when scrolling up.
+
+    Gives the game grid / download list more room on small handheld screens.
+    """
+
+    DURATION_MS = 180
+    START_PX = 60  # don't fold for tiny scrolls near the top
+    UP_PX = 12  # scrolling up at least this much unfolds again
+    SETTLE_MS = 300  # ignore the scroll jump that folding itself causes
+
+    def __init__(self, scroll_area: QAbstractScrollArea, header: QWidget):
+        super().__init__(header)
+        from PySide6.QtCore import QElapsedTimer, QEasingCurve, QPropertyAnimation
+
+        self.header = header
+        self.bar = scroll_area.verticalScrollBar()
+        self.folded = False
+        self.last = self.bar.value()
+        self.anchor = self.last
+        self.settle = QElapsedTimer()
+        self.anim = QPropertyAnimation(header, b"maximumHeight", self)
+        self.anim.setDuration(self.DURATION_MS)
+        self.anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.anim.finished.connect(self._finished)
+        self.bar.valueChanged.connect(self._scrolled)
+
+    def _scrolled(self, value: int) -> None:
+        if self.settle.isValid() and self.settle.elapsed() < self.SETTLE_MS:
+            self.last = self.anchor = value
+            return
+        if value > self.last:
+            self.anchor = value  # lowest point of this downward move
+            if not self.folded and value > self.START_PX:
+                self.fold()
+        elif value < self.anchor - self.UP_PX or value <= 0:
+            if self.folded:
+                self.unfold()
+            self.anchor = value
+        self.last = value
+
+    def fold(self) -> None:
+        self.folded = True
+        self.settle.start()
+        self.anim.stop()
+        self.anim.setStartValue(self.header.height())
+        self.anim.setEndValue(0)
+        self.anim.start()
+
+    def unfold(self) -> None:
+        self.folded = False
+        self.settle.start()
+        self.anim.stop()
+        self.header.setMaximumHeight(0)
+        self.header.show()
+        self.anim.setStartValue(0)
+        self.anim.setEndValue(max(self.header.sizeHint().height(), 1))
+        self.anim.start()
+
+    def _finished(self) -> None:
+        if self.folded:
+            self.header.hide()  # hidden widgets can't get controller focus
+        else:
+            self.header.setMaximumHeight(16777215)

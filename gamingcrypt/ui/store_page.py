@@ -8,7 +8,14 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollAre
 from gamingcrypt.steam.webapi import StoreItem, format_price
 from gamingcrypt.ui.game_widgets import load_cover, placeholder_cover
 from gamingcrypt.ui.tasks import run_async
-from gamingcrypt.ui.widgets import KeyboardFocusFilter, OnScreenKeyboard, big_button, enable_touch_scroll, set_status
+from gamingcrypt.ui.widgets import (
+    FoldingHeader,
+    KeyboardFocusFilter,
+    OnScreenKeyboard,
+    big_button,
+    enable_touch_scroll,
+    set_status,
+)
 
 ROW_COVER_W, ROW_COVER_H = 80, 120
 
@@ -61,13 +68,17 @@ class StorePage(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 16, 30, 10)
+        self.header = QWidget()
+        header = QVBoxLayout(self.header)
+        header.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.header)
         top = QHBoxLayout()
         top.addWidget(tab.back_button())
         title = QLabel("Steam Store")
         title.setObjectName("title")
         top.addWidget(title)
         top.addStretch()
-        layout.addLayout(top)
+        header.addLayout(top)
 
         search_row = QHBoxLayout()
         self.search = QLineEdit()
@@ -77,7 +88,7 @@ class StorePage(QWidget):
         search_button = big_button("Search", "primary")
         search_button.clicked.connect(self.do_search)
         search_row.addWidget(search_button)
-        layout.addLayout(search_row)
+        header.addLayout(search_row)
 
         self.status = QLabel("")
         self.status.setObjectName("status")
@@ -93,6 +104,7 @@ class StorePage(QWidget):
         self.results_layout.addStretch()
         scroll.setWidget(results)
         layout.addWidget(scroll, 1)
+        self.folding = FoldingHeader(scroll, self.header)
 
         self.keyboard = OnScreenKeyboard(self.search)
         self.keyboard.submitted.connect(self.do_search)

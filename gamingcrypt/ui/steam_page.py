@@ -9,7 +9,7 @@ from gamingcrypt.steam.models import SteamGame
 from gamingcrypt.steam.sorting import SORT_OPTIONS, sort_games
 from gamingcrypt.ui.game_widgets import GameCard
 from gamingcrypt.ui.tasks import run_async
-from gamingcrypt.ui.widgets import FlowLayout, big_button, enable_touch_scroll
+from gamingcrypt.ui.widgets import FlowLayout, FoldingHeader, big_button, enable_touch_scroll
 
 METADATA_SORTS = {"release_date", "price", "last_update"}
 
@@ -33,6 +33,10 @@ class SteamLibraryPage(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 16, 30, 10)
+        self.header = QWidget()
+        header = QVBoxLayout(self.header)
+        header.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.header)
         top = QHBoxLayout()
         top.addWidget(tab.back_button())
         title = QLabel("Steam")
@@ -45,7 +49,7 @@ class SteamLibraryPage(QWidget):
         self.store_button = big_button("🛒 Store", "primary")
         self.store_button.clicked.connect(tab.open_store)
         top.addWidget(self.store_button)
-        layout.addLayout(top)
+        header.addLayout(top)
 
         sort_row = QHBoxLayout()
         sort_row.addWidget(QLabel("Sort:"))
@@ -59,11 +63,11 @@ class SteamLibraryPage(QWidget):
         self.direction_button.clicked.connect(self.toggle_direction)
         sort_row.addWidget(self.direction_button)
         sort_row.addStretch()
-        layout.addLayout(sort_row)
+        header.addLayout(sort_row)
 
         self.status = QLabel("Loading library…")
         self.status.setObjectName("status")
-        layout.addWidget(self.status)
+        header.addWidget(self.status)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -73,6 +77,8 @@ class SteamLibraryPage(QWidget):
         self.grid = FlowLayout(self.grid_widget)
         scroll.setWidget(self.grid_widget)
         layout.addWidget(scroll, 1)
+        self.scroll = scroll
+        self.folding = FoldingHeader(scroll, self.header)
 
         self._update_sort_buttons()
         run_async(self.service.load_library, self._loaded, self._load_failed, owner=self)
