@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QScroll
 
 from gamingcrypt.steam.installer import Download
 from gamingcrypt.system.io_stats import rate
+from gamingcrypt.ui.progress_estimate import ACTIVE_RATE, ProgressEstimator
 from gamingcrypt.ui.game_widgets import format_size, load_cover, placeholder_cover
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import FoldingHeader, enable_touch_scroll
@@ -69,10 +70,14 @@ class DownloadRow(QFrame):
         layout.addWidget(self.percent)
         self.update_from(download)
 
-    def update_from(self, d: Download, shown: int | None = None, extra: str = "") -> None:
+    def update_from(self, d: Download, shown: int | None = None, extra: str = "", running: bool = False) -> None:
         self.download = d
         done = d.downloaded if shown is None else shown
         percent = 100.0 * done / d.total if d.total else 0.0
+        if running and d.state == "queued":
+            from dataclasses import replace
+
+            d = replace(d, state="downloading")  # Steam hasn't caught up with its state yet
         self.state.setText(describe(d, shown) + (f" · {extra}" if extra else ""))
         self.bar.setValue(round(percent * 10))
         self.percent.setText(f"{percent:.1f}%" if d.total else "")
@@ -96,8 +101,7 @@ class DownloadsTab(QWidget):
         self.stats.hide()
         layout.addWidget(self.stats)
         self.last_sample = None
-        self.sync: dict[int, tuple[int, int]] = {}  # appid -> (Steam's byte count, network bytes at that time)
-        self.shown: dict[int, int] = {}
+        self.estimator = ProgressEstimator()
         self.empty = QLabel("No downloads - games you install show up here.")
         self.empty.setObjectName("subtitle")
         layout.addWidget(self.empty)
@@ -132,27 +136,28 @@ class DownloadsTab(QWidget):
         run_async(collect, lambda result: self.show_downloads(*result),
                   lambda _e: setattr(self, "loading", False), owner=self)
 
-    def estimate(self, d: Download, sample) -> int:
-        """Steam updates its byte counter only now and then - fill the gaps with what the
-        network actually received since, so the percentage moves every second."""
-        if sample is None or d.state != "downloading" or not d.total:
-            return d.downloaded
-        base, net_at = self.sync.get(d.appid, (None, None))
-        if base != d.downloaded:
-            self.sync[d.appid] = (d.downloaded, sample.net_rx)
-            base, net_at = d.downloaded, sample.net_rx
-        guess = min(d.total, base + max(0, sample.net_rx - net_at))
-        shown = max(guess, self.shown.get(d.appid, 0), d.downloaded)  # never jump backwards
-        self.shown[d.appid] = min(shown, d.total)
-        return self.shown[d.appid]
+    @staticmethod
+    def running(items: list[Download], net: float | None) -> Download | None:
+        """The download that's really in progress.
+
+        Steam often still calls it "queued" (no progress written yet) - then it's the
+        first non-paused one with a known size, as long as data is actually arriving.
+        """
+        marked = next((d for d in items if d.state == "downloading"), None)
+        if marked is not None:
+            return marked
+        if net is None or net < ACTIVE_RATE:
+            return None
+        return next((d for d in items if d.state == "queued" and d.total), None)
 
     def show_downloads(self, items: list[Download], sample=None) -> None:
         self.loading = False
         net = rate(self.last_sample, sample, "net_rx") if sample is not None else None
         disk = rate(self.last_sample, sample, "disk_written") if sample is not None else None
+        previous_net = self.last_sample.net_rx if self.last_sample is not None else None
         if sample is not None:
             self.last_sample = sample
-        active = next((d for d in items if d.state == "downloading"), None)
+        active = self.running(items, net)
         # Shown whenever something is in the list: Steam often reports a running download
         # as "queued" until it writes its first progress numbers.
         if items and sample is not None:
@@ -166,8 +171,7 @@ class DownloadsTab(QWidget):
         wanted = [d.appid for d in items]
         for appid in list(self.rows):
             if appid not in wanted:  # finished or cancelled
-                self.sync.pop(appid, None)
-                self.shown.pop(appid, None)
+                self.estimator.forget(appid)
                 row = self.rows.pop(appid)
                 self.list.removeWidget(row)
                 row.deleteLater()
@@ -176,13 +180,18 @@ class DownloadsTab(QWidget):
             if row is None:
                 row = DownloadRow(self.service, d)
                 self.rows[d.appid] = row
-            shown = self.estimate(d, sample)
+            if d is active and sample is not None:
+                shown = self.estimator.estimate(d.appid, d.downloaded, d.total, sample.net_rx, since=previous_net)
+            else:
+                if sample is not None:
+                    self.estimator.reset(d.appid, sample.net_rx)
+                shown = max(d.downloaded, self.estimator.shown.get(d.appid, 0))
             extra = ""
             if d is active and net:
                 extra = format_rate(net)
                 if d.total > shown:
                     extra += f" · {format_eta((d.total - shown) / net)}"
-            row.update_from(d, shown, extra)
+            row.update_from(d, shown, extra, running=d is active)
             self.list.insertWidget(index, row)  # keeps the running ones on top
         self.empty.setVisible(not items)
         self.count_changed.emit(len(items))

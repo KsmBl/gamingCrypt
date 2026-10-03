@@ -78,7 +78,16 @@ def _manifest_numbers(path: Path) -> tuple[dict, int, int, int] | None:
         except ValueError:
             return 0
 
-    return state, num("StateFlags"), num("BytesDownloaded"), num("BytesToDownload")
+    done, total = num("BytesDownloaded"), num("BytesToDownload")
+    staged, to_stage = num("BytesStaged"), num("BytesToStage")
+    # Steam sometimes advances only its staging counters - use whichever is further,
+    # expressed in download bytes so the two never mix.
+    if to_stage > 0:
+        if total > 0:
+            done = max(done, int(total * min(staged, to_stage) / to_stage))
+        else:
+            done, total = staged, to_stage
+    return state, num("StateFlags"), done, total
 
 
 def downloads(root: Path | None) -> list[Download]:

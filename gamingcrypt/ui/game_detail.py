@@ -95,6 +95,9 @@ class GameDetailPage(QWidget):
         self.downloading = False
         self._fetching_size = False
         self._last_sample = None
+        from gamingcrypt.ui.progress_estimate import ProgressEstimator
+
+        self._estimator = ProgressEstimator()
         self._progress_timer = QTimer(self)
         self._progress_timer.timeout.connect(self.poll_progress)
         self.refresh()
@@ -225,18 +228,18 @@ class GameDetailPage(QWidget):
         self._progress_timer.start(PROGRESS_INTERVAL_MS)
         self.poll_progress()
 
-    def _speed(self) -> str:
-        """Current download speed from the network counters (between two polls)."""
+    def _sample(self):
+        """(speed text, network sample) between two polls - ("", None) without counters."""
         sampler = getattr(self.service, "io_sample", None)
         if not callable(sampler):
-            return ""
+            return "", None
         from gamingcrypt.system.io_stats import rate
         from gamingcrypt.ui.downloads_tab import format_rate
 
         sample = sampler(None)
         value = rate(self._last_sample, sample, "net_rx")
         self._last_sample = sample
-        return format_rate(value) if value is not None else ""
+        return (format_rate(value) if value is not None else ""), sample
 
     def poll_progress(self) -> None:
         p = self.service.install_progress(self.game.appid)
@@ -248,8 +251,12 @@ class GameDetailPage(QWidget):
             self.refresh()
             set_status(self.status, f"{self.game.name} is installed ✓")
         elif p.state == "downloading":
-            speed = self._speed()
-            set_status(self.status, f"Downloading {p.percent:.0f}% · {format_size(p.downloaded)} of "
+            speed, sample = self._sample()
+            # Steam's own counter often stays at 0 - estimate from what the network received
+            done = self._estimator.estimate(self.game.appid, p.downloaded, p.total,
+                                            sample.net_rx if sample is not None else None)
+            percent = 100.0 * done / p.total if p.total else 0.0
+            set_status(self.status, f"Downloading {percent:.0f}% · {format_size(done)} of "
                                     f"{format_size(p.total)}" + (f" · {speed}" if speed else ""))
         elif p.state == "queued":
             set_status(self.status, "Waiting for Steam to start the download…")
