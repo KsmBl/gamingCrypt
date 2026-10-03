@@ -214,12 +214,34 @@ class GamepadNavigator(QObject):
         if target is not None:
             self.focus(target)
 
+    @staticmethod
+    def _scroll_area(w: QWidget | None) -> QScrollArea | None:
+        while w is not None:
+            w = w.parentWidget()
+            if isinstance(w, QScrollArea):
+                return w
+        return None
+
     def nearest(self, current: QWidget | None, dx: int, dy: int) -> QWidget | None:
         options = [w for w in self.candidates() if w is not current]
         if not options:
             return None
         if current is None:
             return min(options, key=lambda w: (round(self._center(w).y() / 20), self._center(w).x()))
+        # Inside a scrolling list (e.g. the game grid) stay in the list - also on items
+        # scrolled out of view - and only leave it at its edge. Otherwise the tab bar,
+        # which is closer *on screen*, would win over the game right above.
+        area = self._scroll_area(current)
+        if area is not None and area.widget() is not None:
+            content = area.widget()
+            inside = [w for w in options if content.isAncestorOf(w)]
+            best = self._best(current, inside, dx, dy)
+            if best is not None:
+                return best
+            options = [w for w in options if not content.isAncestorOf(w)]
+        return self._best(current, options, dx, dy)
+
+    def _best(self, current: QWidget, options: list[QWidget], dx: int, dy: int) -> QWidget | None:
         here = self._center(current)
         best, best_score = None, None
         for w in options:

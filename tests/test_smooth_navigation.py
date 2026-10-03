@@ -113,3 +113,47 @@ def test_focused_play_button_is_clearly_highlighted(qtbot):
     css = theme.STYLESHEET
     assert f"QPushButton#primary:focus {{ background: {theme.ACCENT_HI}; border: 4px solid {theme.TEXT}; }}" in css
     assert f"QPushButton:focus {{ border: 4px solid {theme.TEXT}; }}" in css
+
+
+def test_up_in_the_game_grid_goes_to_the_game_above_not_the_tabs(qtbot):
+    import copy
+
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.config import DEFAULTS
+    from gamingcrypt.steam.models import SteamGame
+    from gamingcrypt.ui.games_tab import GamesTab
+    from gamingcrypt.ui.steam_page import SteamLibraryPage
+    from tests.fakes import FakeService
+
+    SteamLibraryPage.FETCH_DELAY_MS = 0
+    service = FakeService(games=[SteamGame(i, f"Game {i:03}") for i in range(1, 41)])
+    window = MainWindow(copy.deepcopy(DEFAULTS), lambda c: None,
+                        page_factory=lambda cfg: {"Games": GamesTab(service)})
+    qtbot.addWidget(window)
+    window.resize(1280, 800)
+    window.show()
+    window.show_shell()
+    qtbot.waitExposed(window)
+    games = window.shell.pages["Games"]
+    games.open_steam()
+    page = games.currentWidget()
+    qtbot.waitUntil(lambda: not page.loading)
+    nav = GamepadNavigator(window)
+    cards = [page.cards[a] for a in page.order]
+    per_row = sum(1 for c in cards if c.y() == cards[0].y())
+    start = cards[1]  # second column, first row
+    nav.focus(start)
+    for _ in range(4):
+        step(nav, 1)
+        qtbot.waitUntil(lambda: not FoldingHeader.programmatic)
+    focused = window.focusWidget()
+    assert focused is cards[1 + 4 * per_row]
+    tabs = set(window.shell.tab_buttons.values())
+    for row in range(3, -1, -1):  # back up, one game at a time
+        step(nav, -1)
+        qtbot.waitUntil(lambda: not FoldingHeader.programmatic)
+        assert window.focusWidget() is cards[1 + row * per_row]
+        assert window.focusWidget() not in tabs
+    step(nav, -1)  # from the top row it may leave the grid
+    qtbot.waitUntil(lambda: not FoldingHeader.programmatic)
+    assert window.focusWidget() not in cards
