@@ -21,6 +21,8 @@ DEFAULTS: dict[str, Any] = {
         # Run veracrypt through `sudo -n` (see install.sh for the sudoers rule).
         "use_sudo": True,
         "veracrypt_binary": "veracrypt",
+        # Restricted root helper installed by install.sh; used with sudo if present.
+        "sudo_helper": "/usr/local/lib/gamingcrypt/veracrypt-helper",
         "pim": 0,
         "keyfiles": [],
     },

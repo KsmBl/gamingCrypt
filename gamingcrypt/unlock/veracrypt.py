@@ -6,11 +6,15 @@ process list.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass, field
 from typing import Callable, Sequence
 
 Runner = Callable[..., subprocess.CompletedProcess]
+
+# Root-owned allow-list wrapper installed by install.sh (see helper/veracrypt_helper.py).
+DEFAULT_HELPER = "/usr/local/lib/gamingcrypt/veracrypt-helper"
 
 
 @dataclass
@@ -29,6 +33,8 @@ class VeraCryptUnlocker:
     keyfiles: Sequence[str] = field(default_factory=list)
     runner: Runner = subprocess.run
     timeout: float = 120.0
+    # With sudo, this helper is called instead of veracrypt when it exists.
+    sudo_helper: str = ""
 
     @classmethod
     def from_config(cls, unlock_cfg: dict, runner: Runner = subprocess.run) -> "VeraCryptUnlocker":
@@ -40,6 +46,7 @@ class VeraCryptUnlocker:
             pim=int(unlock_cfg.get("pim", 0) or 0),
             keyfiles=list(unlock_cfg.get("keyfiles", [])),
             runner=runner,
+            sudo_helper=unlock_cfg.get("sudo_helper", DEFAULT_HELPER),
         )
 
     @property
@@ -47,8 +54,10 @@ class VeraCryptUnlocker:
         return bool(self.volume)
 
     def _base(self) -> list[str]:
-        prefix = ["sudo", "-n"] if self.use_sudo else []
-        return prefix + [self.binary, "--text", "--non-interactive"]
+        if self.use_sudo:
+            use_helper = self.sudo_helper and os.path.exists(self.sudo_helper)
+            return ["sudo", "-n", self.sudo_helper if use_helper else self.binary, "--text", "--non-interactive"]
+        return [self.binary, "--text", "--non-interactive"]
 
     def mount_command(self) -> list[str]:
         cmd = self._base() + [
@@ -56,6 +65,7 @@ class VeraCryptUnlocker:
             f"--pim={self.pim}",
             f"--keyfiles={','.join(self.keyfiles)}",
             "--protect-hidden=no",
+            "--fs-options=nosuid,nodev",
             "--mount",
             self.volume,
         ]
