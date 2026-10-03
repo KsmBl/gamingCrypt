@@ -92,6 +92,7 @@ class AuthSetupWizard(QWidget):
         unlocker_factory: UnlockerFactory = VeraCryptUnlocker.from_config,
         first_start: bool = False,
         new_kdf_params=kdf.new_params,
+        missing_volume: str = "",
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
@@ -108,6 +109,9 @@ class AuthSetupWizard(QWidget):
         unlock = config["unlock"]
         self.volume = unlock.get("volume", "")
         self.mount_point = unlock.get("mount_point", "")
+        self.missing_volume = missing_volume
+        if missing_volume:
+            self.volume = ""  # don't suggest the path that's gone
         self.creating = False
         self.size_gb = 0
         self.quick = True
@@ -164,6 +168,10 @@ class AuthSetupWizard(QWidget):
             self.show_volume_step()
         else:
             self.show_current_step()
+        if missing_volume:
+            set_status(self.status, f"Your VeraCrypt volume {missing_volume} wasn't found. "
+                                    "Create a new one or choose another - if it's on a drive that "
+                                    "isn't connected, connect it and restart GamingCrypt.", error=True)
 
     # pages ------------------------------------------------------------------
     def _build_source_page(self) -> QWidget:

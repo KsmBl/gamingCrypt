@@ -322,7 +322,12 @@ method, mount point and KDF salt. None of these are secret. On start, an existin
 container (the configured one, or `~/GamingCrypt.vc`) is recognised and you go straight
 to the unlock screen. *Create new container* is never offered while a container exists.
 If a container has no such file (one made with VeraCrypt directly, for example), setup
-asks for its current password right away. After you unlock it,
+asks for its current password right away.
+
+If the configured volume is gone (container deleted, drive not connected), GamingCrypt
+opens the setup instead of the unlock screen and says which volume is missing. Your old
+settings are only replaced once a new setup is finished, so reconnecting the drive and
+restarting gets you back to the unlock screen. After you unlock it,
 GamingCrypt **adds it to Steam as a library folder automatically**.
 
 To encrypt a whole partition or SD card, create the volume with VeraCrypt itself

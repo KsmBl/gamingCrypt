@@ -78,3 +78,40 @@ def test_start_without_container_offers_create(qtbot):
     qtbot.addWidget(window)
     wizard = window.stack.currentWidget()
     assert wizard.step == "source" and wizard.create_button.isVisibleTo(wizard)
+
+
+def test_deleted_volume_opens_setup_instead_of_unlock(qtbot, isolated_home, tmp_path):
+    cfg = copy.deepcopy(DEFAULTS)
+    gone = tmp_path / "deleted.vc"
+    cfg["unlock"].update(method="pin", volume=str(gone), kdf=KDF)
+    saved = []
+    window = MainWindow(cfg, saved.append)
+    qtbot.addWidget(window)
+    assert window.screen_name == "setup"
+    wizard = window.stack.currentWidget()
+    assert str(gone) in wizard.status.text() and "wasn't found" in wizard.status.text()
+    assert wizard.step == "source" and wizard.create_button.isVisibleTo(wizard)
+    assert wizard.volume == "" and wizard.volume_edit.text() == ""  # the missing path isn't suggested
+    assert saved == [] and cfg["unlock"]["volume"] == str(gone)  # old settings kept until a new setup
+
+
+def test_reconnected_volume_goes_back_to_unlock(qtbot, isolated_home, tmp_path):
+    cfg = copy.deepcopy(DEFAULTS)
+    volume = tmp_path / "games.vc"
+    volume.write_text("")
+    cfg["unlock"].update(method="pin", volume=str(volume), kdf=KDF)
+    window = MainWindow(cfg, lambda c: None)
+    qtbot.addWidget(window)
+    assert window.screen_name == "lock"
+
+
+def test_missing_volume_with_another_container_at_default_place(qtbot, isolated_home, tmp_path):
+    (isolated_home / "GamingCrypt.vc").write_text("")
+    cfg = copy.deepcopy(DEFAULTS)
+    cfg["unlock"].update(method="pin", volume=str(tmp_path / "gone.vc"), kdf=KDF)
+    window = MainWindow(cfg, lambda c: None)
+    qtbot.addWidget(window)
+    wizard = window.stack.currentWidget()
+    # still no "create" next to an existing container - asks for that container's password
+    assert wizard.step == "current" and not wizard.create_button.isVisibleTo(wizard)
+    assert "wasn't found" in wizard.status.text()

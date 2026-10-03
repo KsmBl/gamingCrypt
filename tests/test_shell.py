@@ -148,8 +148,12 @@ def test_main_window_setup_then_lock_then_shell(qtbot):
     assert saved and saved[-1]["unlock"]["method"] == "pin"
 
 
-def test_main_window_configured_unlock_to_shell(qtbot):
-    window = MainWindow(configured(), lambda c: None, FakeUnlocker)
+def test_main_window_configured_unlock_to_shell(qtbot, tmp_path):
+    cfg = configured()
+    volume = tmp_path / "games.vc"
+    volume.write_text("")  # the volume has to exist, otherwise the setup opens
+    cfg["unlock"]["volume"] = str(volume)
+    window = MainWindow(cfg, lambda c: None, FakeUnlocker)
     qtbot.addWidget(window)
     assert window.screen_name == "lock"
     lock = window.stack.currentWidget()

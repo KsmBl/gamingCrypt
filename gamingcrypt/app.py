@@ -66,6 +66,10 @@ class MainWindow(QMainWindow):
             self.adopt_existing_container()
         if not unlock.get("method") or not unlock.get("volume"):
             self.show_setup()
+        elif not os.path.exists(os.path.expanduser(unlock["volume"])):
+            # deleted container / missing drive: set up again instead of a useless lock screen
+            log.warning("volume %s not found", unlock["volume"])
+            self.show_setup(missing_volume=unlock["volume"])
         else:
             self.show_lock()
 
@@ -185,8 +189,9 @@ class MainWindow(QMainWindow):
             self.stack.removeWidget(old)
             old.deleteLater()
 
-    def show_setup(self) -> None:
-        wizard = AuthSetupWizard(self.config, self.save, self.unlocker_factory, first_start=True)
+    def show_setup(self, missing_volume: str = "") -> None:
+        wizard = AuthSetupWizard(self.config, self.save, self.unlocker_factory, first_start=True,
+                                 missing_volume=missing_volume)
         wizard.completed.connect(self.show_lock)
         wizard.cancelled.connect(self.show_shell)
         self._replace(wizard)
