@@ -12,6 +12,7 @@ Must stay self-contained (runs as root, no imports from user-writable paths).
 import os
 import pwd
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -117,17 +118,49 @@ def invoking_user() -> tuple[int | None, int | None, str | None]:
         return None, None, None
 
 
-def create_volume(argv, uid, gid, password, run=subprocess.run, chown=os.chown,
-                  mkdtemp=tempfile.mkdtemp, rmdir=os.rmdir) -> int:
+STOP_SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
+
+
+def create_volume(argv, uid, gid, password, run=subprocess.run, popen=subprocess.Popen, chown=os.chown,
+                  mkdtemp=tempfile.mkdtemp, rmdir=os.rmdir, remove=os.remove) -> int:
     """Create the container, then hand the file *and* its fresh ext4 root to the user.
 
     Without the second step the new filesystem would be owned by root and Steam
-    couldn't install anything into it.
+    couldn't install anything into it. A SIGTERM (the user pressed Cancel)
+    during creation stops VeraCrypt and deletes the half-written file.
     """
     path = [a for a in argv if not a.startswith("-")][0]
-    result = run([VERACRYPT, *argv], input=password, text=True)
-    if result.returncode != 0:
-        return result.returncode
+    proc = popen([VERACRYPT, *argv], stdin=subprocess.PIPE, text=True)
+    stopped = []
+
+    def stop(signum, _frame):
+        stopped.append(signum)
+        proc.terminate()
+
+    previous = {sig: signal.signal(sig, stop) for sig in STOP_SIGNALS}
+    try:
+        proc.communicate(password)
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+    if stopped:
+        try:
+            remove(path)
+        except OSError:
+            pass
+        return 128 + stopped[0]
+    if proc.returncode != 0:
+        return proc.returncode
+    # Preparing the filesystem takes a moment; don't leave it half done.
+    previous = {sig: signal.signal(sig, signal.SIG_IGN) for sig in STOP_SIGNALS}
+    try:
+        return _prepare_filesystem(path, uid, gid, password, run, chown, mkdtemp, rmdir)
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
+def _prepare_filesystem(path, uid, gid, password, run, chown, mkdtemp, rmdir) -> int:
     chown(path, uid, gid)
     mount_dir = mkdtemp(prefix="gamingcrypt-", dir="/run")
     try:

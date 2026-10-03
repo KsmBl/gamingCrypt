@@ -219,6 +219,12 @@ class FakePopen:
     def wait(self, timeout=None):
         return self.returncode
 
+    def poll(self):
+        return self.returncode
+
+    def terminate(self):
+        pass
+
 
 def test_create_command():
     u = VeraCryptUnlocker(volume="", use_sudo=False)
@@ -341,3 +347,48 @@ def test_real_kdf_protected_volume(tmp_path):
     assert u.change_password("1234", "5678", new_kdf).success
     u2 = VeraCryptUnlocker(volume=str(path), use_sudo=False, kdf=new_kdf)
     assert u2.change_password("5678", "5678", FAST_KDF).success
+
+
+def test_create_volume_refuses_existing_file(tmp_path):
+    (tmp_path / "x.vc").write_text("")
+    r = VeraCryptUnlocker(volume="", use_sudo=False).create_volume(str(tmp_path / "x.vc"), 1, "s", popen=FakePopen(""))
+    assert not r.success and "already exists" in r.message
+
+
+def test_create_volume_cancelled_removes_partial_file(tmp_path):
+    import threading
+
+    target = tmp_path / "x.vc"
+
+    class Writing(FakePopen):
+        def __call__(self, cmd, **kw):
+            target.write_text("partial")
+            return super().__call__(cmd, **kw)
+
+    cancel = threading.Event()
+    cancel.set()
+    r = VeraCryptUnlocker(volume="", use_sudo=False).create_volume(
+        str(target), 1, "s", popen=Writing(["Done: 10.0%\r"], returncode=143), cancel=cancel)
+    assert r.cancelled and not r.success and "cancelled" in r.message
+    assert not target.exists()
+
+
+@needs_veracrypt
+def test_real_create_cancel(tmp_path):
+    import threading
+
+    path = tmp_path / "big.vc"
+    u = VeraCryptUnlocker(volume=str(path), use_sudo=False)
+    # full (non-quick) format of 2 GB takes long enough to cancel in the middle
+    u.create_command = lambda p, s, q=True, f="ext4": VeraCryptUnlocker.create_command(u, p, s, False, "none")
+    cancel = threading.Event()
+    seen = []
+
+    def progress(value):
+        seen.append(value)
+        cancel.set()
+
+    result = u.create_volume(str(path), 2, "pw", progress=progress, cancel=cancel)
+    assert result.cancelled
+    assert not path.exists()
+    assert seen and seen[0] < 100

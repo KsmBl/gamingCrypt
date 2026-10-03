@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import threading
 from dataclasses import dataclass, field
 from typing import Callable, Sequence
 
@@ -26,6 +27,7 @@ DEFAULT_HELPER = "/usr/local/lib/gamingcrypt/veracrypt-helper"
 class UnlockResult:
     success: bool
     message: str = ""
+    cancelled: bool = False
 
 
 @dataclass
@@ -124,9 +126,15 @@ class VeraCryptUnlocker:
         progress: Progress | None = None,
         popen: Callable[..., subprocess.Popen] = subprocess.Popen,
         filesystem: str = "ext4",
+        cancel: threading.Event | None = None,
     ) -> UnlockResult:
         """Create a new container file protected by ``secret`` (derived with this
-        unlocker's ``kdf``). Reports progress 0-100."""
+        unlocker's ``kdf``). Reports progress 0-100.
+
+        Setting ``cancel`` stops VeraCrypt and deletes the half-written file.
+        """
+        if os.path.lexists(path):
+            return UnlockResult(False, "A file with that name already exists")
         try:
             secret = self._derive(secret, self.kdf)
         except kdf_mod.KDFError as exc:
@@ -138,6 +146,8 @@ class VeraCryptUnlocker:
             return UnlockResult(False, f"'{cmd[2] if self.use_sudo else self.binary}' not found - is VeraCrypt installed?")
         except OSError as exc:
             return UnlockResult(False, f"Could not run VeraCrypt: {exc}")
+        if cancel is not None:
+            threading.Thread(target=self._terminate_on_cancel, args=(proc, cancel), daemon=True).start()
         try:
             proc.stdin.write(secret + "\n")
             proc.stdin.close()
@@ -154,12 +164,28 @@ class VeraCryptUnlocker:
             if matches and progress is not None:
                 progress(min(100.0, float(matches[-1])))
         returncode = proc.wait()
+        if cancel is not None and cancel.is_set():
+            try:
+                os.remove(path)  # it didn't exist before, so it's our half-written file
+            except OSError:
+                pass
+            return UnlockResult(False, "Creation cancelled", cancelled=True)
         text = "".join(output)
         if returncode == 0 and "error:" not in text.lower():
             if progress is not None:
                 progress(100.0)
             return UnlockResult(True, "Container created")
         return UnlockResult(False, explain_error(text))
+
+    @staticmethod
+    def _terminate_on_cancel(proc, cancel: threading.Event) -> None:
+        while proc.poll() is None:
+            if cancel.wait(0.2):
+                try:
+                    proc.terminate()  # sudo forwards SIGTERM to the helper
+                except OSError:
+                    pass
+                return
 
     def list_command(self) -> list[str]:
         return self._base() + ["--list", self.volume]

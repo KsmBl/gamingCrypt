@@ -97,6 +97,22 @@ def test_create_only_flags_rejected_elsewhere():
     assert "not allowed" in validate(["--create", "--size=99T", "--filesystem=ext4", "/home/alice/x"], HOME)
 
 
+class FakeProc:
+    def __init__(self, returncode=0, log=None):
+        self.returncode = returncode
+        self.log = log if log is not None else []
+
+    def __call__(self, cmd, **kw):
+        self.log.append(("popen", cmd))
+        return self
+
+    def communicate(self, data):
+        self.log.append(("stdin", data))
+
+    def terminate(self):
+        self.log.append(("terminate",))
+
+
 def test_create_volume_hands_file_and_filesystem_to_user(tmp_path):
     calls, chowns = [], []
 
@@ -105,23 +121,40 @@ def test_create_volume_hands_file_and_filesystem_to_user(tmp_path):
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
     argv = create_argv(tmp_path / "g.vc")
-    rc = veracrypt_helper.create_volume(argv, 1000, 1000, "pw\n", run=run,
+    proc = FakeProc()
+    rc = veracrypt_helper.create_volume(argv, 1000, 1000, "pw\n", run=run, popen=proc,
                                         chown=lambda p, u, g: chowns.append((p, u, g)),
                                         mkdtemp=lambda **kw: "/run/gamingcrypt-x", rmdir=lambda p: None)
     assert rc == 0
-    assert calls[0][0][1:] == argv and calls[0][1] == "pw\n"
-    assert "--mount" in calls[1][0] and calls[1][0][-1] == "/run/gamingcrypt-x" and calls[1][1] == "pw\n"
-    assert "-d" in calls[2][0]
+    assert proc.log[0] == ("popen", [veracrypt_helper.VERACRYPT, *argv]) and proc.log[1] == ("stdin", "pw\n")
+    assert "--mount" in calls[0][0] and calls[0][0][-1] == "/run/gamingcrypt-x" and calls[0][1] == "pw\n"
+    assert "-d" in calls[1][0]
     assert chowns == [(str(tmp_path / "g.vc"), 1000, 1000), ("/run/gamingcrypt-x", 1000, 1000)]
 
 
 def test_create_volume_stops_when_veracrypt_fails(tmp_path):
-    calls = []
-
-    def run(cmd, **kw):
-        calls.append(cmd)
-        return subprocess.CompletedProcess(cmd, 1, "", "")
-
-    rc = veracrypt_helper.create_volume(create_argv(tmp_path / "g.vc"), 1, 1, "pw\n", run=run,
+    rc = veracrypt_helper.create_volume(create_argv(tmp_path / "g.vc"), 1, 1, "pw\n",
+                                        run=lambda *a, **k: pytest.fail("must not prepare"),
+                                        popen=FakeProc(returncode=1),
                                         chown=lambda *a: pytest.fail("must not chown"))
-    assert rc == 1 and len(calls) == 1
+    assert rc == 1
+
+
+def test_create_volume_sigterm_stops_veracrypt_and_removes_file(tmp_path, monkeypatch):
+    """Cancel: SIGTERM to the helper terminates a real child process and deletes the partial file."""
+    import signal
+    import threading
+
+    target = tmp_path / "g.vc"
+    target.write_text("partial")
+    fake_veracrypt = tmp_path / "veracrypt"
+    fake_veracrypt.write_text("#!/bin/sh\nexec sleep 30\n")
+    fake_veracrypt.chmod(0o755)
+    monkeypatch.setattr(veracrypt_helper, "VERACRYPT", str(fake_veracrypt))
+    argv = ["--create", str(target)]
+    threading.Timer(0.3, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
+    rc = veracrypt_helper.create_volume(argv, os.getuid(), os.getgid(), "pw\n",
+                                        run=lambda *a, **k: pytest.fail("must not prepare"))
+    assert rc == 128 + signal.SIGTERM
+    assert not target.exists()
+    assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL  # handlers restored
