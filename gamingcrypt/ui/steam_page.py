@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QScrollArea, QVBoxLayout, QWidget
 
 from gamingcrypt.steam.models import SteamGame
-from gamingcrypt.steam.sorting import SORT_OPTIONS, sort_games
+from gamingcrypt.steam.sorting import SORT_OPTIONS, filter_games, sort_games
 from gamingcrypt.ui.game_widgets import GameCard
 from gamingcrypt.ui.tasks import run_async
-from gamingcrypt.ui.widgets import FlowLayout, FoldingHeader, big_button, enable_touch_scroll
+from gamingcrypt.ui.widgets import (
+    FlowLayout,
+    FoldingHeader,
+    KeyboardFocusFilter,
+    OnScreenKeyboard,
+    big_button,
+    enable_touch_scroll,
+)
 
 METADATA_SORTS = {"release_date", "price", "last_update"}
 
@@ -64,6 +71,11 @@ class SteamLibraryPage(QWidget):
         sort_row.addWidget(self.direction_button)
         sort_row.addStretch()
         header.addLayout(sort_row)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("🔍  Search your Steam library")
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(lambda _t: self.apply_sort())
+        header.addWidget(self.search)
 
         self.status = QLabel("Loading library…")
         self.status.setObjectName("status")
@@ -79,6 +91,14 @@ class SteamLibraryPage(QWidget):
         layout.addWidget(scroll, 1)
         self.scroll = scroll
         self.folding = FoldingHeader(scroll, self.header)
+
+        self.keyboard = OnScreenKeyboard(self.search)
+        self.keyboard.submitted.connect(self.keyboard.hide)
+        self.keyboard.dismissable = True
+        self.keyboard.hide()
+        self._focus_filter = KeyboardFocusFilter(self.keyboard, self)
+        self._focus_filter.watch(self.search)
+        layout.addWidget(self.keyboard)
 
         self._update_sort_buttons()
         run_async(self.service.load_library, self._loaded, self._load_failed, owner=self)
@@ -162,14 +182,25 @@ class SteamLibraryPage(QWidget):
         self.direction_button.setText("↓ Desc" if self.descending else "↑ Asc")
 
     def apply_sort(self) -> None:
-        ordered = sort_games(list(self.games.values()), self.sort_key, self.descending)
+        query = self.search.text()
+        shown = filter_games(list(self.games.values()), query)
+        ordered = sort_games(shown, self.sort_key, self.descending)
         self.order = [g.appid for g in ordered]
-        self.grid.take_all()
+        for card in self.grid.take_all():
+            card.hide()
         for appid in self.order:
             card = self.cards[appid]
             card.set_sort_key(self.sort_key)
             self.grid.addWidget(card)
+            card.show()
         self.grid.invalidate()
+        if query.strip() and self.games:
+            self.status.setText(f'{len(self.order)} of {len(self.games)} games match "{query.strip()}"'
+                                if self.order else f'No game matches "{query.strip()}"')
+            self._search_status = True
+        elif getattr(self, "_search_status", False):
+            self._search_status = False  # search cleared: back to the normal hint
+            self.status.setText(self.empty_hint(list(self.games.values())))
 
     def on_return(self) -> None:
         # Coming back from a game page: install state may have changed.

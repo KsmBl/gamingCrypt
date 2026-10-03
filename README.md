@@ -31,9 +31,10 @@ your Steam library.
 - **Controller**: calibrate the analog sticks and triggers and map every button; games get a virtual Xbox controller with your setup
 - **Browse with the controller**: the whole UI works with D-pad / stick, A, B, LB/RB, as well as with touch
 - **Games**
-  - Search your installed games
+  - All your games below the libraries, filterable (**All / Installed / Not installed**) and searchable
   - **Steam** card with your whole library (installed, plus every owned game when a Web API key is set)
   - Sort by **name, release date, playtime, price or latest update**, ascending or descending
+  - Search the whole Steam library (installed or not)
   - The title and sort bar fold away while you scroll down and come back when you scroll up (also on Games, Store and Downloads)
   - Game page: **Play** or **Download**, plus **Options → Uninstall** (tap twice to confirm, no Steam popup)
   - Game size: size on disk for installed games, the store's storage requirement for the others

@@ -74,3 +74,30 @@ def test_back_returns_home(qtbot):
     tab, page = open_page(qtbot)
     tab.back()
     assert tab.currentWidget() is tab.home
+
+
+def test_search_in_steam_library(qtbot):
+    tab, page = open_page(qtbot)
+    page.search.setText("portal")
+    assert page.order == [400, 620]  # installed or not
+    assert page.status.text() == '2 of 4 games match "portal"'
+    assert page.cards[1145360].isHidden()
+    page.set_sort("playtime")  # sorting applies to the matches
+    assert page.order == [620, 400]
+    page.search.setText("zzz")
+    assert page.order == [] and page.status.text() == 'No game matches "zzz"'
+    page.search.setText("")
+    assert len(page.order) == 4 and page.status.text() == ""
+    assert not page.cards[1145360].isHidden()
+
+
+def test_steam_search_keyboard(qtbot):
+    from PySide6.QtCore import Qt
+
+    tab, page = open_page(qtbot)
+    tab.show()
+    assert page.keyboard.isHidden()
+    qtbot.mouseClick(page.search, Qt.MouseButton.LeftButton)
+    assert page.keyboard.isVisible() and page.keyboard.dismissable
+    page.keyboard.type_text("hades")
+    assert page.order == [1145360]
