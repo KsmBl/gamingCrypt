@@ -138,7 +138,7 @@ class GamesTab(QStackedWidget):
             self.games[game.appid] = game
         self.home.set_installed(games)
 
-    # entry points (filled by the library / detail / store pages) -------------
+    # entry points -----------------------------------------------------------
     def open_steam(self) -> None:
         from gamingcrypt.ui.steam_page import SteamLibraryPage
 
@@ -152,4 +152,6 @@ class GamesTab(QStackedWidget):
             self.push(GameDetailPage(self, game))
 
     def open_store(self) -> None:
-        pass
+        from gamingcrypt.ui.store_page import StorePage
+
+        self.push(StorePage(self))
