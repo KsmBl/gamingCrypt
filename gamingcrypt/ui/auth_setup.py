@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QStackedWidget, QV
 from gamingcrypt.ui.secret_input import METHOD_LABELS, SecretInput
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import KeyboardFocusFilter, OnScreenKeyboard, big_button, set_status
+from gamingcrypt.unlock import kdf
 from gamingcrypt.unlock.veracrypt import UnlockResult, VeraCryptUnlocker
 
 UnlockerFactory = Callable[[dict], VeraCryptUnlocker]
@@ -40,6 +41,7 @@ class AuthSetupWizard(QWidget):
         save: Callable[[dict], None],
         unlocker_factory: UnlockerFactory = VeraCryptUnlocker.from_config,
         first_start: bool = False,
+        new_kdf_params=kdf.new_params,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
@@ -47,6 +49,8 @@ class AuthSetupWizard(QWidget):
         self.save = save
         self.unlocker_factory = unlocker_factory
         self.first_start = first_start
+        self.new_kdf_params = new_kdf_params
+        self.new_kdf: dict | None = None
         self.busy = False
         self.current_secret = ""
         self.new_method = ""
@@ -192,11 +196,14 @@ class AuthSetupWizard(QWidget):
         self.busy = True
         self.step = "apply"
         set_status(self.status, "Updating the volume… this can take a few seconds")
-        unlock_cfg = dict(self.config["unlock"], volume=self.volume, mount_point=self.mount_point)
+        # A volume set up by hand has the plain password; otherwise use the stored KDF.
+        current_kdf = None if self.first_start else self.config["unlock"].get("kdf")
+        unlock_cfg = dict(self.config["unlock"], volume=self.volume, mount_point=self.mount_point, kdf=current_kdf)
         unlocker = self.unlocker_factory(unlock_cfg)
         current, new = self.current_secret, self.new_secret
+        self.new_kdf = new_kdf = self.new_kdf_params()
         run_async(
-            lambda: unlocker.change_password(current, new),
+            lambda: unlocker.change_password(current, new, new_kdf),
             self._applied,
             lambda exc: self._applied(UnlockResult(False, str(exc))),
         )
@@ -209,6 +216,7 @@ class AuthSetupWizard(QWidget):
             return
         unlock = self.config["unlock"]
         unlock["method"] = self.new_method
+        unlock["kdf"] = self.new_kdf
         unlock["volume"] = self.volume
         unlock["mount_point"] = self.mount_point
         self.save(self.config)

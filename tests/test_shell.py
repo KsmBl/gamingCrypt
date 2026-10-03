@@ -21,7 +21,7 @@ class FakeUnlocker:
     def unlock(self, secret):
         return UnlockResult(secret == "1234", "")
 
-    def change_password(self, current, new):
+    def change_password(self, current, new, new_kdf=None):
         return UnlockResult(current == "1234", "Wrong code" if current != "1234" else "")
 
 
@@ -139,3 +139,39 @@ def test_settings_reset_without_volume_asks_for_volume(qtbot):
     qtbot.addWidget(tab)
     tab.reset_button.click()
     assert tab.wizard.step == "volume"
+
+
+def test_settings_shows_kdf(qtbot):
+    cfg = configured()
+    tab = SettingsTab(cfg, lambda c: None, FakeUnlocker)
+    qtbot.addWidget(tab)
+    assert "legacy" in tab.kdf_label.text()
+    cfg["unlock"]["kdf"] = {"algorithm": "scrypt", "salt": "aa" * 16, "n": 2**18, "r": 8, "p": 1}
+    tab.refresh()
+    assert "scrypt" in tab.kdf_label.text() and "Back up" in tab.kdf_label.text()
+
+
+def test_volume_password_recovery(tmp_path):
+    import json
+
+    from gamingcrypt.app import main, print_volume_password
+    from gamingcrypt.unlock import kdf
+
+    params = {"algorithm": "scrypt", "salt": "aa" * 16, "n": 1024, "r": 8, "p": 1}
+    cfg = configured()
+    cfg["unlock"]["kdf"] = params
+    lines = []
+    assert print_volume_password(cfg, read_secret=lambda: "1234", out=lines.append) == 0
+    assert lines == [kdf.derive_password("1234", params)]
+    cfg["unlock"]["kdf"] = {"algorithm": "nope"}
+    assert print_volume_password(cfg, read_secret=lambda: "1234", out=lines.append) == 1
+
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"unlock": {"method": "pin", "kdf": params}}))
+    import getpass
+    orig = getpass.getpass
+    getpass.getpass = lambda prompt: "1234"
+    try:
+        assert main(["--config", str(path), "--volume-password"]) == 0
+    finally:
+        getpass.getpass = orig

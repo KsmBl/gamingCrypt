@@ -17,7 +17,8 @@ your Steam library.
 
 - **Unlock screen**: PIN pad, password with on-screen keyboard, a 3×3 swipe pattern, or a 5×5 tap pattern
   - Mounts your VeraCrypt volume (device or file container); the password goes to VeraCrypt over stdin
-- **First-start setup**: pick your volume and unlock method, enter the value twice, and GamingCrypt re-keys the volume
+- **First-start setup**: pick an existing volume, or **create a new encrypted container**, then choose your unlock method
+- **Key derivation**: every secret is hardened with scrypt and a per-volume salt before it reaches VeraCrypt
 - **Settings → Reset authentication method**: switch between PIN, password, swipe pattern and 5×5 pattern at any time
 - **Tabs**: Games, Movies, Series, Music, Pictures, Settings (the media tabs show *coming soon*)
 - **Games**
@@ -48,23 +49,41 @@ Uninstall with `./install.sh --uninstall` (your config and cache are kept).
 
 Run `gamingcrypt --windowed` to try it in a window instead of fullscreen.
 
-## Unlock methods and your VeraCrypt password
+## Unlock methods and key derivation
 
-The secret you enter **is** the VeraCrypt password:
+What you enter is first turned into a canonical secret:
 
-| Method   | VeraCrypt password                                                        |
-|----------|---------------------------------------------------------------------------|
-| PIN      | the digits, e.g. `482916` (at least 4)                                    |
-| Password | the text as typed                                                         |
+| Method | Secret |
+|---|---|
+| PIN | the digits, e.g. `482916` (at least 4) |
+| Password | the text as typed |
 | Swipe pattern | the touched dots numbered 1–9 row by row, e.g. an "L" `1→4→7→8→9` = `14789` |
 | 5×5 Pattern | the tapped dots numbered 1–25 row by row **in tap order**, joined with `-`, repeats allowed, e.g. `1-7-13-25` (at least 4 taps) |
 
-The first-start wizard (and *Settings → Reset authentication method*) asks for the
-current password, then for the new method and value, and changes the volume's
-password for you. Your volume keeps working with plain VeraCrypt using that string.
+**Every secret then goes through a key derivation function** before it reaches VeraCrypt:
 
-> ⚠️ A 4-digit PIN or a short pattern is much weaker than a long passphrase. The
-> volume is only as strong as the secret you choose.
+```
+VeraCrypt password = base64url( scrypt(secret, salt, N=2^18, r=8, p=1) )   # 43 chars
+```
+
+scrypt is memory-hard (about 256 MB and about 0.5 s per attempt), and the salt is
+random per volume and new on every password change. An attacker can't take a
+4-digit PIN and try it against the volume directly. Every guess costs a full scrypt
+run plus VeraCrypt's own PBKDF2, and precomputed tables don't help.
+
+> ⚠️ **Back up `~/.config/gamingcrypt/config.json`.** It holds the salt (`unlock.kdf`).
+> The salt isn't secret, but without it the volume can't be opened.
+> To open the volume with plain VeraCrypt (on another PC, for example), run
+> `gamingcrypt --volume-password`, enter your PIN or pattern in the format above,
+> and use the printed password.
+>
+> A KDF makes every guess expensive, but it can't enlarge the key space. A 4-digit
+> PIN still has only 10 000 possibilities. For real protection choose a long
+> password, a long 5×5 pattern, or a longer PIN.
+
+The first-start wizard and *Settings → Reset authentication method* ask for the
+current secret, then for the new method and value, and re-key the volume. Volumes
+set up before the KDF existed keep working: do a reset once to switch them to the KDF.
 
 ## Steam library
 
@@ -101,6 +120,7 @@ the Steam client (`steam://` URIs).
 | `unlock.mount_point` | optional, e.g. `/mnt/games` (empty = VeraCrypt picks one) |
 | `unlock.use_sudo` | mount through `sudo -n` + helper (default `true`) |
 | `unlock.pim`, `unlock.keyfiles` | VeraCrypt PIM / keyfiles if your volume uses them |
+| `unlock.kdf` | scrypt parameters and salt (written by the setup, **back it up**) |
 | `steam.root` | Steam directory (empty = auto-detect, Flatpak included) |
 | `steam.api_key`, `steam.steam_id` | optional, for the full library |
 | `steam.command` | command used for `steam://` URIs (empty = auto-detect) |

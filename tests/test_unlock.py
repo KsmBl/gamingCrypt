@@ -286,3 +286,58 @@ def test_real_create_volume(tmp_path):
     assert path.stat().st_size == 2 * 1024 * 1024
     assert seen[-1] == 100.0
     assert u.change_password("first", "second").success
+
+
+# --- KDF integration -----------------------------------------------------------
+
+from gamingcrypt.unlock import kdf  # noqa: E402
+
+FAST_KDF = {"algorithm": "scrypt", "salt": "ab" * 16, "n": 1024, "r": 8, "p": 1}
+
+
+def test_unlock_sends_derived_password():
+    runner = FakeRunner([NOT_MOUNTED, (0, "", "")])
+    u = VeraCryptUnlocker(volume="/v", runner=runner, kdf=FAST_KDF)
+    assert u.unlock("1234").success
+    sent = runner.calls[1][1]["input"]
+    assert sent == kdf.derive_password("1234", FAST_KDF) + "\n"
+    assert "1234" not in sent
+
+
+def test_change_password_derives_both_sides():
+    new_kdf = dict(FAST_KDF, salt="cd" * 16)
+    runner = FakeRunner([(0, "", "")])
+    u = VeraCryptUnlocker(volume="/v", runner=runner, kdf=FAST_KDF)
+    assert u.change_password("1234", "1234", new_kdf).success  # same secret, new salt -> real change
+    cmd, kwargs = runner.calls[0]
+    assert kwargs["input"] == kdf.derive_password("1234", FAST_KDF) + "\n"
+    assert f"--new-password={kdf.derive_password('1234', new_kdf)}" in cmd
+
+
+def test_broken_kdf_config_is_reported():
+    u = VeraCryptUnlocker(volume="/v", runner=FakeRunner([NOT_MOUNTED]), kdf={"algorithm": "rot13"})
+    result = u.unlock("1234")
+    assert not result.success and "unsupported" in result.message
+
+
+def test_from_config_reads_kdf():
+    assert VeraCryptUnlocker.from_config({"volume": "/v", "kdf": FAST_KDF}).kdf == FAST_KDF
+    assert VeraCryptUnlocker.from_config({"volume": "/v"}).kdf is None
+
+
+@needs_veracrypt
+def test_real_kdf_protected_volume(tmp_path):
+    """Create with KDF, re-key to a new salt, and check that the plain PIN no longer works."""
+    path = tmp_path / "kdf.vc"
+    u = VeraCryptUnlocker(volume=str(path), use_sudo=False, kdf=FAST_KDF)
+    u.create_command = lambda p, s, q=True, f="ext4": [
+        "--size=2M" if a.startswith("--size=") else a
+        for a in VeraCryptUnlocker.create_command(u, p, s, q, "none")
+    ]
+    assert u.create_volume(str(path), 1, "1234").success
+    plain = VeraCryptUnlocker(volume=str(path), use_sudo=False)
+    assert not plain.change_password("1234", "x").success  # raw PIN is not the password
+    new_kdf = dict(FAST_KDF, salt="ef" * 16)
+    assert u.change_password("1234", "5678", new_kdf).success
+    u2 = VeraCryptUnlocker(volume=str(path), use_sudo=False, kdf=new_kdf)
+    assert u2.change_password("5678", "5678", FAST_KDF).success

@@ -25,6 +25,9 @@ DEFAULTS: dict[str, Any] = {
         "sudo_helper": "/usr/local/lib/gamingcrypt/veracrypt-helper",
         "pim": 0,
         "keyfiles": [],
+        # scrypt parameters + salt applied to every secret (set by the setup).
+        # BACK THIS UP: without the salt the volume can't be unlocked.
+        "kdf": None,
     },
     "steam": {
         # Steam installation root. Empty = auto-detect.

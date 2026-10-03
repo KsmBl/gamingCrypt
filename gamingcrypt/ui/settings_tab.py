@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QLabel, QStackedWidget, QVBoxLayout, QWidget
 from gamingcrypt.ui.auth_setup import AuthSetupWizard, UnlockerFactory
 from gamingcrypt.ui.secret_input import METHOD_LABELS
 from gamingcrypt.ui.widgets import big_button, set_status
+from gamingcrypt.unlock import kdf
 from gamingcrypt.unlock.veracrypt import VeraCryptUnlocker
 
 
@@ -38,8 +39,12 @@ class SettingsTab(QStackedWidget):
         self.volume_label = QLabel()
         self.volume_label.setObjectName("detailMeta")
         self.volume_label.setWordWrap(True)
+        self.kdf_label = QLabel()
+        self.kdf_label.setObjectName("detailMeta")
+        self.kdf_label.setWordWrap(True)
         layout.addWidget(self.method_label)
         layout.addWidget(self.volume_label)
+        layout.addWidget(self.kdf_label)
         self.reset_button = big_button("Reset authentication method", "primary")
         self.reset_button.clicked.connect(self.start_reset)
         layout.addWidget(self.reset_button, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -60,6 +65,10 @@ class SettingsTab(QStackedWidget):
         method = METHOD_LABELS.get(unlock.get("method", ""), "not set")
         self.method_label.setText(f"Unlock method: {method}")
         self.volume_label.setText(f"Volume: {unlock.get('volume') or 'not configured'}")
+        text = f"Key derivation: {kdf.describe(unlock.get('kdf'))}"
+        if unlock.get("kdf"):
+            text += "\nBack up ~/.config/gamingcrypt/config.json - its salt is needed to unlock the volume."
+        self.kdf_label.setText(text)
 
     def start_reset(self) -> None:
         unlock = self.config["unlock"]

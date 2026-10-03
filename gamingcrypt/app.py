@@ -79,14 +79,44 @@ def default_pages(config: dict) -> dict[str, QWidget]:
     return {"Games": GamesTab(service)}
 
 
+SECRET_FORMAT_HINT = {
+    "pin": "your PIN digits, e.g. 482916",
+    "password": "your password",
+    "pattern": "the swipe dots 1-9 row by row, e.g. 14789",
+    "grid5": "the tapped dots 1-25 row by row joined with '-', e.g. 1-7-13-25",
+}
+
+
+def print_volume_password(cfg: dict, read_secret=None, out=print) -> int:
+    """Recovery: show the password to type into plain VeraCrypt."""
+    import getpass
+
+    from gamingcrypt.unlock import kdf
+
+    unlock = cfg["unlock"]
+    hint = SECRET_FORMAT_HINT.get(unlock.get("method", ""), "your secret")
+    read_secret = read_secret or (lambda: getpass.getpass(f"Enter {hint}: "))
+    try:
+        password = kdf.derive_password(read_secret(), unlock.get("kdf"))
+    except kdf.KDFError as exc:
+        out(f"error: {exc}")
+        return 1
+    out(password)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="gamingcrypt", description=__doc__)
     parser.add_argument("--windowed", action="store_true", help="don't start in fullscreen")
     parser.add_argument("--config", type=Path, help="path to config.json")
+    parser.add_argument("--volume-password", action="store_true",
+                        help="print the real VeraCrypt password for your PIN/pattern (recovery)")
     args, qt_args = parser.parse_known_args(argv if argv is not None else sys.argv[1:])
 
     cfg_path = args.config or config_mod.config_path()
     cfg = config_mod.load_config(cfg_path)
+    if args.volume_password:
+        return print_volume_password(cfg)
 
     app = QApplication([sys.argv[0], *qt_args])
     app.setApplicationName("GamingCrypt")

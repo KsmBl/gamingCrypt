@@ -12,6 +12,8 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import Callable, Sequence
 
+from gamingcrypt.unlock import kdf as kdf_mod
+
 Runner = Callable[..., subprocess.CompletedProcess]
 Progress = Callable[[float], None]
 PROGRESS_RE = re.compile(r"Done:\s*([\d.]+)\s*%")
@@ -38,6 +40,8 @@ class VeraCryptUnlocker:
     timeout: float = 120.0
     # With sudo, this helper is called instead of veracrypt when it exists.
     sudo_helper: str = ""
+    # scrypt parameters (see kdf.py); None = the secret is the password (legacy).
+    kdf: dict | None = None
 
     @classmethod
     def from_config(cls, unlock_cfg: dict, runner: Runner = subprocess.run) -> "VeraCryptUnlocker":
@@ -50,6 +54,7 @@ class VeraCryptUnlocker:
             keyfiles=list(unlock_cfg.get("keyfiles", [])),
             runner=runner,
             sudo_helper=unlock_cfg.get("sudo_helper", DEFAULT_HELPER),
+            kdf=unlock_cfg.get("kdf") or None,
         )
 
     @property
@@ -120,7 +125,12 @@ class VeraCryptUnlocker:
         popen: Callable[..., subprocess.Popen] = subprocess.Popen,
         filesystem: str = "ext4",
     ) -> UnlockResult:
-        """Create a new container file protected by ``secret``. Reports progress 0-100."""
+        """Create a new container file protected by ``secret`` (derived with this
+        unlocker's ``kdf``). Reports progress 0-100."""
+        try:
+            secret = self._derive(secret, self.kdf)
+        except kdf_mod.KDFError as exc:
+            return UnlockResult(False, str(exc))
         cmd = self.create_command(path, size_gb, quick, filesystem)
         try:
             proc = popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -175,13 +185,24 @@ class VeraCryptUnlocker:
             return UnlockResult(True, ok_message)
         return UnlockResult(False, explain_error(output))
 
-    def change_password(self, current_secret: str, new_secret: str) -> UnlockResult:
-        """Re-key the volume header so ``new_secret`` unlocks it from now on."""
+    def _derive(self, secret: str, params: dict | None) -> str:
+        return kdf_mod.derive_password(secret, params)
+
+    def change_password(self, current_secret: str, new_secret: str, new_kdf: dict | None = None) -> UnlockResult:
+        """Re-key the volume header so ``new_secret`` (derived with ``new_kdf``) unlocks it.
+
+        ``current_secret`` is derived with this unlocker's ``kdf``.
+        """
         if not self.configured:
             return UnlockResult(False, "No VeraCrypt volume configured")
-        if current_secret == new_secret:
+        try:
+            current = self._derive(current_secret, self.kdf)
+            new = self._derive(new_secret, new_kdf)
+        except kdf_mod.KDFError as exc:
+            return UnlockResult(False, str(exc))
+        if current == new:
             return UnlockResult(True, "Unchanged")
-        return self._run(self.change_password_command(new_secret), current_secret, "Unlock method changed")
+        return self._run(self.change_password_command(new), current, "Unlock method changed")
 
     def unlock(self, secret: str) -> UnlockResult:
         if not self.configured:
@@ -193,7 +214,11 @@ class VeraCryptUnlocker:
                 os.makedirs(os.path.expanduser(self.mount_point), exist_ok=True)
             except OSError:
                 pass  # e.g. below /mnt without permission - VeraCrypt may still manage
-        return self._run(self.mount_command(), secret, "Unlocked")
+        try:
+            password = self._derive(secret, self.kdf)
+        except kdf_mod.KDFError as exc:
+            return UnlockResult(False, str(exc))
+        return self._run(self.mount_command(), password, "Unlocked")
 
 
 def explain_error(output: str) -> str:

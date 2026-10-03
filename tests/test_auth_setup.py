@@ -7,13 +7,16 @@ from gamingcrypt.unlock.veracrypt import UnlockResult
 
 
 class FakeUnlocker:
+    kdf_log = []
+
     def __init__(self, cfg, log, current="oldpass"):
         self.cfg = cfg
         self.log = log
         self.current = current
 
-    def change_password(self, current, new):
+    def change_password(self, current, new, new_kdf=None):
         self.log.append((self.cfg["volume"], current, new))
+        self.kdf_log.append((self.cfg.get("kdf"), new_kdf))
         if current != self.current:
             return UnlockResult(False, "Wrong code - please try again")
         return UnlockResult(True, "Unlock method changed")
@@ -140,3 +143,47 @@ def test_setup_with_dot_grid(qtbot):
                 pad.ok_button.click()
     assert log == [("/v.vc", "oldpass", "25-1-1-13")]
     assert saved[-1]["unlock"]["method"] == "grid5"
+
+
+def test_first_start_uses_plain_current_password_and_saves_new_kdf(qtbot):
+    FakeUnlocker.kdf_log.clear()
+    wizard, cfg, saved, log = make(qtbot)
+    wizard.new_kdf_params = lambda: {"algorithm": "scrypt", "salt": "aa" * 16, "n": 2, "r": 1, "p": 1}
+    wizard.submit_volume("/v.vc", "")
+    wizard.submit_current("oldpass")
+    wizard.choose_method("pin")
+    wizard.submit_new("1234")
+    with qtbot.waitSignal(wizard.completed, timeout=3000):
+        wizard.submit_confirm("1234")
+    current_kdf, new_kdf = FakeUnlocker.kdf_log[-1]
+    assert current_kdf is None
+    assert new_kdf["salt"] == "aa" * 16
+    assert saved[-1]["unlock"]["kdf"] == new_kdf
+
+
+def test_reset_derives_current_with_stored_kdf_and_rotates_salt(qtbot):
+    FakeUnlocker.kdf_log.clear()
+    wizard, cfg, saved, log = make(qtbot, first_start=False, method="pin", current="1234")
+    old = {"algorithm": "scrypt", "salt": "bb" * 16, "n": 2, "r": 1, "p": 1}
+    cfg["unlock"]["kdf"] = old
+    wizard.submit_current("1234")
+    wizard.choose_method("pin")
+    wizard.submit_new("9876")
+    with qtbot.waitSignal(wizard.completed, timeout=3000):
+        wizard.submit_confirm("9876")
+    current_kdf, new_kdf = FakeUnlocker.kdf_log[-1]
+    assert current_kdf == old
+    assert new_kdf["salt"] != old["salt"]
+    assert saved[-1]["unlock"]["kdf"] == new_kdf
+
+
+def test_failed_change_keeps_old_kdf(qtbot):
+    wizard, cfg, saved, log = make(qtbot, first_start=False, method="pin", current="1234")
+    old = {"algorithm": "scrypt", "salt": "cc" * 16, "n": 2, "r": 1, "p": 1}
+    cfg["unlock"]["kdf"] = old
+    wizard.submit_current("0000")
+    wizard.choose_method("pin")
+    wizard.submit_new("9876")
+    wizard.submit_confirm("9876")
+    qtbot.waitUntil(lambda: not wizard.busy)
+    assert cfg["unlock"]["kdf"] == old and saved == []
