@@ -145,7 +145,11 @@ class GamesTab(QStackedWidget):
         self.push(SteamLibraryPage(self))
 
     def open_game(self, appid: int) -> None:
-        pass
+        from gamingcrypt.ui.game_detail import GameDetailPage
+
+        game = self.games.get(appid)
+        if game is not None:
+            self.push(GameDetailPage(self, game))
 
     def open_store(self) -> None:
         pass
