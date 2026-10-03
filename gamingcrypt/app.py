@@ -90,7 +90,9 @@ class MainWindow(QMainWindow):
 
     def show_shell(self) -> None:
         pages = self.page_factory(self.config) if self.page_factory else {}
-        pages.setdefault("Settings", SettingsTab(self.config, self.save, self.unlocker_factory, self.system))
+        games = pages.get("Games")
+        pages.setdefault("Settings", SettingsTab(self.config, self.save, self.unlocker_factory, self.system,
+                                                 steam_service=getattr(games, "service", None)))
         self.shell = Shell(pages)
         self.shell.exit_requested.connect(self.close)
         self._replace(self.shell)

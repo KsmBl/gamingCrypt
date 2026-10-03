@@ -109,10 +109,14 @@ def installed_games(root: Path) -> list[SteamGame]:
     return list(games.values())
 
 
-def local_playtime(root: Path) -> dict[int, dict[str, int]]:
-    """Playtime (minutes) and last-played timestamps per appid from localconfig.vdf."""
+def local_playtime(root: Path, account_id: int | None = None) -> dict[int, dict[str, int]]:
+    """Playtime (minutes) and last-played timestamps per appid from localconfig.vdf.
+
+    ``account_id`` limits it to one Steam account (``userdata/<account_id>``).
+    """
     result: dict[int, dict[str, int]] = {}
-    for cfg in sorted((root / "userdata").glob("*/config/localconfig.vdf")):
+    pattern = f"{account_id}/config/localconfig.vdf" if account_id is not None else "*/config/localconfig.vdf"
+    for cfg in sorted((root / "userdata").glob(pattern)):
         try:
             data = vdf.load(cfg)
         except (OSError, vdf.VDFError):

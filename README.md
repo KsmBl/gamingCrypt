@@ -103,6 +103,22 @@ key** and enter a [Steam Web API key](https://steamcommunity.com/dev/apikey) (an
 works). Your SteamID is detected from the account logged in to Steam. Without a key, only
 installed games are shown, and the Steam page says so.
 
+### Several Steam accounts
+
+If more than one Steam account has logged in on the device, *Settings → Steam* lists them all
+with a **Switch** button:
+1. GamingCrypt closes Steam.
+2. It sets that account as Steam's auto-login account (`registry.vdf` and `loginusers.vdf`).
+3. It starts Steam minimised again.
+
+Notes:
+- Switching skips the password prompt only if *Remember password* was ticked when that
+  account logged in. Otherwise Steam asks once.
+- The Steam page shows which account you're looking at. Owned games, the offline cache and
+  playtime always belong to the active account.
+- The API key works for any account whose game list is public. A private account only works
+  with its own key.
+
 If the library looks wrong, run `gamingcrypt --diagnose`. It prints:
 - which Steam folder was found and every library folder in it, with its number of games
 - whether the encrypted drive is mounted

@@ -124,7 +124,7 @@ def test_settings_api_key(qtbot, steam_root):
     saved = []
     tab = SettingsTab(cfg, saved.append)
     qtbot.addWidget(tab)
-    assert "Handheld Gamer" in tab.account_label.text()
+    assert "2" in tab.account_label.text()
     assert "not set" in tab.api_key_label.text()
     tab.api_key_button.click()
     page = tab.currentWidget()

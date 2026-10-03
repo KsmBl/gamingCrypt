@@ -9,12 +9,13 @@ import re
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
 
-from gamingcrypt.steam import library
+from gamingcrypt.steam import accounts, library
 
 from gamingcrypt.ui.auth_setup import AuthSetupWizard, UnlockerFactory
 from gamingcrypt.ui.secret_input import METHOD_LABELS
 from gamingcrypt.system.controls import SystemControls
 from gamingcrypt.ui.system_settings import AudioSection, DisplaySection, PowerSection
+from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button, enable_touch_scroll, set_status
 
 API_KEY_RE = re.compile(r"^[0-9A-Fa-f]{32}$")
@@ -74,6 +75,7 @@ class SettingsTab(QStackedWidget):
         save: Callable[[dict], None],
         unlocker_factory: UnlockerFactory = VeraCryptUnlocker.from_config,
         system: SystemControls | None = None,
+        steam_service=None,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
@@ -81,6 +83,8 @@ class SettingsTab(QStackedWidget):
         self.save = save
         self.unlocker_factory = unlocker_factory
         self.system = system if system is not None else SystemControls()
+        self._steam_service = steam_service
+        self.switching = False
         self.wizard: AuthSetupWizard | None = None
 
         self.overview = QScrollArea()
@@ -124,6 +128,9 @@ class SettingsTab(QStackedWidget):
         self.account_label = QLabel()
         self.account_label.setObjectName("detailMeta")
         layout.addWidget(self.account_label)
+        self.accounts_box = QVBoxLayout()
+        layout.addLayout(self.accounts_box)
+        self.account_buttons: dict[str, object] = {}
         self.api_key_label = QLabel()
         self.api_key_label.setObjectName("detailMeta")
         layout.addWidget(self.api_key_label)
@@ -150,13 +157,16 @@ class SettingsTab(QStackedWidget):
         self.kdf_label.setText(text)
         steam = self.config["steam"]
         root = library.find_steam_root(steam.get("root", ""))
-        user = library.logged_in_user(root) if root is not None else None
+        found = accounts.list_accounts(root)
         if root is None:
             self.account_label.setText("Steam: not found on this device")
-        elif user:
-            self.account_label.setText(f"Steam account: {user['name']}")
-        else:
+        elif not found:
             self.account_label.setText("Steam account: not detected - log in to Steam once")
+        elif len(found) == 1:
+            self.account_label.setText(f"Steam account: {found[0].persona}")
+        else:
+            self.account_label.setText(f"Steam accounts on this device: {len(found)}")
+        self._fill_accounts(found if len(found) > 1 else [])
         has_key = bool(steam.get("api_key"))
         self.api_key_label.setText("Web API key: set - your whole library is shown" if has_key
                                    else "Web API key: not set - only installed games are shown")
@@ -170,6 +180,58 @@ class SettingsTab(QStackedWidget):
         self.wizard.cancelled.connect(lambda: self._close_wizard(""))
         self.addWidget(self.wizard)
         self.setCurrentWidget(self.wizard)
+
+    @property
+    def steam(self):
+        if self._steam_service is None:
+            from gamingcrypt.config import cache_dir
+            from gamingcrypt.steam.service import SteamService
+
+            self._steam_service = SteamService(self.config["steam"], cache_dir())
+        return self._steam_service
+
+    def _fill_accounts(self, found: list) -> None:
+        while self.accounts_box.count():
+            item = self.accounts_box.takeAt(0)
+            if item.layout():
+                while item.layout().count():
+                    child = item.layout().takeAt(0)
+                    if child.widget():
+                        child.widget().deleteLater()
+            elif item.widget():
+                item.widget().deleteLater()
+        self.account_buttons = {}
+        for account in found:
+            row = QHBoxLayout()
+            text = account.persona + ("  ·  active" if account.most_recent else "")
+            if not account.remembers_password:
+                text += "  (password needed)"
+            label = QLabel(text)
+            label.setObjectName("cardTitle" if account.most_recent else "detailMeta")
+            row.addWidget(label, 1)
+            if not account.most_recent:
+                button = big_button("Switch")
+                button.setEnabled(not self.switching)
+                button.clicked.connect(lambda _=False, a=account: self.switch_account(a))
+                self.account_buttons[account.steam_id] = button
+                row.addWidget(button)
+            self.accounts_box.addLayout(row)
+
+    def switch_account(self, account) -> None:
+        if self.switching:
+            return
+        self.switching = True
+        for button in self.account_buttons.values():
+            button.setEnabled(False)
+        set_status(self.status, f"Switching to {account.persona} - Steam restarts…")
+        run_async(lambda: self.steam.switch_account(account), self._switched,
+                  lambda exc: self._switched((False, str(exc))), owner=self)
+
+    def _switched(self, result) -> None:
+        self.switching = False
+        ok, message = result
+        self.refresh()
+        set_status(self.status, message, error=not ok)
 
     def edit_api_key(self) -> None:
         self.key_page = ApiKeyPage(self)

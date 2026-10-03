@@ -89,7 +89,9 @@ class SteamLibraryPage(QWidget):
             card.clicked.connect(self.tab.open_game)
             self.cards[game.appid] = card
         installed = sum(1 for g in games if g.installed)
-        self.count_label.setText(f"{len(games)} games · {installed} installed")
+        account = self.service.account() if hasattr(self.service, "account") else None
+        prefix = f"{account['name']} · " if account else ""
+        self.count_label.setText(f"{prefix}{len(games)} games · {installed} installed")
         self.apply_sort()
         self.status.setText(self.empty_hint(games))
         self._pending = [g.appid for g in games if self.service.needs_metadata(g)]

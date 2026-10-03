@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from gamingcrypt.steam import installer, library, library_setup
+from gamingcrypt.steam import accounts, installer, library, library_setup
 from gamingcrypt.steam.client import SteamClient
 from gamingcrypt.steam.models import SteamGame
 from gamingcrypt.steam.webapi import SteamAPIError, SteamWebAPI, StoreItem
@@ -59,6 +59,17 @@ class SteamService:
         root = self.root
         return library.logged_in_user(root) if root is not None else None
 
+    def accounts(self) -> list[accounts.Account]:
+        return accounts.list_accounts(self.root)
+
+    def switch_account(self, account: accounts.Account) -> tuple[bool, str]:
+        ok, message = accounts.switch_account(self.root, account, self.client, self.home)
+        if ok:
+            # Follow Steam's active account from now on.
+            self.cfg["steam_id"] = ""
+            self.api.steam_id = account.steam_id
+        return ok, message
+
     @property
     def full_library_available(self) -> bool:
         self._sync_account()
@@ -81,6 +92,10 @@ class SteamService:
         tmp.replace(self.cache_dir / name)
 
     # library ----------------------------------------------------------------
+    def _owned_cache(self) -> str:
+        # One cache per account - otherwise a switch would show the other account's games offline.
+        return f"owned_games_{self.api.steam_id}.json"
+
     def owned_games(self) -> list[dict]:
         """Owned games from the Web API, falling back to the last cached answer when offline."""
         self._sync_account()
@@ -89,8 +104,8 @@ class SteamService:
         try:
             owned = self.api.owned_games()
         except SteamAPIError:
-            return self._read_json("owned_games.json", [])
-        self._write_json("owned_games.json", owned)
+            return self._read_json(self._owned_cache(), [])
+        self._write_json(self._owned_cache(), owned)
         return owned
 
     def load_library(self, include_owned: bool = True) -> list[SteamGame]:
@@ -101,7 +116,11 @@ class SteamService:
         if root is not None:
             for game in library.installed_games(root):
                 games[game.appid] = game
-            playtime = library.local_playtime(root)
+            self._sync_account()
+            sid = str(self.api.steam_id or "")
+            # Only the active account's playtime; unknown/invalid id -> all accounts.
+            account_id = int(sid) - accounts.STEAMID64_BASE if sid.isdigit() and int(sid) > accounts.STEAMID64_BASE else None
+            playtime = library.local_playtime(root, account_id)
         if include_owned:
             for entry in self.owned_games():
                 if not library.is_game(entry["appid"], entry["name"]):
