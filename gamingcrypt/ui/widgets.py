@@ -95,6 +95,12 @@ class FlowLayout(QLayout):
         m = self.contentsMargins()
         return size + QSize(m.left() + m.right(), m.top() + m.bottom())
 
+    def take_all(self) -> list[QWidget]:
+        """Remove all widgets from the layout without deleting them (for re-ordering)."""
+        widgets = [item.widget() for item in self._items if item.widget()]
+        self._items = []
+        return widgets
+
     def clear(self) -> None:
         while self._items:
             item = self._items.pop()

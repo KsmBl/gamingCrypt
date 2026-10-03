@@ -131,7 +131,7 @@ class GamesTab(QStackedWidget):
 
     # data -------------------------------------------------------------------
     def reload_installed(self) -> None:
-        run_async(self.service.installed_games, self._installed_loaded)
+        run_async(self.service.installed_games, self._installed_loaded, owner=self)
 
     def _installed_loaded(self, games: list[SteamGame]) -> None:
         for game in games:
@@ -140,7 +140,12 @@ class GamesTab(QStackedWidget):
 
     # entry points (filled by the library / detail / store pages) -------------
     def open_steam(self) -> None:
-        pass
+        from gamingcrypt.ui.steam_page import SteamLibraryPage
+
+        self.push(SteamLibraryPage(self))
 
     def open_game(self, appid: int) -> None:
+        pass
+
+    def open_store(self) -> None:
         pass

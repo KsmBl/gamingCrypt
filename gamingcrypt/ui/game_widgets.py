@@ -82,7 +82,7 @@ def load_cover(service, appid: int, label: QLabel, w: int = COVER_W, h: int = CO
     if local is not None:
         apply(local)
     else:
-        run_async(lambda: service.download_image(appid), apply)
+        run_async(lambda: service.download_image(appid), apply, owner=label)
 
 
 class Tappable(QFrame):

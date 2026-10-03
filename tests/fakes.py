@@ -74,6 +74,8 @@ def sample_games():
 class FakeService:
     """In-memory replacement for SteamService used by the UI tests."""
 
+    full_library_available = True
+
     def __init__(self, games=None, store_items=None, metadata=None):
         self.games = games if games is not None else sample_games()
         self.store_items = store_items or []
@@ -106,6 +108,7 @@ class FakeService:
         if meta and game.appid in self.fetched:
             game.price_cents = meta.get("price_cents")
             game.release_date = meta.get("release_date")
+            game.currency = meta.get("currency", "")
         return game
 
     def search_store(self, term):

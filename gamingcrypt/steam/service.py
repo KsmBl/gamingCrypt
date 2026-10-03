@@ -43,6 +43,10 @@ class SteamService:
         return self._client
 
     @property
+    def full_library_available(self) -> bool:
+        return self.api.can_list_owned
+
+    @property
     def root(self) -> Path | None:
         return library.find_steam_root(self.cfg.get("root", ""), self.home)
 
