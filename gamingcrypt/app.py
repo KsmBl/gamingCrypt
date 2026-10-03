@@ -107,7 +107,9 @@ def default_pages(config: dict) -> dict[str, QWidget]:
     mount_point = os.path.expanduser(config["unlock"].get("mount_point", "") or "")
     service.install_library = mount_point
     library_path = mount_point if config["steam"].get("auto_library", True) else ""
-    return {"Games": GamesTab(service, library_path=library_path)}
+    from gamingcrypt.ui.downloads_tab import DownloadsTab
+
+    return {"Games": GamesTab(service, library_path=library_path), "Downloads": DownloadsTab(service)}
 
 
 SECRET_FORMAT_HINT = {

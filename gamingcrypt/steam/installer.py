@@ -16,9 +16,19 @@ from typing import Callable
 
 from gamingcrypt.steam import library, library_setup, vdf
 
+# Steam's EAppState bits (appmanifest "StateFlags")
 STATE_UPDATE_REQUIRED = 2
 STATE_FULLY_INSTALLED = 4
+STATE_UPDATE_RUNNING = 256
+STATE_UPDATE_PAUSED = 512
 STATE_UPDATE_STARTED = 1024
+STATE_VALIDATING = 1 << 17
+STATE_PREALLOCATING = 1 << 19
+STATE_DOWNLOADING = 1 << 20
+STATE_STAGING = 1 << 21
+STATE_COMMITTING = 1 << 22
+ACTIVE = (STATE_UPDATE_RUNNING | STATE_VALIDATING | STATE_PREALLOCATING | STATE_DOWNLOADING
+          | STATE_STAGING | STATE_COMMITTING)
 QUEUED_FLAGS = STATE_UPDATE_REQUIRED | STATE_UPDATE_STARTED  # 1026
 
 
@@ -26,6 +36,78 @@ QUEUED_FLAGS = STATE_UPDATE_REQUIRED | STATE_UPDATE_STARTED  # 1026
 class InstallResult:
     ok: bool
     message: str = ""
+
+
+def classify(flags: int, downloaded: int = 0, total: int = 0) -> str:
+    """"installed", "downloading", "paused", "queued" or "other"."""
+    if flags & STATE_UPDATE_PAUSED:
+        return "paused"
+    if flags & ACTIVE or (flags & STATE_UPDATE_REQUIRED and 0 < downloaded < total):
+        return "downloading"
+    if flags & STATE_UPDATE_REQUIRED or (flags & STATE_UPDATE_STARTED and total > 0):
+        return "queued" if total == 0 or downloaded == 0 else "downloading"
+    if flags & STATE_FULLY_INSTALLED:
+        return "installed"
+    return "other"
+
+
+@dataclass
+class Download:
+    appid: int
+    name: str
+    state: str  # "downloading", "paused" or "queued"
+    downloaded: int
+    total: int
+    is_update: bool
+
+    @property
+    def percent(self) -> float:
+        return 100.0 * self.downloaded / self.total if self.total else 0.0
+
+
+def _manifest_numbers(path: Path) -> tuple[dict, int, int, int] | None:
+    try:
+        state = vdf.iget(vdf.load(path), "AppState") or {}
+    except (OSError, vdf.VDFError):
+        return None
+
+    def num(key: str) -> int:
+        try:
+            return int(vdf.iget(state, key, default=0) or 0)
+        except ValueError:
+            return 0
+
+    return state, num("StateFlags"), num("BytesDownloaded"), num("BytesToDownload")
+
+
+def downloads(root: Path | None) -> list[Download]:
+    """Everything Steam has queued, is downloading or paused, in all library folders."""
+    if root is None:
+        return []
+    found: dict[int, Download] = {}
+    for folder in library.library_folders(root):
+        for path in sorted((folder / "steamapps").glob("appmanifest_*.acf")):
+            parsed = _manifest_numbers(path)
+            if parsed is None:
+                continue
+            state, flags, done, total = parsed
+            try:
+                appid = int(vdf.iget(state, "appid", default=0) or 0)
+            except ValueError:
+                continue
+            name = vdf.iget(state, "name", default="") or f"App {appid}"
+            if not appid or not library.is_game(appid, name):
+                continue
+            kind = classify(flags, done, total)
+            if kind in ("downloading", "paused", "queued"):
+                try:
+                    size = int(vdf.iget(state, "SizeOnDisk", default=0) or 0)
+                except ValueError:
+                    size = 0
+                is_update = bool(flags & STATE_FULLY_INSTALLED) or size > 0
+                found.setdefault(appid, Download(appid, name, kind, done, total, is_update))
+    order = {"downloading": 0, "paused": 1, "queued": 2}
+    return sorted(found.values(), key=lambda d: (order[d.state], d.name.casefold()))
 
 
 @dataclass
@@ -91,19 +173,10 @@ def progress(root: Path | None, appid: int) -> InstallProgress:
     path = find_manifest(root, appid) if root is not None else None
     if path is None:
         return InstallProgress("missing")
-    try:
-        state = vdf.iget(vdf.load(path), "AppState") or {}
-    except (OSError, vdf.VDFError):
+    parsed = _manifest_numbers(path)
+    if parsed is None:
         return InstallProgress("queued")
-
-    def num(key: str) -> int:
-        try:
-            return int(vdf.iget(state, key, default=0) or 0)
-        except ValueError:
-            return 0
-
-    flags = num("StateFlags")
-    done, total = num("BytesDownloaded"), num("BytesToDownload")
+    _state, flags, done, total = parsed
     if flags == STATE_FULLY_INSTALLED:
         return InstallProgress("installed", done or total, total)
     if total > 0:

@@ -72,6 +72,8 @@ QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 5px; }}
 QSlider::handle:horizontal {{
     background: {TEXT}; width: 36px; height: 36px; margin: -13px 0; border-radius: 18px;
 }}
+QProgressBar {{ background: {SURFACE_HI}; border: none; border-radius: 6px; max-height: 12px; }}
+QProgressBar::chunk {{ background: {ACCENT}; border-radius: 6px; }}
 QLabel#section {{ font-size: 28px; font-weight: 700; }}
 QFrame#card {{ background: {SURFACE}; border-radius: 18px; }}
 QFrame#card:hover {{ background: {SURFACE_HI}; }}

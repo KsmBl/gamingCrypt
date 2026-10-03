@@ -268,6 +268,9 @@ class SteamService:
     def install_progress(self, appid: int) -> installer.InstallProgress:
         return installer.progress(self.root, appid)
 
+    def downloads(self) -> list[installer.Download]:
+        return installer.downloads(self.root)
+
     # library folder on the encrypted drive -----------------------------------
     def ensure_library(self, path: str) -> library_setup.LibraryResult:
         return library_setup.ensure_library(self.root, path, self.client)

@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QStackedWidget, QVBoxLayout, 
 
 from gamingcrypt.ui.widgets import ComingSoon, big_button
 
-TABS = ["Games", "Movies", "Series", "Music", "Pictures", "Settings"]
+TABS = ["Games", "Downloads", "Movies", "Series", "Music", "Pictures", "Settings"]
 
 
 class Shell(QWidget):
@@ -46,7 +46,14 @@ class Shell(QWidget):
 
         layout.addWidget(bar)
         layout.addWidget(self.stack, 1)
+        downloads = self.pages.get("Downloads")
+        if hasattr(downloads, "count_changed"):
+            downloads.count_changed.connect(lambda n: self.set_badge("Downloads", n))
         self.show_tab(TABS[0])
+
+    def set_badge(self, name: str, count: int) -> None:
+        """e.g. "Downloads (2)" - plain name when there's nothing."""
+        self.tab_buttons[name].setText(f"{name} ({count})" if count else name)
 
     def show_tab(self, name: str) -> None:
         self.current_tab = name
