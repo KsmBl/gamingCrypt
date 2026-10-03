@@ -236,7 +236,9 @@ so when something isn't available:
 
 Notes:
 - **Sliders:** left and right change their value.
-- **On-screen keyboard:** browse its keys with the D-pad and type with A.
+- **On-screen keyboard:** browse its keys with the D-pad and type with A. The pop-up keyboard
+  of search fields closes with B, with a tap anywhere else, or when the highlight moves
+  away from it.
 - **Lock screen:** the PIN pad and the 5×5 pattern work with D-pad and A. For the swipe
   pattern, A adds the dot under the cursor, Start confirms and B clears.
 - **Your mapping applies to the UI too:** GamingCrypt reads the controller through it, or

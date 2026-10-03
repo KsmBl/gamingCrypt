@@ -151,8 +151,10 @@ class OnScreenKeyboard(QWidget):
     def __init__(self, target: QLineEdit | None = None, parent: QWidget | None = None, compact: bool = False):
         super().__init__(parent)
         self._target = target
-        # Pop-up keyboards (search fields) close on "back"; permanent ones stay.
-        self.hide_on_back = False
+        # Pop-up keyboards (search fields) close on B, on a tap elsewhere and when the
+        # controller highlight leaves them; permanent ones (lock screen, forms) stay.
+        self.dismissable = False
+        self._dismisser: _TapOutsideDismisser | None = None
         if compact:
             self.setStyleSheet("QPushButton#key { min-height: 42px; padding: 2px; }")
         self._shift = False
@@ -164,6 +166,31 @@ class OnScreenKeyboard(QWidget):
 
     def set_target(self, target: QLineEdit) -> None:
         self._target = target
+
+    def showEvent(self, event):  # noqa: N802
+        super().showEvent(event)
+        if self.dismissable and self._dismisser is None:
+            from PySide6.QtWidgets import QApplication
+
+            self._dismisser = _TapOutsideDismisser(self)
+            QApplication.instance().installEventFilter(self._dismisser)
+
+    def hideEvent(self, event):  # noqa: N802
+        super().hideEvent(event)
+        if self._dismisser is not None:
+            from PySide6.QtWidgets import QApplication
+
+            QApplication.instance().removeEventFilter(self._dismisser)
+            self._dismisser.deleteLater()
+            self._dismisser = None
+
+    def owns(self, widget: QWidget | None) -> bool:
+        """Is ``widget`` part of this keyboard or the field it types into?"""
+        while widget is not None:
+            if widget is self or widget is self._target:
+                return True
+            widget = widget.parentWidget()
+        return False
 
     def target(self) -> QLineEdit | None:
         return self._target
@@ -239,6 +266,23 @@ class OnScreenKeyboard(QWidget):
 
     def key_labels(self) -> list[str]:
         return [b.text() for b in self._letter_buttons]
+
+
+class _TapOutsideDismisser(QObject):
+    """App-wide: a tap outside the keyboard and its text field closes the keyboard.
+
+    The tap itself is not swallowed - the button that was tapped still works.
+    """
+
+    def __init__(self, keyboard: "OnScreenKeyboard"):
+        super().__init__(keyboard)
+        self.keyboard = keyboard
+
+    def eventFilter(self, obj, event):  # noqa: N802
+        if event.type() == QEvent.Type.MouseButtonPress and isinstance(obj, QWidget) and obj.isWindow() is False:
+            if self.keyboard.isVisible() and not self.keyboard.owns(obj):
+                self.keyboard.hide()
+        return False
 
 
 class KeyboardFocusFilter(QObject):

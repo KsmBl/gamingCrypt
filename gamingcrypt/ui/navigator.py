@@ -135,6 +135,11 @@ class GamepadNavigator(QObject):
         return QPointF(w.mapToGlobal(QPoint(w.width() // 2, w.height() // 2)))
 
     def focus(self, w: QWidget) -> None:
+        from gamingcrypt.ui.widgets import OnScreenKeyboard
+
+        for keyboard in self.root().findChildren(OnScreenKeyboard):
+            if keyboard.dismissable and keyboard.isVisible() and not keyboard.owns(w):
+                keyboard.hide()  # highlight went somewhere else
         w.setFocus(Qt.FocusReason.TabFocusReason)
         parent = w.parentWidget()
         while parent is not None:
@@ -279,12 +284,20 @@ class GamepadNavigator(QObject):
             return
         from gamingcrypt.ui.widgets import OnScreenKeyboard
 
+        for keyboard in self.root().findChildren(OnScreenKeyboard):
+            if keyboard.dismissable and keyboard.isVisible():
+                keyboard.hide()  # B closes a pop-up keyboard, wherever the highlight is
+                target = keyboard.target()
+                if target is not None and target.isVisible():
+                    self.focus(target)
+                return
+
         w = self.focused()
         node = w
         while node is not None:
             if isinstance(node, OnScreenKeyboard) and node.target() is not None and node.target().isVisible():
                 # leave the keyboard: back to the text field it types into
-                if node.hide_on_back:
+                if node.dismissable:
                     node.hide()
                 self.focus(node.target())
                 return
