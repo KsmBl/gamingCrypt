@@ -25,6 +25,7 @@ your Steam library.
 - **Key derivation**: every secret is hardened with scrypt and a per-volume salt before it reaches VeraCrypt
 - **Settings → Reset authentication method**: switch between PIN, password, swipe pattern and 5×5 pattern at any time
 - **Tabs**: Games, Movies, Series, Music, Pictures, Settings (the media tabs show *coming soon*)
+- **Device settings**: resolution, refresh rate, brightness, max power consumption (TDP), audio output and input device and their volume
 - **Games**
   - Search your installed games
   - **Steam** card with your whole library (installed, plus every owned game when a Web API key is set)
@@ -137,6 +138,26 @@ They load in the background, stay within Steam's rate limits, and are cached in
 `~/.cache/gamingcrypt`. Play, download, uninstall and store actions go through
 the Steam client (`steam://` URIs).
 
+## Device settings
+
+*Settings* controls the handheld itself. Each part picks the tool it finds and says
+so when something isn't available:
+
+| Setting | Uses |
+|---|---|
+| Resolution, refresh rate | `kscreen-doctor` (KDE), `wlr-randr` (Sway, Hyprland, other wlroots), `xrandr` (X11) |
+| Brightness | `brightnessctl` (never below 5 %) |
+| Max power (TDP) | AMD `power1_cap` (+ `ryzenadj` if installed) or Intel RAPL, set through the root helper |
+| Audio output / input + volume | `pactl` (PipeWire or PulseAudio); switching also moves sound that's already playing |
+
+- **New display mode:** has to be confirmed within 15 s, otherwise it reverts, like on a
+  desktop. A mode that turns the screen black can't lock you out.
+- **Power limit:** only values inside the range the hardware reports are accepted, and
+  the root helper checks that again.
+- **After a reboot:** the resolution and power limit you chose are re-applied when
+  GamingCrypt starts.
+- **Not supported:** gamescope (Steam's game mode) and GNOME can't be controlled this way yet.
+
 ## Configuration
 
 `~/.config/gamingcrypt/config.json` (created by the setup wizard):
@@ -155,6 +176,7 @@ the Steam client (`steam://` URIs).
 | `steam.steam_id` | optional, overrides the detected SteamID64 |
 | `steam.command` | command used for `steam://` URIs (empty = auto-detect) |
 | `steam.auto_library` | add the unlocked container as Steam library (default `true`) |
+| `system.display`, `system.power_limit_w` | display mode and power limit restored at start (set from Settings) |
 | `steam.silent_install` | download owned games without Steam's dialog (default `true`) |
 
 ## Security notes
@@ -164,6 +186,7 @@ the Steam client (`steam://` URIs).
   - accepts only mount, list, change-password and create, each with a fixed set of arguments
   - always mounts with `nosuid,nodev`
   - only allows mount points below `/mnt`, `/media`, `/run/media` or your home directory
+  - sets the **power limit** only within the range the hardware reports
   - only **creates** new container *files* (never devices): the file must not exist yet, and the folder must belong to you and be below those same locations. Afterwards the container file and its fresh ext4 filesystem are handed over to your user so Steam can install into it
 - After updating GamingCrypt, re-run `./install.sh` so the helper is updated too.
 

@@ -66,6 +66,13 @@ QComboBox QAbstractItemView {{
     font-size: 24px;
 }}
 QComboBox QAbstractItemView::item {{ min-height: 56px; }}
+QSlider {{ min-height: 48px; background: transparent; }}
+QSlider::groove:horizontal {{ height: 10px; background: {SURFACE_HI}; border-radius: 5px; }}
+QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 5px; }}
+QSlider::handle:horizontal {{
+    background: {TEXT}; width: 36px; height: 36px; margin: -13px 0; border-radius: 18px;
+}}
+QLabel#section {{ font-size: 28px; font-weight: 700; }}
 QFrame#card {{ background: {SURFACE}; border-radius: 18px; }}
 QFrame#card:hover {{ background: {SURFACE_HI}; }}
 QFrame#topBar {{ background: {SURFACE}; }}

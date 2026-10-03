@@ -29,6 +29,11 @@ DEFAULTS: dict[str, Any] = {
         # BACK THIS UP: without the salt the volume can't be unlocked.
         "kdf": None,
     },
+    "system": {
+        # Re-applied at start because they reset on reboot. None = leave as is.
+        "display": None,  # {"output", "width", "height", "refresh"}
+        "power_limit_w": None,
+    },
     "steam": {
         # Steam installation root. Empty = auto-detect.
         "root": "",

@@ -7,13 +7,15 @@ from typing import Callable
 import re
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
 
 from gamingcrypt.steam import library
 
 from gamingcrypt.ui.auth_setup import AuthSetupWizard, UnlockerFactory
 from gamingcrypt.ui.secret_input import METHOD_LABELS
-from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button, set_status
+from gamingcrypt.system.controls import SystemControls
+from gamingcrypt.ui.system_settings import AudioSection, DisplaySection, PowerSection
+from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button, enable_touch_scroll, set_status
 
 API_KEY_RE = re.compile(r"^[0-9A-Fa-f]{32}$")
 
@@ -71,17 +73,30 @@ class SettingsTab(QStackedWidget):
         config: dict,
         save: Callable[[dict], None],
         unlocker_factory: UnlockerFactory = VeraCryptUnlocker.from_config,
+        system: SystemControls | None = None,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self.config = config
         self.save = save
         self.unlocker_factory = unlocker_factory
+        self.system = system if system is not None else SystemControls()
         self.wizard: AuthSetupWizard | None = None
 
-        self.overview = QWidget()
-        layout = QVBoxLayout(self.overview)
+        self.overview = QScrollArea()
+        self.overview.setWidgetResizable(True)
+        self.overview.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        enable_touch_scroll(self.overview)
+        content = QWidget()
+        self.overview.setWidget(content)
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(40, 30, 40, 30)
+        layout.setSpacing(14)
+        self.display_section = DisplaySection(self.system, config, save)
+        self.power_section = PowerSection(self.system, config, save)
+        self.audio_section = AudioSection(self.system)
+        for section in (self.display_section, self.power_section, self.audio_section):
+            layout.addWidget(section)
         heading = QLabel("Security")
         heading.setObjectName("title")
         layout.addWidget(heading)

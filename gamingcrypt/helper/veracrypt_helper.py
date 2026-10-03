@@ -18,6 +18,9 @@ import sys
 import tempfile
 
 VERACRYPT = "/usr/bin/veracrypt"  # replaced by install.sh
+RYZENADJ = "/usr/bin/ryzenadj"
+SYS = "/sys"
+MIN_POWER_W = 3
 FS_OPTIONS = "--fs-options=nosuid,nodev"
 EXACT = {"--text", "--non-interactive", "--stdin", "--protect-hidden=no", "--mount", "--list", "-C",
          "--random-source=/dev/urandom", FS_OPTIONS}
@@ -183,7 +186,63 @@ def _prepare_filesystem(path, uid, gid, password, run, chown, mkdtemp, rmdir) ->
     return 0
 
 
+def _read_int(path: str) -> int | None:
+    try:
+        with open(path) as fh:
+            return int(fh.read().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def power_targets(sys_root: str = SYS) -> list[tuple[str, int, int]]:
+    """(file, min_uw, max_uw) for every power limit we may write."""
+    import glob
+
+    targets = []
+    for cap in sorted(glob.glob(os.path.join(sys_root, "class/drm/card*/device/hwmon/hwmon*/power1_cap"))):
+        current = _read_int(cap)
+        if current is None:
+            continue
+        low = _read_int(cap + "_min") or 0
+        high = _read_int(cap + "_max") or current
+        targets.append((cap, max(low, MIN_POWER_W * 1_000_000), high))
+    rapl = os.path.join(sys_root, "class/powercap/intel-rapl:0/constraint_0_power_limit_uw")
+    current = _read_int(rapl)
+    if current is not None:
+        rated = _read_int(rapl.replace("power_limit_uw", "max_power_uw")) or 0
+        targets.append((rapl, MIN_POWER_W * 1_000_000, max(rated, current)))
+    return targets
+
+
+def set_power_limit(args: list[str], sys_root: str = SYS, run=subprocess.run,
+                    ryzenadj: str | None = None) -> int:
+    if len(args) != 1 or not args[0].isdigit():
+        print("Error: gamingcrypt helper: usage: power-limit <watts>", file=sys.stderr)
+        return 2
+    watts = int(args[0])
+    targets = power_targets(sys_root)
+    if not targets:
+        print("Error: gamingcrypt helper: no adjustable power limit found", file=sys.stderr)
+        return 2
+    uw = watts * 1_000_000
+    for path, low, high in targets:
+        if not low <= uw <= high:
+            print(f"Error: gamingcrypt helper: {watts} W is outside {low // 10**6}-{high // 10**6} W", file=sys.stderr)
+            return 2
+    for path, _low, _high in targets:
+        with open(path, "w") as fh:
+            fh.write(str(uw))
+    ryzenadj = RYZENADJ if ryzenadj is None else ryzenadj
+    if ryzenadj and os.path.exists(ryzenadj) and any("power1_cap" in t[0] for t in targets):
+        mw = str(watts * 1000)
+        run([ryzenadj, f"--stapm-limit={mw}", f"--fast-limit={mw}", f"--slow-limit={mw}"],
+            capture_output=True, text=True)
+    return 0
+
+
 def main(argv: list[str]) -> int:
+    if argv[:1] == ["power-limit"]:
+        return set_power_limit(argv[1:])
     uid, gid, home = invoking_user()
     error = validate(argv, home, uid)
     if error:

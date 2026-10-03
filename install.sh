@@ -116,13 +116,17 @@ install_helper() {
     [[ -x $python ]] || die "$python not found (needed for the root helper)"
 
     info "Installing the restricted VeraCrypt helper (needs sudo)"
-    echo "    Allows: sudo -n $HELPER  (mount / list / change password of a volume,"
-    echo "    always nosuid,nodev, mount points only below /mnt, /media, /run/media or your home)"
+    echo "    Allows: sudo -n $HELPER  (mount / list / create / change password of a volume,"
+    echo "    always nosuid,nodev, only below /mnt, /media, /run/media or your home;"
+    echo "    and setting the power limit within the range the hardware reports)"
     tmp_helper="$(mktemp)"
     tmp_sudoers="$(mktemp)"
     trap 'rm -f "$tmp_helper" "$tmp_sudoers"' RETURN
+    local ryzenadj
+    ryzenadj="$(command -v ryzenadj || echo /usr/bin/ryzenadj)"
     sed -e "1s|.*|#!$python -I|" \
         -e "s|^VERACRYPT = .*|VERACRYPT = \"$veracrypt\"|" \
+        -e "s|^RYZENADJ = .*|RYZENADJ = \"$ryzenadj\"|" \
         "$SRC_DIR/gamingcrypt/helper/veracrypt_helper.py" > "$tmp_helper"
     printf '%s ALL=(root) NOPASSWD: %s\n' "$USER" "$HELPER" > "$tmp_sudoers"
     local visudo

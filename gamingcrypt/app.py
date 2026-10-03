@@ -27,8 +27,13 @@ class MainWindow(QMainWindow):
         save: Callable[[dict], None],
         unlocker_factory=VeraCryptUnlocker.from_config,
         page_factory: Callable[[dict], dict[str, QWidget]] | None = None,
+        system=None,
     ):
         super().__init__()
+        # Device controls (display, power, audio); empty in tests unless given.
+        from gamingcrypt.system.controls import SystemControls
+
+        self.system = system if system is not None else SystemControls()
         self.setWindowTitle("GamingCrypt")
         self.config = config
         self.save = save
@@ -85,7 +90,7 @@ class MainWindow(QMainWindow):
 
     def show_shell(self) -> None:
         pages = self.page_factory(self.config) if self.page_factory else {}
-        pages.setdefault("Settings", SettingsTab(self.config, self.save, self.unlocker_factory))
+        pages.setdefault("Settings", SettingsTab(self.config, self.save, self.unlocker_factory, self.system))
         self.shell = Shell(pages)
         self.shell.exit_requested.connect(self.close)
         self._replace(self.shell)
@@ -153,7 +158,14 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication([sys.argv[0], *qt_args])
     app.setApplicationName("GamingCrypt")
     app.setStyleSheet(theme.STYLESHEET)
-    window = MainWindow(cfg, lambda c: config_mod.save_config(c, cfg_path), page_factory=default_pages)
+    from gamingcrypt.system.controls import SystemControls
+    from gamingcrypt.ui.tasks import run_async
+
+    system = SystemControls.detect()
+    # Resolution and power limit reset on reboot -> restore what the user chose.
+    run_async(lambda: system.apply_saved(cfg["system"]))
+    window = MainWindow(cfg, lambda c: config_mod.save_config(c, cfg_path), page_factory=default_pages,
+                        system=system)
     if cfg.get("fullscreen", True) and not args.windowed:
         window.showFullScreen()
     else:
