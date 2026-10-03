@@ -296,7 +296,27 @@ class SteamService:
         return compat.set_tool(self.root, appid, name, self.client)
 
     def downloads(self) -> list[installer.Download]:
-        return installer.downloads(self.root)
+        return self.download_queue.order(installer.downloads(self.root))
+
+    @property
+    def download_queue(self):
+        if getattr(self, "_queue", None) is None:
+            from gamingcrypt.steam.download_queue import DownloadQueue
+
+            self._queue = DownloadQueue(lambda: self.root, self.cache_dir, lambda: self.client)
+        return self._queue
+
+    def move_download(self, appid: int, delta: int) -> list[installer.Download]:
+        return self.download_queue.move(installer.downloads(self.root), appid, delta)
+
+    def queue_needs_apply(self, items: list[installer.Download]) -> bool:
+        return self.download_queue.needs_apply(items)
+
+    def apply_download_order(self, items: list[installer.Download]) -> installer.InstallResult:
+        return self.download_queue.apply(items)
+
+    def cancel_download(self, download: installer.Download) -> installer.InstallResult:
+        return self.download_queue.cancel(download)
 
     def io_sample(self, library: str | None):
         from gamingcrypt.system import io_stats

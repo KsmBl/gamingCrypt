@@ -5,16 +5,18 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QScrollArea, QVBoxLayout, QWidget
 
-from gamingcrypt.steam.installer import Download
+from gamingcrypt.steam.installer import Download, InstallResult
 from gamingcrypt.system.io_stats import rate
 from gamingcrypt.ui.progress_estimate import ACTIVE_RATE, ProgressEstimator
 from gamingcrypt.ui.game_widgets import format_size, load_cover, placeholder_cover
 from gamingcrypt.ui.tasks import run_async
-from gamingcrypt.ui.widgets import FoldingHeader, enable_touch_scroll
+from gamingcrypt.ui.widgets import FoldingHeader, big_button, enable_touch_scroll, set_status
 
 REFRESH_MS = 1000
 COVER_W, COVER_H = 80, 120
-STATE_TEXT = {"downloading": "Downloading", "paused": "Paused", "queued": "Queued"}
+STATE_TEXT = {"downloading": "Downloading", "paused": "Paused", "queued": "Queued", "waiting": "Waiting"}
+APPLY_DELAY_MS = 2500  # several quick ▲/▼ taps -> one Steam restart
+MAX_AUTO_APPLY = 2  # if Steam ignores the order, don't keep restarting it
 
 
 def format_rate(value: float | None) -> str:
@@ -35,13 +37,15 @@ def describe(d: Download, shown: int | None = None) -> str:
     kind = "Update" if d.is_update else "Install"
     text = f"{kind} · {STATE_TEXT[d.state]}"
     if d.total:
-        text += f" · {format_size(d.downloaded if shown is None else shown)} of {format_size(d.total)}"
+        done = d.downloaded if shown is None else shown
+        text += f" · {format_size(done) if done else '0 B'} of {format_size(d.total)}"
     return text
 
 
 class DownloadRow(QFrame):
-    def __init__(self, service, download: Download):
+    def __init__(self, service, download: Download, tab: "DownloadsTab | None" = None):
         super().__init__()
+        self.tab = tab
         self.setObjectName("card")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 10, 16, 10)
@@ -68,16 +72,49 @@ class DownloadRow(QFrame):
         self.percent.setFixedWidth(90)
         self.percent.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self.percent)
+        self.up_button = big_button("▲")
+        self.down_button = big_button("▼")
+        self.cancel_button = big_button("✕")
+        for button in (self.up_button, self.down_button, self.cancel_button):
+            button.setFixedWidth(64)
+            layout.addWidget(button)
+        self.up_button.clicked.connect(lambda: tab and tab.move(self.download.appid, -1))
+        self.down_button.clicked.connect(lambda: tab and tab.move(self.download.appid, 1))
+        self.cancel_button.clicked.connect(self.cancel_tapped)
+        self._cancel_armed = False
+        self._disarm = QTimer(self)
+        self._disarm.setSingleShot(True)
+        self._disarm.timeout.connect(self._disarm_cancel)
+        self.waiting = False
         self.update_from(download)
+
+    def cancel_tapped(self) -> None:
+        # two taps: deleting downloaded data must not happen by accident
+        if not self._cancel_armed:
+            self._cancel_armed = True
+            self.cancel_button.setText("Sure?")
+            self.cancel_button.setFixedWidth(110)
+            self._disarm.start(4000)
+            return
+        self._disarm_cancel()
+        if self.tab is not None:
+            self.tab.cancel(self.download)
+
+    def _disarm_cancel(self) -> None:
+        self._cancel_armed = False
+        self.cancel_button.setText("✕")
+        self.cancel_button.setFixedWidth(64)
 
     def update_from(self, d: Download, shown: int | None = None, extra: str = "", running: bool = False) -> None:
         self.download = d
         done = d.downloaded if shown is None else shown
         percent = 100.0 * done / d.total if d.total else 0.0
-        if running and d.state == "queued":
-            from dataclasses import replace
+        from dataclasses import replace
 
+        if running and d.state == "queued":
             d = replace(d, state="downloading")  # Steam hasn't caught up with its state yet
+        if self.waiting and d.state in ("paused", "queued"):
+            d = replace(d, state="waiting")  # paused by GamingCrypt: not at the top of the list
         self.state.setText(describe(d, shown) + (f" · {extra}" if extra else ""))
         self.bar.setValue(round(percent * 10))
         self.percent.setText(f"{percent:.1f}%" if d.total else "")
@@ -100,6 +137,16 @@ class DownloadsTab(QWidget):
         self.stats.setObjectName("cardTitle")
         self.stats.hide()
         layout.addWidget(self.stats)
+        self.message = QLabel("")
+        self.message.setObjectName("status")
+        self.message.setWordWrap(True)
+        layout.addWidget(self.message)
+        self.items: list[Download] = []
+        self.applying = False
+        self.apply_attempts: dict[tuple, int] = {}
+        self.apply_timer = QTimer(self)
+        self.apply_timer.setSingleShot(True)
+        self.apply_timer.timeout.connect(self.apply_order)
         self.last_sample = None
         self.estimator = ProgressEstimator()
         self.empty = QLabel("No downloads - games you install show up here.")
@@ -131,7 +178,8 @@ class DownloadsTab(QWidget):
             items = service.downloads()
             active = next((d for d in items if d.state == "downloading"), items[0] if items else None)
             sample = service.io_sample(active.library if active else None) if hasattr(service, "io_sample") else None
-            return items, sample
+            needs = service.queue_needs_apply(items) if hasattr(service, "queue_needs_apply") else False
+            return items, sample, needs
 
         run_async(collect, lambda result: self.show_downloads(*result),
                   lambda _e: setattr(self, "loading", False), owner=self)
@@ -150,8 +198,50 @@ class DownloadsTab(QWidget):
             return None
         return next((d for d in items if d.state == "queued" and d.total), None)
 
-    def show_downloads(self, items: list[Download], sample=None) -> None:
+    # queue ---------------------------------------------------------------------------
+    def move(self, appid: int, delta: int) -> None:
+        if not hasattr(self.service, "move_download"):
+            return
+        self.items = self.service.move_download(appid, delta)
+        self.show_downloads(self.items, None)
+        self.apply_attempts.clear()  # a new order deserves new attempts
+        set_status(self.message, "New order - applied in a moment (Steam restarts in the background)")
+        self.apply_timer.start(APPLY_DELAY_MS)
+
+    def apply_order(self) -> None:
+        if self.applying or not self.items or not hasattr(self.service, "apply_download_order"):
+            return
+        self.applying = True
+        key = tuple(d.appid for d in self.items)
+        self.apply_attempts[key] = self.apply_attempts.get(key, 0) + 1
+        items = list(self.items)
+        set_status(self.message, "Applying the download order - Steam restarts in the background…")
+        run_async(lambda: self.service.apply_download_order(items), self._applied,
+                  lambda exc: self._applied(InstallResult(False, str(exc))), owner=self)
+
+    def _applied(self, result) -> None:
+        self.applying = False
+        set_status(self.message, result.message, error=not result.ok)
+
+    def cancel(self, download: Download) -> None:
+        if not hasattr(self.service, "cancel_download"):
+            return
+        set_status(self.message, f"Cancelling {download.name}…")
+        run_async(lambda: self.service.cancel_download(download),
+                  lambda r: (set_status(self.message, r.message, error=not r.ok), self.refresh()),
+                  lambda exc: set_status(self.message, str(exc), error=True), owner=self)
+
+    def show_downloads(self, items: list[Download], sample=None, needs_apply: bool = False) -> None:
         self.loading = False
+        self.items = list(items)
+        if needs_apply and not self.applying and not self.apply_timer.isActive():
+            key = tuple(d.appid for d in items)
+            if self.apply_attempts.get(key, 0) < MAX_AUTO_APPLY:
+                self.apply_timer.start(APPLY_DELAY_MS)  # e.g. the top one finished -> start the next
+            elif self.apply_attempts.get(key) == MAX_AUTO_APPLY:
+                self.apply_attempts[key] += 1
+                set_status(self.message, "Steam doesn't follow the order - it decides which download runs.",
+                           error=True)
         net = rate(self.last_sample, sample, "net_rx") if sample is not None else None
         disk = rate(self.last_sample, sample, "disk_written") if sample is not None else None
         previous_net = self.last_sample.net_rx if self.last_sample is not None else None
@@ -178,8 +268,11 @@ class DownloadsTab(QWidget):
         for index, d in enumerate(items):
             row = self.rows.get(d.appid)
             if row is None:
-                row = DownloadRow(self.service, d)
+                row = DownloadRow(self.service, d, self)
                 self.rows[d.appid] = row
+            row.waiting = index > 0
+            row.up_button.setEnabled(index > 0)
+            row.down_button.setEnabled(index < len(items) - 1)
             if d is active and sample is not None:
                 shown = self.estimator.estimate(d.appid, d.downloaded, d.total, sample.net_rx, since=previous_net)
             else:

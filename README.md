@@ -26,7 +26,7 @@ your Steam library.
 - **Settings → Reset authentication method**: switch between PIN, password, swipe pattern and 5×5 pattern at any time
 - **Tabs**: Games, Downloads, Movies, Shows, Music, Pictures, Settings (the media tabs show *coming soon*)
 - **Power menu** (⏻): shut down, restart, or desktop mode (quit GamingCrypt)
-- **Downloads tab**: every queued, running and paused Steam download with progress, and a count in the tab bar
+- **Downloads tab**: every queued, running and paused Steam download with progress and a count in the tab bar; reorder with ▲/▼ (the top one downloads), cancel with ✕ (deletes what was downloaded)
 - **Device settings**: resolution, refresh rate, brightness, max power consumption (TDP), audio output and input device and their volume
 - **Controller**: calibrate the analog sticks and triggers and map every button; games get a virtual Xbox controller with your setup
 - **Browse with the controller**: the whole UI works with D-pad / stick, A, B, LB/RB, as well as with touch
@@ -158,6 +158,23 @@ How it works:
 The choice is written to Steam's `config/config.vdf` (`CompatToolMapping`), just as Steam's
 own "Force the use of a specific compatibility tool" does. Steam rewrites that file when it
 exits, so it is closed briefly and started again minimised.
+
+### Download queue
+
+In the Downloads tab, ▲/▼ change the order. Only the download at the top runs, the others
+show *Waiting*:
+- **How:** GamingCrypt marks every other download as paused in Steam's app manifest and
+  restarts Steam minimised. Steam only reads those files on start-up. Partially downloaded
+  data is kept.
+- **Next in line:** when the top one finishes, the next one starts automatically.
+- **During a game:** Steam is never restarted while a game runs.
+- **Safety limit:** if Steam doesn't follow the order, GamingCrypt says so instead of
+  restarting it over and over.
+
+**✕ Cancel** (tap twice):
+- **New install:** stops it and deletes everything downloaded so far.
+- **Update:** only the partial update data is deleted. The installed game stays, and the
+  update stays paused until you move it to the top again.
 
 ### Steam windows
 
