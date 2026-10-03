@@ -23,6 +23,15 @@ def write_manifest(library: Path, appid: int, name: str, last_updated: int = 170
 ''')
 
 
+@pytest.fixture(autouse=True)
+def isolated_home(tmp_path, monkeypatch):
+    """Never look at the real ~/GamingCrypt.vc or config while testing."""
+    home = tmp_path / "isolated-home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    return home
+
+
 @pytest.fixture
 def steam_root(tmp_path) -> Path:
     """A fake Steam install with a second library folder (the 'encrypted drive')."""

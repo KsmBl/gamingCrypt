@@ -13,6 +13,7 @@ created with exactly that string:
 
 from __future__ import annotations
 
+METHODS = ("pin", "password", "pattern", "grid5")
 MIN_PIN_LENGTH = 4
 MIN_PATTERN_LENGTH = 4
 GRID_SIZE = 3

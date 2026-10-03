@@ -23,9 +23,16 @@ class _Task(QRunnable):
         try:
             result = self.fn()
         except Exception as exc:  # noqa: BLE001 - forwarded to the UI
-            self.signals.failed.emit(exc)
+            self._emit(self.signals.failed, exc)
         else:
-            self.signals.done.emit(result)
+            self._emit(self.signals.done, result)
+
+    @staticmethod
+    def _emit(signal, value) -> None:
+        try:
+            signal.emit(value)
+        except RuntimeError:
+            pass  # the app is shutting down, nobody is listening any more
 
 
 # Keep the signal objects alive until the task finished.

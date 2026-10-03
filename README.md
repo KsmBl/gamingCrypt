@@ -75,8 +75,9 @@ random per volume and new on every password change. An attacker can't take a
 4-digit PIN and try it against the volume directly. Every guess costs a full scrypt
 run plus VeraCrypt's own PBKDF2, and precomputed tables don't help.
 
-> ⚠️ **Back up `~/.config/gamingcrypt/config.json`.** It holds the salt (`unlock.kdf`).
-> The salt isn't secret, but without it the volume can't be opened.
+> ⚠️ **Back up the salt.** It is in `~/.config/gamingcrypt/config.json` (`unlock.kdf`) and,
+> for container files, in `<container>.gamingcrypt.json` next to the container. The salt
+> isn't secret, but without it the volume can't be opened.
 > To open the volume with plain VeraCrypt (on another PC, for example), run
 > `gamingcrypt --volume-password`, enter your PIN or pattern in the format above,
 > and use the printed password.
@@ -148,7 +149,16 @@ In the first-start setup choose **Create new encrypted container** and enter:
 - quick format: on by default, fast. Turn it off for a full format, which is slow but also hides how much of the container is used.
 
 Then pick your unlock method. The container is created as AES / SHA-512 / ext4 with
-your KDF-derived password, and progress is shown live. Afterwards add the mount point
+your KDF-derived password, and progress is shown live. While it is being created you can
+only **cancel**. Cancelling (or closing the window) stops VeraCrypt, deletes the
+unfinished file and takes you back to the form.
+
+Next to the container GamingCrypt writes `<container>.gamingcrypt.json` with the unlock
+method, mount point and KDF salt. None of these are secret. On start, an existing
+container (the configured one, or `~/GamingCrypt.vc`) is recognised and you go straight
+to the unlock screen. *Create new container* is never offered while a container exists.
+If a container has no such file (one made with VeraCrypt directly, for example), setup
+asks for its current password right away. Afterwards add the mount point
 in Steam (*Settings → Storage → Add drive*) and install games onto it.
 
 To encrypt a whole partition or SD card, create the volume with VeraCrypt itself

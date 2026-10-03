@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QStackedWidget, QV
 from gamingcrypt.ui.secret_input import METHOD_LABELS, SecretInput
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import KeyboardFocusFilter, OnScreenKeyboard, big_button, set_status
-from gamingcrypt.unlock import kdf
+from gamingcrypt.unlock import kdf, sidecar
 from gamingcrypt.unlock.veracrypt import UnlockResult, VeraCryptUnlocker
 
 UnlockerFactory = Callable[[dict], VeraCryptUnlocker]
@@ -25,8 +25,7 @@ MAX_CONTAINER_GB = 100_000
 GB = 1024**3
 
 
-def default_container_path() -> str:
-    return str(Path.home() / "GamingCrypt.vc")
+default_container_path = sidecar.default_container_path
 
 
 def default_mount_point() -> str:
@@ -158,7 +157,10 @@ class AuthSetupWizard(QWidget):
         # The keyboard is shared by the text pages and moved into the visible one.
         self._keyboard.submitted.connect(self._keyboard_enter)
 
-        if first_start:
+        if first_start and sidecar.existing_container(config["unlock"]):
+            # A container is already there: go straight to authenticating it.
+            self.show_current_step()
+        elif first_start:
             self.show_volume_step()
         else:
             self.show_current_step()
@@ -176,6 +178,12 @@ class AuthSetupWizard(QWidget):
         self.create_button.setStyleSheet("min-height: 180px; min-width: 300px;")
         self.create_button.clicked.connect(self.choose_create)
         h.addWidget(self.create_button)
+        # Never offer to create a second container when one is already there.
+        existing = sidecar.existing_container(self.config["unlock"])
+        if existing:
+            self.create_button.hide()
+            if not self.volume:
+                self.volume = existing
         h.addStretch()
         return page
 
@@ -296,7 +304,8 @@ class AuthSetupWizard(QWidget):
         self._set_nav(False)
         self.step = "source"
         self.creating = False
-        self.hint.setText("Where should your games live?")
+        self.hint.setText("Where should your games live?" if self.create_button.isVisibleTo(self)
+                          else f"Found an existing container: {self.volume}")
         self.stack.setCurrentWidget(self.source_page)
 
     def choose_existing(self) -> None:
@@ -350,7 +359,7 @@ class AuthSetupWizard(QWidget):
         self._set_nav(False)
         self.step = "current"
         if self.first_start or not self.config["unlock"].get("method"):
-            method, hint = "password", "Enter the current password of the volume"
+            method, hint = "password", f"Enter the current password of {self.volume or 'the volume'}"
         else:
             method = self.config["unlock"]["method"]
             hint = f"Enter your current {METHOD_LABELS.get(method, 'password')}"
@@ -418,6 +427,11 @@ class AuthSetupWizard(QWidget):
         if not self.busy:
             self.cancelled.emit()
 
+    def abort(self) -> None:
+        """Window is closing: stop a running creation (deletes the unfinished file)."""
+        if self.busy and self.creating and self._cancel_event is not None:
+            self._cancel_event.set()
+
     def _apply_create(self) -> None:
         self._set_nav(False)
         self.new_kdf = new_kdf = self.new_kdf_params()
@@ -467,6 +481,7 @@ class AuthSetupWizard(QWidget):
         unlock["volume"] = self.volume
         unlock["mount_point"] = self.mount_point
         self.save(self.config)
+        sidecar.write_sidecar(self.volume, unlock)
         set_status(self.status, "Done")
         if self.creating:
             self.step = "done"

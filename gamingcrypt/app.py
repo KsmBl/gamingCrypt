@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Callable
 
+from PySide6.QtCore import QThreadPool
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QWidget
 
 from gamingcrypt import config as config_mod
@@ -37,9 +38,28 @@ class MainWindow(QMainWindow):
         self.shell: Shell | None = None
         unlock = config["unlock"]
         if not unlock.get("method") or not unlock.get("volume"):
+            self.adopt_existing_container()
+        if not unlock.get("method") or not unlock.get("volume"):
             self.show_setup()
         else:
             self.show_lock()
+
+    def adopt_existing_container(self) -> bool:
+        """A container (with sidecar) already exists: use it instead of running the setup."""
+        from gamingcrypt.unlock import sidecar
+
+        found = sidecar.find_container(self.config["unlock"])
+        if not found:
+            return False
+        self.config["unlock"].update(found)
+        self.save(self.config)
+        return True
+
+    def closeEvent(self, event):  # noqa: N802
+        current = self.stack.currentWidget()
+        if hasattr(current, "abort"):
+            current.abort()
+        super().closeEvent(event)
 
     def _replace(self, widget: QWidget) -> None:
         old = self.stack.currentWidget()
@@ -127,7 +147,11 @@ def main(argv: list[str] | None = None) -> int:
     else:
         window.resize(1280, 800)
         window.show()
-    return app.exec()
+    code = app.exec()
+    # Let background work finish cleanly, e.g. a cancelled container creation
+    # still has to delete its unfinished file.
+    QThreadPool.globalInstance().waitForDone(30_000)
+    return code
 
 
 if __name__ == "__main__":

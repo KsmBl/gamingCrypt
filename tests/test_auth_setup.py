@@ -16,6 +16,8 @@ class FakeUnlocker:
 
     def create_volume(self, path, size_gb, secret, quick=True, progress=None, cancel=None):
         self.log.append(("create", path, size_gb, secret, quick, self.cfg.get("kdf")))
+        if self.current != "fail-create":
+            open(path, "w").close()
         if progress:
             progress(50.0)
         if self.current == "slow-create":
@@ -320,3 +322,60 @@ def test_continue_only_after_creation_finished(qtbot, tmp_path):
     qtbot.waitUntil(lambda: wizard.step == "done")
     assert wizard.cancel_button.isHidden()
     assert wizard.stack.currentWidget() is wizard.done_page
+
+
+# --- existing containers ---------------------------------------------------------
+
+import json  # noqa: E402
+
+from gamingcrypt.unlock import sidecar  # noqa: E402
+
+
+def test_create_writes_sidecar(qtbot, tmp_path):
+    wizard, cfg, saved, log = make(qtbot)
+    params = {"algorithm": "scrypt", "salt": "ee" * 16, "n": 2, "r": 1, "p": 1}
+    wizard.new_kdf_params = lambda: params
+    start_create(qtbot, wizard, tmp_path)
+    qtbot.waitUntil(lambda: wizard.step == "done")
+    data = json.loads(sidecar.sidecar_path(str(tmp_path / "g.vc")).read_text())
+    assert data["method"] == "pin" and data["kdf"] == params
+
+
+def test_existing_default_container_hides_create_and_asks_for_password(qtbot, isolated_home):
+    (isolated_home / "GamingCrypt.vc").write_text("")
+    wizard, *_ = make(qtbot)
+    assert wizard.step == "current"
+    assert str(isolated_home / "GamingCrypt.vc") in wizard.hint.text()
+    assert wizard.volume == str(isolated_home / "GamingCrypt.vc")
+    assert not wizard.create_button.isVisibleTo(wizard)
+    wizard.show_volume_step()  # even on the choice page, creating isn't offered
+    assert not wizard.create_button.isVisibleTo(wizard) and "existing container" in wizard.hint.text()
+
+
+def test_reset_rekey_updates_sidecar(qtbot, tmp_path):
+    volume = tmp_path / "v.vc"
+    volume.write_text("")
+    wizard, cfg, saved, log = make(qtbot, first_start=False, method="pin", current="1234")
+    cfg["unlock"]["volume"] = wizard.volume = str(volume)
+    wizard.submit_current("1234")
+    wizard.choose_method("password")
+    wizard.submit_new("abc")
+    with qtbot.waitSignal(wizard.completed, timeout=3000):
+        wizard.submit_confirm("abc")
+    assert sidecar.read_sidecar(str(volume))["method"] == "password"
+
+
+def test_closing_window_during_creation_cancels_it(qtbot, tmp_path):
+    from gamingcrypt.app import MainWindow
+
+    cfg = copy.deepcopy(DEFAULTS)
+    log = []
+    window = MainWindow(cfg, lambda c: None, lambda ucfg: FakeUnlocker(ucfg, log, "slow-create"))
+    qtbot.addWidget(window)
+    wizard = window.stack.currentWidget()
+    wizard.new_kdf_params = lambda: None
+    start_create(qtbot, wizard, tmp_path)
+    assert wizard.step == "creating"
+    window.close()
+    assert wizard._cancel_event.is_set()
+    qtbot.waitUntil(lambda: not wizard.busy, timeout=6000)
