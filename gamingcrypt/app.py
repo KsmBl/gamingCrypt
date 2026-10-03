@@ -28,8 +28,10 @@ class MainWindow(QMainWindow):
         unlocker_factory=VeraCryptUnlocker.from_config,
         page_factory: Callable[[dict], dict[str, QWidget]] | None = None,
         system=None,
+        input_service=None,
     ):
         super().__init__()
+        self.input_service = input_service
         # Device controls (display, power, audio); empty in tests unless given.
         from gamingcrypt.system.controls import SystemControls
 
@@ -65,6 +67,8 @@ class MainWindow(QMainWindow):
         current = self.stack.currentWidget()
         if hasattr(current, "abort"):
             current.abort()
+        if self.input_service is not None:
+            self.input_service.stop()  # give the real controller back
         super().closeEvent(event)
 
     def _replace(self, widget: QWidget) -> None:
@@ -92,7 +96,8 @@ class MainWindow(QMainWindow):
         pages = self.page_factory(self.config) if self.page_factory else {}
         games = pages.get("Games")
         pages.setdefault("Settings", SettingsTab(self.config, self.save, self.unlocker_factory, self.system,
-                                                 steam_service=getattr(games, "service", None)))
+                                                 steam_service=getattr(games, "service", None),
+                                                 input_service=self.input_service))
         self.shell = Shell(pages)
         self.shell.exit_requested.connect(self.close)
         self._replace(self.shell)
@@ -168,8 +173,12 @@ def main(argv: list[str] | None = None) -> int:
     system = SystemControls.detect()
     # Resolution and power limit reset on reboot -> restore what the user chose.
     run_async(lambda: system.apply_saved(cfg["system"]))
-    window = MainWindow(cfg, lambda c: config_mod.save_config(c, cfg_path), page_factory=default_pages,
-                        system=system)
+    from gamingcrypt.input.service import InputService
+
+    save = lambda c: config_mod.save_config(c, cfg_path)  # noqa: E731
+    input_service = InputService(cfg, save)
+    input_service.start()  # virtual controller with the user's mapping, if enabled
+    window = MainWindow(cfg, save, page_factory=default_pages, system=system, input_service=input_service)
     if cfg.get("fullscreen", True) and not args.windowed:
         window.showFullScreen()
     else:

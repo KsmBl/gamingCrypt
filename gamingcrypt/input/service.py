@@ -11,7 +11,7 @@ from gamingcrypt.input.remapper import Remapper
 
 class InputService:
     def __init__(self, config: dict, save: Callable[[dict], None],
-                 finder: Callable[[], list[e.DeviceInfo]] = e.find_gamepads,
+                 finder: Callable[[], list[e.DeviceInfo]] | None = None,
                  remapper_factory: Callable[[e.DeviceInfo, Profile], Remapper] = Remapper):
         self.config = config
         self.save = save
@@ -24,7 +24,7 @@ class InputService:
         self.cfg.setdefault("profiles", {})
 
     def device(self) -> e.DeviceInfo | None:
-        pads = self.finder()
+        pads = self.finder() if self.finder is not None else e.find_gamepads()
         return pads[0] if pads else None
 
     def profile(self, device: e.DeviceInfo) -> Profile:

@@ -14,10 +14,13 @@ from gamingcrypt.steam import accounts, library
 from gamingcrypt.ui.auth_setup import AuthSetupWizard, UnlockerFactory
 from gamingcrypt.ui.secret_input import METHOD_LABELS
 from gamingcrypt.system.controls import SystemControls
+from gamingcrypt.input.service import InputService
+from gamingcrypt.ui.controller_settings import ControllerPage
 from gamingcrypt.ui.system_settings import AudioSection, DisplaySection, PowerSection
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button, enable_touch_scroll, set_status
 
+SUB_TABS = ["Device", "Controller", "Steam", "Security"]
 API_KEY_RE = re.compile(r"^[0-9A-Fa-f]{32}$")
 
 
@@ -76,6 +79,7 @@ class SettingsTab(QStackedWidget):
         unlocker_factory: UnlockerFactory = VeraCryptUnlocker.from_config,
         system: SystemControls | None = None,
         steam_service=None,
+        input_service: InputService | None = None,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
@@ -84,26 +88,77 @@ class SettingsTab(QStackedWidget):
         self.unlocker_factory = unlocker_factory
         self.system = system if system is not None else SystemControls()
         self._steam_service = steam_service
+        self.input = input_service if input_service is not None else InputService(config, save)
         self.switching = False
         self.wizard: AuthSetupWizard | None = None
 
-        self.overview = QScrollArea()
-        self.overview.setWidgetResizable(True)
-        self.overview.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        enable_touch_scroll(self.overview)
-        content = QWidget()
-        self.overview.setWidget(content)
-        layout = QVBoxLayout(content)
-        layout.setContentsMargins(40, 30, 40, 30)
-        layout.setSpacing(14)
+        # Sub-tabs: Device | Controller | Steam | Security
+        self.overview = QWidget()
+        outer = QVBoxLayout(self.overview)
+        outer.setContentsMargins(30, 10, 30, 0)
+        bar = QHBoxLayout()
+        self.sub_buttons: dict[str, object] = {}
+        self.sub_stack = QStackedWidget()
+        self.sub_pages: dict[str, QWidget] = {}
+        for name in SUB_TABS:
+            button = big_button(name, "tab", checkable=True)
+            button.clicked.connect(lambda _=False, n=name: self.show_sub_tab(n))
+            bar.addWidget(button)
+            self.sub_buttons[name] = button
+        bar.addStretch()
+        outer.addLayout(bar)
+        self.status = QLabel("")
+        self.status.setObjectName("status")
+        outer.addWidget(self.status)
+        outer.addWidget(self.sub_stack, 1)
+
+        def page(name: str) -> QVBoxLayout:
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            enable_touch_scroll(scroll)
+            content = QWidget()
+            scroll.setWidget(content)
+            box = QVBoxLayout(content)
+            box.setContentsMargins(10, 10, 10, 20)
+            box.setSpacing(14)
+            self.sub_stack.addWidget(scroll)
+            self.sub_pages[name] = scroll
+            return box
+
+        # Device
+        layout = page("Device")
         self.display_section = DisplaySection(self.system, config, save)
         self.power_section = PowerSection(self.system, config, save)
         self.audio_section = AudioSection(self.system)
         for section in (self.display_section, self.power_section, self.audio_section):
             layout.addWidget(section)
-        heading = QLabel("Security")
-        heading.setObjectName("title")
-        layout.addWidget(heading)
+        layout.addStretch()
+
+        # Controller
+        layout = page("Controller")
+        self.controller_page = ControllerPage(self.input)
+        layout.addWidget(self.controller_page)
+        layout.addStretch()
+
+        # Steam
+        layout = page("Steam")
+        self.account_label = QLabel()
+        self.account_label.setObjectName("detailMeta")
+        layout.addWidget(self.account_label)
+        self.accounts_box = QVBoxLayout()
+        layout.addLayout(self.accounts_box)
+        self.account_buttons: dict[str, object] = {}
+        self.api_key_label = QLabel()
+        self.api_key_label.setObjectName("detailMeta")
+        layout.addWidget(self.api_key_label)
+        self.api_key_button = big_button("Set Steam API key")
+        self.api_key_button.clicked.connect(self.edit_api_key)
+        layout.addWidget(self.api_key_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        layout.addStretch()
+
+        # Security
+        layout = page("Security")
         self.method_label = QLabel()
         self.method_label.setObjectName("detailMeta")
         self.volume_label = QLabel()
@@ -118,31 +173,8 @@ class SettingsTab(QStackedWidget):
         self.reset_button = big_button("Reset authentication method", "primary")
         self.reset_button.clicked.connect(self.start_reset)
         layout.addWidget(self.reset_button, alignment=Qt.AlignmentFlag.AlignLeft)
-        self.status = QLabel("")
-        self.status.setObjectName("status")
-        layout.addWidget(self.status)
-
-        steam_heading = QLabel("Steam")
-        steam_heading.setObjectName("title")
-        layout.addWidget(steam_heading)
-        self.account_label = QLabel()
-        self.account_label.setObjectName("detailMeta")
-        layout.addWidget(self.account_label)
-        self.accounts_box = QVBoxLayout()
-        layout.addLayout(self.accounts_box)
-        self.account_buttons: dict[str, object] = {}
-        self.api_key_label = QLabel()
-        self.api_key_label.setObjectName("detailMeta")
-        layout.addWidget(self.api_key_label)
-        self.api_key_button = big_button("Set Steam API key")
-        self.api_key_button.clicked.connect(self.edit_api_key)
-        layout.addWidget(self.api_key_button, alignment=Qt.AlignmentFlag.AlignLeft)
         layout.addStretch()
-        more = QLabel("More settings coming soon")
-        more.setObjectName("subtitle")
-        more.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(more)
-        layout.addStretch()
+        self.show_sub_tab(SUB_TABS[0])
         self.addWidget(self.overview)
         self.refresh()
 
@@ -180,6 +212,12 @@ class SettingsTab(QStackedWidget):
         self.wizard.cancelled.connect(lambda: self._close_wizard(""))
         self.addWidget(self.wizard)
         self.setCurrentWidget(self.wizard)
+
+    def show_sub_tab(self, name: str) -> None:
+        self.current_sub_tab = name
+        self.sub_stack.setCurrentWidget(self.sub_pages[name])
+        for tab, button in self.sub_buttons.items():
+            button.setChecked(tab == name)
 
     @property
     def steam(self):

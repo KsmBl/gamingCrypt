@@ -44,7 +44,7 @@ def test_list_devices_from_sysfs(tmp_path):
     device(3, "AT keyboard", "1 0", "0")
     device(12, "Steam Deck", "7fff000000000000 0 0 0 0", "30027")
     device(20, e.VIRTUAL_NAME, "7fff000000000000 0 0 0 0", "30027")
-    pads = e.find_gamepads(tmp_path / "sys", tmp_path / "dev")
+    pads = [d for d in e.list_devices(tmp_path / "sys", tmp_path / "dev") if d.is_gamepad]
     assert [p.name for p in pads] == ["Steam Deck"]  # keyboard and our own virtual pad excluded
     assert pads[0].path == str(tmp_path / "dev/event12") and pads[0].key == "28de:1205:Steam Deck"
 

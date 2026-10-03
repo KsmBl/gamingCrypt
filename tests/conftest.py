@@ -32,6 +32,14 @@ def isolated_home(tmp_path, monkeypatch):
     return home
 
 
+@pytest.fixture(autouse=True)
+def no_real_controllers(monkeypatch):
+    """UI tests must not pick up (or grab!) a controller plugged into the dev machine."""
+    from gamingcrypt.input import evdev
+
+    monkeypatch.setattr(evdev, "find_gamepads", lambda *a, **k: [])
+
+
 @pytest.fixture
 def steam_root(tmp_path) -> Path:
     """A fake Steam install with a second library folder (the 'encrypted drive')."""

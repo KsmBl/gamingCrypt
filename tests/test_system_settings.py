@@ -190,7 +190,14 @@ def test_audio_switch_device_and_volume(qtbot):
     assert a.calls[-1] == ("volume", "input", "mic", 55)
 
 
-def test_settings_still_has_security_and_steam(qtbot):
+def test_settings_sub_tabs(qtbot):
     tab, *_ = make(qtbot, display=FakeDisplay(), audio=FakeAudio())
-    assert tab.reset_button.isVisibleTo(tab.overview.widget())
-    assert tab.api_key_button.isVisibleTo(tab.overview.widget())
+    assert list(tab.sub_buttons) == ["Device", "Controller", "Steam", "Security"]
+    assert tab.current_sub_tab == "Device"
+    page = tab.sub_pages["Security"].widget()
+    assert not tab.reset_button.isVisibleTo(tab.sub_stack)
+    tab.sub_buttons["Security"].click()
+    assert tab.sub_stack.currentWidget() is tab.sub_pages["Security"]
+    assert tab.reset_button.isVisibleTo(page) and tab.sub_buttons["Security"].isChecked()
+    tab.sub_buttons["Steam"].click()
+    assert tab.api_key_button.isVisibleTo(tab.sub_pages["Steam"].widget())

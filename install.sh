@@ -19,6 +19,8 @@ DESKTOP_FILE="$DATA_HOME/applications/gamingcrypt.desktop"
 AUTOSTART_FILE="$CONFIG_HOME/autostart/gamingcrypt.desktop"
 HELPER="/usr/local/lib/gamingcrypt/veracrypt-helper"
 SUDOERS="/etc/sudoers.d/gamingcrypt"
+UDEV_RULE="/etc/udev/rules.d/71-gamingcrypt-uinput.rules"
+MODULES_CONF="/etc/modules-load.d/gamingcrypt-uinput.conf"
 
 AUTOSTART=0
 WITH_SUDO=1
@@ -47,9 +49,9 @@ uninstall() {
     rm -rf "$VENV"
     rmdir "$APP_DIR" 2>/dev/null || true
     rm -f "$LAUNCHER" "$DESKTOP_FILE" "$AUTOSTART_FILE"
-    if [[ -e $HELPER || -e $SUDOERS ]]; then
-        info "Removing the VeraCrypt sudo helper (needs sudo)"
-        sudo rm -f "$SUDOERS" "$HELPER"
+    if [[ -e $HELPER || -e $SUDOERS || -e $UDEV_RULE ]]; then
+        info "Removing the sudo helper and controller rules (needs sudo)"
+        sudo rm -f "$SUDOERS" "$HELPER" "$UDEV_RULE" "$MODULES_CONF"
         sudo rmdir "$(dirname "$HELPER")" 2>/dev/null || true
     fi
     info "Done. Your config (~/.config/gamingcrypt) and cache (~/.cache/gamingcrypt) were kept."
@@ -149,8 +151,23 @@ fi
 check_python
 check_tools
 install_app
+install_input_rules() {
+    # The virtual controller (calibration + button mapping) is created through /dev/uinput.
+    if [[ -w /dev/uinput && -e $UDEV_RULE ]]; then
+        return
+    fi
+    info "Allowing the virtual controller (/dev/uinput for the logged-in user, needs sudo)"
+    printf '%s\n' 'KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"' \
+        | sudo tee "$UDEV_RULE" >/dev/null
+    echo uinput | sudo tee "$MODULES_CONF" >/dev/null
+    sudo modprobe uinput 2>/dev/null || true
+    sudo udevadm control --reload-rules 2>/dev/null || true
+    sudo udevadm trigger --name-match=uinput 2>/dev/null || true
+}
+
 if [[ $WITH_SUDO -eq 1 ]]; then
     install_helper
+    install_input_rules
 else
     info "Skipping the sudo helper (--no-sudo)"
 fi
