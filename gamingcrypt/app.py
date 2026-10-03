@@ -48,6 +48,8 @@ class MainWindow(QMainWindow):
         self.launch_overlay.cancelled.connect(self.stop_watching_game)
         self.game_watcher.visible.connect(lambda _appid: self.step_aside())
         self.game_watcher.phase_text.connect(self.launch_overlay.set_phase)
+        # Steam may wait for a click (license agreement …) in a window behind us.
+        self.game_watcher.stalled.connect(lambda _appid: self.step_aside())
         self.game_watcher.finished.connect(lambda appid: self.game_over(appid))
         self.game_watcher.failed.connect(lambda appid: self.game_over(appid, failed=True))
         # Device controls (display, power, audio); empty in tests unless given.

@@ -356,3 +356,42 @@ def test_back_button_on_loading_screen_clears_message_and_other_games_untouched(
     assert page.status.text() == "Starting Portal 2…"
     window.launch_overlay.back_button.click()
     assert page.status.text() == ""
+
+
+def test_steps_aside_when_steam_waits_for_a_click(qtbot, monkeypatch):
+    """E.g. a license agreement in a Steam window that would be hidden behind GamingCrypt."""
+    window, service, calls = make_window(qtbot, monkeypatch)
+    game, clock = Game(), Clock()
+    w = window.game_watcher
+    w.processes, w.gpu, w.clock = game.processes, game.gpu, clock
+    window.game_launched(620)
+    clock.now += game_watcher.STALL_S - 1
+    w.poll()
+    assert calls == []  # normal start-up time: stay
+    clock.now += 2
+    w.poll()
+    assert calls == ["aside"]  # Steam's window is visible now
+    w.poll()
+    assert calls == ["aside"]  # only once
+    game.pids = {1}  # user accepted, the game starts
+    game.drawing = True
+    w.poll()
+    clock.now += game_watcher.WINDOW_DELAY_S
+    w.poll()
+    game.pids = set()
+    w.poll()
+    assert calls == ["aside", "aside", "back"]  # back after the game
+
+
+def test_quick_starts_never_stall(qtbot, monkeypatch):
+    window, service, calls = make_window(qtbot, monkeypatch)
+    game, clock = Game(), Clock()
+    w = window.game_watcher
+    w.processes, w.gpu, w.clock = game.processes, game.gpu, clock
+    window.game_launched(620)
+    clock.now += 3
+    game.pids = {1}
+    w.poll()
+    clock.now += game_watcher.STALL_S * 2  # game running but not drawing yet: no stall
+    w.poll()
+    assert calls == [] and w.stall_reported is False

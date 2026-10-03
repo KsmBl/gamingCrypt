@@ -22,6 +22,9 @@ POLL_MS = 1000
 LAUNCH_TIMEOUT_S = 180  # a cold Steam start + updates/shader compilation can take a while
 WINDOW_DELAY_S = 1.5  # after the GPU was opened: give the window a moment to appear
 NO_GPU_FALLBACK_S = 45  # never seen on the GPU (unusual): step aside anyway
+# Steam hasn't started the game yet after this long: it's probably showing a window
+# (license agreement, cloud conflict, shader processing) that must not stay hidden.
+STALL_S = 15
 
 
 class GameWatcher(QObject):
@@ -30,6 +33,7 @@ class GameWatcher(QObject):
     finished = Signal(int)  # the game exited
     failed = Signal(int)    # the game never showed up
     phase_text = Signal(str)  # what's happening right now (for the loading screen)
+    stalled = Signal(int)   # no game process for STALL_S -> show what Steam is showing
 
     def __init__(self, processes: Callable[[int], set[int]] = game_processes,
                  gpu: Callable[[set[int]], bool] = uses_gpu,
@@ -60,6 +64,7 @@ class GameWatcher(QObject):
         self.phase = "launching"
         self.started_at = self.clock()
         self.last_phase = ""
+        self.stall_reported = False
         self.seen_at = 0.0
         self.gpu_at: float | None = None
         log.info("waiting for app %s to start", appid)
@@ -78,6 +83,10 @@ class GameWatcher(QObject):
                     self.failed.emit(appid)
                 else:
                     self._report_phase(appid)
+                    if not self.stall_reported and now - self.started_at >= STALL_S:
+                        self.stall_reported = True
+                        log.info("app %s: no game process after %ss - showing Steam", appid, STALL_S)
+                        self.stalled.emit(appid)
                 return
             log.info("app %s exited", appid)
             self._stop()

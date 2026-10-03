@@ -142,6 +142,9 @@ How it works:
   the game's whole process tree is visible in `/proc`.
 - **Stepping aside:** GamingCrypt hides its window instead of minimising it. On Wayland an
   app can't un-minimise itself, but showing a hidden window again works.
+- **Steam waiting for you:** if Steam hasn't started the game after 15 seconds, it's
+  usually showing a window (license agreement, cloud-save conflict, shader processing).
+  GamingCrypt steps aside so you can see and answer it.
 - **Fallbacks:** if the game never starts, GamingCrypt returns after 3 minutes. *Back to
   GamingCrypt* on the start screen cancels waiting.
 - **Troubleshooting:** what happened is logged to `~/.cache/gamingcrypt/gamingcrypt.log`.
