@@ -125,7 +125,7 @@ class DownloadsTab(QWidget):
 
         def collect():
             items = service.downloads()
-            active = next((d for d in items if d.state == "downloading"), None)
+            active = next((d for d in items if d.state == "downloading"), items[0] if items else None)
             sample = service.io_sample(active.library if active else None) if hasattr(service, "io_sample") else None
             return items, sample
 
@@ -153,8 +153,10 @@ class DownloadsTab(QWidget):
         if sample is not None:
             self.last_sample = sample
         active = next((d for d in items if d.state == "downloading"), None)
-        if active is not None and sample is not None:
-            parts = [f"↓ {format_rate(net)}", f"Disk {format_rate(disk)}"]
+        # Shown whenever something is in the list: Steam often reports a running download
+        # as "queued" until it writes its first progress numbers.
+        if items and sample is not None:
+            parts = [f"↓ {format_rate(net) if net is not None else 'measuring…'}", f"Disk {format_rate(disk)}"]
             if sample.free is not None:
                 parts.append(f"{format_size(sample.free)} free")
             self.stats.setText("   ·   ".join(parts))

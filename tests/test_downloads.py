@@ -146,6 +146,7 @@ class StatsService(FakeService):
 
 
 MB = 1024**2
+GB = 1024**3
 
 
 def test_stats_line_and_smooth_progress(qtbot):
@@ -171,10 +172,25 @@ def test_stats_line_and_smooth_progress(qtbot):
     assert row.percent.text() == "12.5%"
 
 
-def test_stats_hidden_without_active_download(qtbot):
-    queued = Download(1, "Q", "queued", 0, 0, False, "/x")
+def test_speed_shown_while_steam_still_says_queued(qtbot):
+    """Steam often reports a running download as "queued" before its first progress numbers."""
+    queued = Download(1, "Q", "queued", 0, 0, False, "/mnt/games")
     service = StatsService(items=[[queued]], samples=[IoSample(0.0, 0, 0, 1)])
     tab = DownloadsTab(service)
+    tab.timer.stop()
     qtbot.addWidget(tab)
     qtbot.waitUntil(lambda: 1 in tab.rows)
+    assert service.library == "/mnt/games"
+    tab.show_downloads([queued], IoSample(0.0, 0, 0, 10 * GB))
+    assert not tab.stats.isHidden()
+    assert tab.stats.text().startswith("↓ measuring…")
+    tab.show_downloads([queued], IoSample(1.0, 5 * MB, 0, 10 * GB))
+    assert tab.stats.text().startswith("↓ 5.0 MB/s")
+
+
+def test_stats_hidden_without_downloads(qtbot):
+    service = StatsService(items=[[]], samples=[IoSample(0.0, 0, 0, 1)])
+    tab = DownloadsTab(service)
+    qtbot.addWidget(tab)
+    qtbot.waitUntil(lambda: not tab.loading)
     assert tab.stats.isHidden() and service.library is None

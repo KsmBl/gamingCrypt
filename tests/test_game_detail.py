@@ -196,3 +196,20 @@ def test_uninstall_failure_keeps_game(qtbot):
     page.uninstall_button.click()
     qtbot.waitUntil(lambda: "didn't close" in page.status.text())
     assert page.game.installed and page.uninstall_button.isEnabled()
+
+
+def test_download_shows_speed_on_game_page(qtbot):
+    from gamingcrypt.system.io_stats import IoSample
+
+    steps = [InstallProgress("downloading", 1024**3, 4 * 1024**3), InstallProgress("downloading", 1024**3, 4 * 1024**3)]
+    tab = silent_tab(qtbot, progress_steps=steps)
+    samples = iter([IoSample(0.0, 0, None, None), IoSample(2.0, 20 * 1024**2, None, None)])
+    tab.service.io_sample = lambda library: next(samples, IoSample(4.0, 40 * 1024**2, None, None))
+    tab.open_game(292030)
+    page = tab.currentWidget()
+    page._progress_timer.stop()
+    tab.service.installs.append(292030)
+    page.poll_progress()
+    assert page.status.text() == "Downloading 25% · 1.0 GB of 4.0 GB"  # first sample: no speed yet
+    page.poll_progress()
+    assert page.status.text() == "Downloading 25% · 1.0 GB of 4.0 GB · 10.0 MB/s"

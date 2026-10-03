@@ -90,6 +90,7 @@ class GameDetailPage(QWidget):
         self._disarm_timer.timeout.connect(self._disarm_uninstall)
         self.downloading = False
         self._fetching_size = False
+        self._last_sample = None
         self._progress_timer = QTimer(self)
         self._progress_timer.timeout.connect(self.poll_progress)
         self.refresh()
@@ -189,6 +190,19 @@ class GameDetailPage(QWidget):
         self._progress_timer.start(PROGRESS_INTERVAL_MS)
         self.poll_progress()
 
+    def _speed(self) -> str:
+        """Current download speed from the network counters (between two polls)."""
+        sampler = getattr(self.service, "io_sample", None)
+        if not callable(sampler):
+            return ""
+        from gamingcrypt.system.io_stats import rate
+        from gamingcrypt.ui.downloads_tab import format_rate
+
+        sample = sampler(None)
+        value = rate(self._last_sample, sample, "net_rx")
+        self._last_sample = sample
+        return format_rate(value) if value is not None else ""
+
     def poll_progress(self) -> None:
         p = self.service.install_progress(self.game.appid)
         if p.state == "installed":
@@ -199,7 +213,9 @@ class GameDetailPage(QWidget):
             self.refresh()
             set_status(self.status, f"{self.game.name} is installed ✓")
         elif p.state == "downloading":
-            set_status(self.status, f"Downloading {p.percent:.0f}% · {format_size(p.downloaded)} of {format_size(p.total)}")
+            speed = self._speed()
+            set_status(self.status, f"Downloading {p.percent:.0f}% · {format_size(p.downloaded)} of "
+                                    f"{format_size(p.total)}" + (f" · {speed}" if speed else ""))
         elif p.state == "queued":
             set_status(self.status, "Waiting for Steam to start the download…")
         else:
