@@ -12,7 +12,9 @@ Must stay self-contained (runs as root, no imports from user-writable paths).
 import os
 import pwd
 import re
+import subprocess
 import sys
+import tempfile
 
 VERACRYPT = "/usr/bin/veracrypt"  # replaced by install.sh
 FS_OPTIONS = "--fs-options=nosuid,nodev"
@@ -25,7 +27,11 @@ PREFIXED = [
     re.compile(r"^--new-keyfiles=.*$", re.S),
     re.compile(r"^--new-password=.*$", re.S),
 ]
-OPERATIONS = {"--mount", "--list", "-C"}
+# Only valid together with --create (fixed values: new ext4 file container).
+CREATE_EXACT = {"--create", "--volume-type=normal", "--encryption=AES", "--hash=SHA-512",
+                "--filesystem=ext4", "--quick", "--keyfiles="}
+CREATE_PREFIXED = [re.compile(r"^--size=\d{1,6}[MG]$")]
+OPERATIONS = {"--mount", "--list", "-C", "--create"}
 MOUNT_ROOTS = ["/mnt", "/media", "/run/media"]
 
 
@@ -45,18 +51,41 @@ def mount_point_ok(path: str, user_home: str | None) -> bool:
     return False
 
 
-def validate(argv: list[str], user_home: str | None) -> str | None:
+def create_target_ok(path: str, user_home: str | None, user_uid: int | None) -> str | None:
+    """New containers: a not yet existing file in a directory the user owns, below the allowed roots."""
+    if os.path.lexists(path):
+        return "the container file already exists"
+    parent = os.path.realpath(os.path.dirname(os.path.abspath(path)) or ".")
+    if not os.path.isdir(parent):
+        return "the target folder does not exist"
+    inside = False
+    for root in allowed_mount_roots(user_home):
+        root = os.path.realpath(root)
+        if parent == root or parent.startswith(root.rstrip("/") + "/"):
+            inside = True
+    if not inside:
+        return "containers can only be created below " + ", ".join(MOUNT_ROOTS) + " or your home directory"
+    if user_uid is None or os.stat(parent).st_uid != user_uid:
+        return "the target folder must belong to you"
+    return None
+
+
+def validate(argv: list[str], user_home: str | None, user_uid: int | None = None) -> str | None:
     """Return an error message, or None when the arguments are acceptable."""
     positionals = []
+    creating = "--create" in argv
     for arg in argv:
         if arg.startswith("-"):
-            if arg not in EXACT and not any(p.match(arg) for p in PREFIXED):
-                return f"argument not allowed: {arg.split('=')[0]}"
+            if arg in EXACT or any(p.match(arg) for p in PREFIXED):
+                continue
+            if creating and (arg in CREATE_EXACT or any(p.match(arg) for p in CREATE_PREFIXED)):
+                continue
+            return f"argument not allowed: {arg.split('=')[0]}"
         else:
             positionals.append(arg)
     operations = [a for a in argv if a in OPERATIONS]
     if len(operations) != 1:
-        return "exactly one of --mount, --list, -C is required"
+        return "exactly one of --mount, --list, -C, --create is required"
     if len(positionals) < 1 or len(positionals) > 2:
         return "expected a volume and an optional mount point"
     op = operations[0]
@@ -67,26 +96,69 @@ def validate(argv: list[str], user_home: str | None) -> str | None:
             return "mount point must be below " + ", ".join(MOUNT_ROOTS) + " or your home directory"
     elif len(positionals) != 1:
         return "this operation takes only the volume"
+    elif op == "--create":
+        if "--filesystem=ext4" not in argv or not any(a.startswith("--size=") for a in argv):
+            return "creating requires --size and --filesystem=ext4"
+        error = create_target_ok(positionals[0], user_home, user_uid)
+        if error:
+            return error
     if any(a.startswith(("--new-password=", "--new-pim=", "--new-keyfiles=")) for a in argv) and op != "-C":
         return "--new-password only allowed with -C"
     return None
 
 
-def invoking_home() -> str | None:
-    uid = os.environ.get("SUDO_UID")
-    if not uid:
-        return None
+def invoking_user() -> tuple[int | None, int | None, str | None]:
+    """uid, gid and home of the user who ran sudo."""
     try:
-        return pwd.getpwuid(int(uid)).pw_dir
+        uid = int(os.environ["SUDO_UID"])
+        gid = int(os.environ.get("SUDO_GID", uid))
+        return uid, gid, pwd.getpwuid(uid).pw_dir
     except (KeyError, ValueError):
-        return None
+        return None, None, None
+
+
+def create_volume(argv, uid, gid, password, run=subprocess.run, chown=os.chown,
+                  mkdtemp=tempfile.mkdtemp, rmdir=os.rmdir) -> int:
+    """Create the container, then hand the file *and* its fresh ext4 root to the user.
+
+    Without the second step the new filesystem would be owned by root and Steam
+    couldn't install anything into it.
+    """
+    path = [a for a in argv if not a.startswith("-")][0]
+    result = run([VERACRYPT, *argv], input=password, text=True)
+    if result.returncode != 0:
+        return result.returncode
+    chown(path, uid, gid)
+    mount_dir = mkdtemp(prefix="gamingcrypt-", dir="/run")
+    try:
+        mounted = run([VERACRYPT, "--text", "--non-interactive", "--stdin", "--pim=0", "--keyfiles=",
+                       "--protect-hidden=no", FS_OPTIONS, "--mount", path, mount_dir],
+                      input=password, text=True, capture_output=True)
+        if mounted.returncode != 0:
+            print("Error: created, but could not prepare the filesystem: " + (mounted.stderr or "").strip(),
+                  file=sys.stderr)
+            return mounted.returncode
+        try:
+            chown(mount_dir, uid, gid)
+        finally:
+            run([VERACRYPT, "--text", "--non-interactive", "-d", path], text=True, capture_output=True)
+    finally:
+        try:
+            rmdir(mount_dir)
+        except OSError:
+            pass
+    return 0
 
 
 def main(argv: list[str]) -> int:
-    error = validate(argv, invoking_home())
+    uid, gid, home = invoking_user()
+    error = validate(argv, home, uid)
     if error:
         print(f"Error: gamingcrypt helper: {error}", file=sys.stderr)
         return 2
+    if "--create" in argv:
+        password = sys.stdin.readline()
+        return create_volume(argv, uid, gid, password)
     os.execv(VERACRYPT, [VERACRYPT, *argv])
     return 1  # not reached
 

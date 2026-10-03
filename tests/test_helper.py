@@ -24,7 +24,7 @@ def test_helper_accepts_auto_mount_point():
     (["--text", "--mount", "--fs-options=nosuid,nodev", "/v", "/mnt"], "mount point"),
     (["--text", "--mount", "/v", "/mnt/x"], "nosuid"),
     (["--text", "--mount", "--fs-options=rw", "/v", "/mnt/x"], "not allowed"),
-    (["--text", "--create", "/v"], "not allowed"),
+    (["--text", "--create", "/v"], "creating requires"),
     (["--text", "--filesystem=ext4", "--mount", "/v"], "not allowed"),
     (["--text", "/v"], "exactly one"),
     (["--mount", "--list", "/v"], "exactly one"),
@@ -54,3 +54,74 @@ def test_unlocker_uses_helper_when_installed(tmp_path):
     helper.write_text("")
     assert u.mount_command()[:3] == ["sudo", "-n", str(helper)]
     assert "--fs-options=nosuid,nodev" in u.mount_command()
+
+
+# --- create ------------------------------------------------------------------
+
+import os  # noqa: E402
+import subprocess  # noqa: E402
+
+from gamingcrypt.helper import veracrypt_helper  # noqa: E402
+
+
+def create_argv(path):
+    u = VeraCryptUnlocker(volume="", use_sudo=False)
+    return u.create_command(str(path), 64)[1:]
+
+
+def test_create_allowed_in_own_folder(tmp_path):
+    uid = os.getuid()
+    assert validate(create_argv(tmp_path / "g.vc"), str(tmp_path), uid) is None
+
+
+@pytest.mark.parametrize("make_path,needle", [
+    (lambda t: t / "exists.vc", "already exists"),
+    (lambda t: t / "missing" / "g.vc", "does not exist"),
+    (lambda t: "/etc/g.vc", "below"),
+    (lambda t: "/dev/null", "already exists"),
+])
+def test_create_rejected_targets(tmp_path, make_path, needle):
+    (tmp_path / "exists.vc").write_text("")
+    error = validate(create_argv(make_path(tmp_path)), str(tmp_path), os.getuid())
+    assert error is not None and needle in error
+
+
+def test_create_requires_folder_owned_by_user(tmp_path):
+    error = validate(create_argv(tmp_path / "g.vc"), str(tmp_path), os.getuid() + 1)
+    assert "belong to you" in error
+
+
+def test_create_only_flags_rejected_elsewhere():
+    assert "not allowed" in validate(["--mount", "--fs-options=nosuid,nodev", "--filesystem=ext4", "/v"], HOME)
+    assert "not allowed" in validate(["--create", "--filesystem=ntfs", "--size=1G", "/home/alice/x"], HOME)
+    assert "not allowed" in validate(["--create", "--size=99T", "--filesystem=ext4", "/home/alice/x"], HOME)
+
+
+def test_create_volume_hands_file_and_filesystem_to_user(tmp_path):
+    calls, chowns = [], []
+
+    def run(cmd, **kw):
+        calls.append((cmd, kw.get("input")))
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    argv = create_argv(tmp_path / "g.vc")
+    rc = veracrypt_helper.create_volume(argv, 1000, 1000, "pw\n", run=run,
+                                        chown=lambda p, u, g: chowns.append((p, u, g)),
+                                        mkdtemp=lambda **kw: "/run/gamingcrypt-x", rmdir=lambda p: None)
+    assert rc == 0
+    assert calls[0][0][1:] == argv and calls[0][1] == "pw\n"
+    assert "--mount" in calls[1][0] and calls[1][0][-1] == "/run/gamingcrypt-x" and calls[1][1] == "pw\n"
+    assert "-d" in calls[2][0]
+    assert chowns == [(str(tmp_path / "g.vc"), 1000, 1000), ("/run/gamingcrypt-x", 1000, 1000)]
+
+
+def test_create_volume_stops_when_veracrypt_fails(tmp_path):
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 1, "", "")
+
+    rc = veracrypt_helper.create_volume(create_argv(tmp_path / "g.vc"), 1, 1, "pw\n", run=run,
+                                        chown=lambda *a: pytest.fail("must not chown"))
+    assert rc == 1 and len(calls) == 1

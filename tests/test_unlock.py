@@ -186,3 +186,103 @@ def test_dot_grid_secret_keeps_order_and_repeats():
 def test_dot_grid_invalid(nodes):
     with pytest.raises(secrets.InvalidSecret):
         secrets.dot_grid_to_secret(nodes)
+
+
+# --- container creation --------------------------------------------------------
+
+import io  # noqa: E402
+
+
+class ChunkedReader:
+    """Delivers output piece by piece, like a pipe from a slowly progressing process."""
+
+    def __init__(self, chunks):
+        self.chunks = list(chunks)
+
+    def read(self, _n):
+        return self.chunks.pop(0) if self.chunks else ""
+
+
+class FakePopen:
+    def __init__(self, output, returncode=0):
+        self.output = output if isinstance(output, list) else [output]
+        self.returncode = returncode
+        self.cmd = None
+        self.stdin = io.StringIO()
+
+    def __call__(self, cmd, **kwargs):
+        self.cmd = cmd
+        self.stdout = ChunkedReader(self.output)
+        self.stdin.close = lambda: None
+        return self
+
+    def wait(self, timeout=None):
+        return self.returncode
+
+
+def test_create_command():
+    u = VeraCryptUnlocker(volume="", use_sudo=False)
+    cmd = u.create_command("/home/a/g.vc", 64)
+    assert cmd[:2] == ["veracrypt", "--text"]
+    assert "--create" in cmd and "/home/a/g.vc" in cmd
+    assert "--size=64G" in cmd and "--filesystem=ext4" in cmd and "--quick" in cmd
+    assert "--quick" not in u.create_command("/x", 1, quick=False)
+
+
+def test_create_volume_reports_progress_and_sends_secret():
+    out = ["Done:   0.000%  Speed: x\r", "Done:  42.500%  Speed: y\r",
+           "Done: 100.000%\n\nThe VeraCrypt volume has been successfully created.\n"]
+    popen = FakePopen(out)
+    seen = []
+    result = VeraCryptUnlocker(volume="", use_sudo=False).create_volume("/x.vc", 2, "s3cret", progress=seen.append, popen=popen)
+    assert result.success
+    assert popen.stdin.getvalue() == "s3cret\n"
+    assert 42.5 in seen and seen[-1] == 100.0
+    assert not any("s3cret" in part for part in popen.cmd)
+
+
+def test_create_volume_failure_messages():
+    u = VeraCryptUnlocker(volume="", use_sudo=False)
+    r = u.create_volume("/x.vc", 2, "s", popen=FakePopen("Error: Failed to obtain administrator privileges.\n", 1))
+    assert not r.success and "install.sh" in r.message
+    r = u.create_volume("/x.vc", 2, "s", popen=FakePopen("Error: helper: the container file already exists\n", 2))
+    assert "already exists" in r.message
+
+
+def test_create_volume_missing_binary():
+    def boom(cmd, **kw):
+        raise FileNotFoundError
+
+    r = VeraCryptUnlocker(volume="", use_sudo=False).create_volume("/x.vc", 2, "s", popen=boom)
+    assert not r.success and "not found" in r.message
+
+
+def test_unlock_creates_mount_point(tmp_path):
+    runner = FakeRunner([NOT_MOUNTED, (0, "", "")])
+    target = tmp_path / "GamingCrypt"
+    VeraCryptUnlocker(volume="/v", mount_point=str(target), runner=runner).unlock("x")
+    assert target.is_dir()
+
+
+def test_from_config_expands_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    u = VeraCryptUnlocker.from_config({"volume": "~/g.vc", "mount_point": "~/Games"})
+    assert u.volume == str(tmp_path / "g.vc") and u.mount_point == str(tmp_path / "Games")
+
+
+@needs_veracrypt
+def test_real_create_volume(tmp_path):
+    # ext4 needs root; without a filesystem it works as a normal user
+    path = tmp_path / "new.vc"
+    seen = []
+    u = VeraCryptUnlocker(volume=str(path), use_sudo=False)
+    # sizes are whole GB in the app; shrink to 2 MB for the test
+    u.create_command = lambda p, s, q=True, f="ext4": [
+        "--size=2M" if a.startswith("--size=") else a
+        for a in VeraCryptUnlocker.create_command(u, p, s, q, "none")
+    ]
+    result = u.create_volume(str(path), 1, "first", progress=seen.append)
+    assert result.success, result.message
+    assert path.stat().st_size == 2 * 1024 * 1024
+    assert seen[-1] == 100.0
+    assert u.change_password("first", "second").success

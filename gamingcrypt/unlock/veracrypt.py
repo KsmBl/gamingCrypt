@@ -7,11 +7,14 @@ process list.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from dataclasses import dataclass, field
 from typing import Callable, Sequence
 
 Runner = Callable[..., subprocess.CompletedProcess]
+Progress = Callable[[float], None]
+PROGRESS_RE = re.compile(r"Done:\s*([\d.]+)\s*%")
 
 # Root-owned allow-list wrapper installed by install.sh (see helper/veracrypt_helper.py).
 DEFAULT_HELPER = "/usr/local/lib/gamingcrypt/veracrypt-helper"
@@ -39,8 +42,8 @@ class VeraCryptUnlocker:
     @classmethod
     def from_config(cls, unlock_cfg: dict, runner: Runner = subprocess.run) -> "VeraCryptUnlocker":
         return cls(
-            volume=unlock_cfg.get("volume", ""),
-            mount_point=unlock_cfg.get("mount_point", ""),
+            volume=os.path.expanduser(unlock_cfg.get("volume", "")),
+            mount_point=os.path.expanduser(unlock_cfg.get("mount_point", "")),
             binary=unlock_cfg.get("veracrypt_binary", "veracrypt"),
             use_sudo=unlock_cfg.get("use_sudo", True),
             pim=int(unlock_cfg.get("pim", 0) or 0),
@@ -89,6 +92,65 @@ class VeraCryptUnlocker:
             self.volume,
         ]
 
+    def create_command(self, path: str, size_gb: int, quick: bool = True, filesystem: str = "ext4") -> list[str]:
+        cmd = self._base() + [
+            "--stdin",
+            "--create",
+            path,
+            f"--size={int(size_gb)}G",
+            "--volume-type=normal",
+            "--encryption=AES",
+            "--hash=SHA-512",
+            f"--filesystem={filesystem}",
+            "--pim=0",
+            "--keyfiles=",
+            "--random-source=/dev/urandom",
+        ]
+        if quick:
+            cmd.append("--quick")
+        return cmd
+
+    def create_volume(
+        self,
+        path: str,
+        size_gb: int,
+        secret: str,
+        quick: bool = True,
+        progress: Progress | None = None,
+        popen: Callable[..., subprocess.Popen] = subprocess.Popen,
+        filesystem: str = "ext4",
+    ) -> UnlockResult:
+        """Create a new container file protected by ``secret``. Reports progress 0-100."""
+        cmd = self.create_command(path, size_gb, quick, filesystem)
+        try:
+            proc = popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        except FileNotFoundError:
+            return UnlockResult(False, f"'{cmd[2] if self.use_sudo else self.binary}' not found - is VeraCrypt installed?")
+        except OSError as exc:
+            return UnlockResult(False, f"Could not run VeraCrypt: {exc}")
+        try:
+            proc.stdin.write(secret + "\n")
+            proc.stdin.close()
+        except OSError:
+            pass
+        output, tail = [], ""
+        while True:
+            chunk = proc.stdout.read(64)
+            if not chunk:
+                break
+            output.append(chunk)
+            tail = (tail + chunk)[-200:]
+            matches = PROGRESS_RE.findall(tail)
+            if matches and progress is not None:
+                progress(min(100.0, float(matches[-1])))
+        returncode = proc.wait()
+        text = "".join(output)
+        if returncode == 0 and "error:" not in text.lower():
+            if progress is not None:
+                progress(100.0)
+            return UnlockResult(True, "Container created")
+        return UnlockResult(False, explain_error(text))
+
     def list_command(self) -> list[str]:
         return self._base() + ["--list", self.volume]
 
@@ -126,6 +188,11 @@ class VeraCryptUnlocker:
             return UnlockResult(False, "No VeraCrypt volume configured")
         if self.is_mounted():
             return UnlockResult(True, "Volume already mounted")
+        if self.mount_point:
+            try:
+                os.makedirs(os.path.expanduser(self.mount_point), exist_ok=True)
+            except OSError:
+                pass  # e.g. below /mnt without permission - VeraCrypt may still manage
         return self._run(self.mount_command(), secret, "Unlocked")
 
 
@@ -135,6 +202,10 @@ def explain_error(output: str) -> str:
         return "Wrong code - please try again"
     if "a password is required" in low or "administrator privileges" in low:
         return "Missing permissions: run install.sh to set up the sudo rule for VeraCrypt"
+    if "file exists" in low or "already exists" in low:
+        return "A file with that name already exists"
+    if "not enough" in low and "space" in low:
+        return "Not enough free disk space"
     if "already mounted" in low:
         return "Volume is already mounted"
     if "no such file" in low or "does not exist" in low:
