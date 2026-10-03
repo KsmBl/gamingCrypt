@@ -319,3 +319,44 @@ def test_nav_source_real_controller():
         if src is not None:
             src.stop()
         pad.close()
+
+
+def test_tab_switch_moves_highlight_along(qtbot):
+    from gamingcrypt.ui.shell import Shell
+
+    shell = Shell()
+    qtbot.addWidget(shell)
+    shell.resize(1280, 800)
+    shell.show()
+    qtbot.waitExposed(shell)
+    nav = GamepadNavigator(shell, tab_switch=shell.cycle_tab)
+    shell.tab_buttons["Games"].setFocus()  # highlight moved up into the tab bar with the stick
+    press(nav, e.BTN_TR)
+    press(nav, e.BTN_TR)
+    assert shell.current_tab == "Movies"
+    assert shell.focusWidget() is shell.tab_buttons["Movies"]  # only one tab is marked
+    checked = [n for n, b in shell.tab_buttons.items() if b.isChecked()]
+    assert checked == ["Movies"]
+
+
+def test_tab_switch_leaves_page_highlight_alone(qtbot):
+    from gamingcrypt.ui.shell import Shell
+
+    page = QWidget()
+    inner = big_button("on the page")
+    QVBoxLayout(page).addWidget(inner)
+    shell = Shell({"Games": page})
+    qtbot.addWidget(shell)
+    shell.show()
+    inner.setFocus()
+    shell.cycle_tab(1)
+    assert shell.focusWidget() is not shell.tab_buttons["Downloads"]
+
+
+def test_tab_highlight_looks_different_from_the_open_tab():
+    from gamingcrypt.ui import theme
+
+    css = theme.STYLESHEET
+    focus_rule = next(line for line in css.splitlines() if line.startswith("QPushButton#tab:focus"))
+    assert theme.ACCENT not in focus_rule and theme.ACCENT_HI not in focus_rule  # no blue underline
+    assert "transparent" in focus_rule and theme.SURFACE_HI in focus_rule

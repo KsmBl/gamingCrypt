@@ -80,7 +80,9 @@ QFrame#card:focus {{ border: 3px solid {ACCENT}; background: {SURFACE_HI}; }}
 QPushButton:focus {{ border: 4px solid {TEXT}; }}
 QPushButton#primary:focus {{ background: {ACCENT_HI}; border: 4px solid {TEXT}; }}
 QPushButton#danger:focus {{ background: #ff6b6f; border: 4px solid {TEXT}; }}
-QPushButton#tab:focus {{ border: none; border-bottom: 4px solid {ACCENT_HI}; color: {TEXT}; }}
+/* Controller highlight on a tab: a box, never the underline - the underline only marks the open tab */
+QPushButton#tab:focus {{ background: {SURFACE_HI}; border: none; border-bottom: 4px solid transparent; color: {TEXT}; }}
+QPushButton#tab:checked:focus {{ border-bottom: 4px solid {ACCENT}; }}
 QComboBox:focus {{ border-color: {ACCENT}; }}
 QSlider:focus {{ background: {SURFACE_HI}; border-radius: 10px; }}
 QFrame#card:hover {{ background: {SURFACE_HI}; }}

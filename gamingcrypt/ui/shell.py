@@ -64,7 +64,11 @@ class Shell(QWidget):
     def cycle_tab(self, delta: int) -> None:
         """LB / RB on the controller."""
         index = (TABS.index(self.current_tab) + delta) % len(TABS)
+        highlight_in_bar = self.focusWidget() in self.tab_buttons.values()
         self.show_tab(TABS[index])
+        if highlight_in_bar:
+            # keep the controller highlight on the open tab instead of the old one
+            self.tab_buttons[TABS[index]].setFocus()
 
     def set_badge(self, name: str, count: int) -> None:
         """e.g. "Downloads (2)" - plain name when there's nothing."""
