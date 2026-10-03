@@ -285,6 +285,11 @@ class SteamService:
     def downloads(self) -> list[installer.Download]:
         return installer.downloads(self.root)
 
+    def io_sample(self, library: str | None):
+        from gamingcrypt.system import io_stats
+
+        return io_stats.sample(library)
+
     # library folder on the encrypted drive -----------------------------------
     def ensure_library(self, path: str) -> library_setup.LibraryResult:
         return library_setup.ensure_library(self.root, path, self.client)

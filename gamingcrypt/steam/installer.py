@@ -59,6 +59,7 @@ class Download:
     downloaded: int
     total: int
     is_update: bool
+    library: str = ""
 
     @property
     def percent(self) -> float:
@@ -105,7 +106,7 @@ def downloads(root: Path | None) -> list[Download]:
                 except ValueError:
                     size = 0
                 is_update = bool(flags & STATE_FULLY_INSTALLED) or size > 0
-                found.setdefault(appid, Download(appid, name, kind, done, total, is_update))
+                found.setdefault(appid, Download(appid, name, kind, done, total, is_update, str(folder)))
     order = {"downloading": 0, "paused": 1, "queued": 2}
     return sorted(found.values(), key=lambda d: (order[d.state], d.name.casefold()))
 
