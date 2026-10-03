@@ -118,3 +118,25 @@ def test_cancel(qtbot):
     wizard, *_ = make(qtbot, first_start=False, method="pin")
     with qtbot.waitSignal(wizard.cancelled):
         wizard.cancel_button.click()
+
+
+def test_setup_with_dot_grid(qtbot):
+    from gamingcrypt.ui.secret_input import DotGridPad
+
+    wizard, cfg, saved, log = make(qtbot)
+    wizard.submit_volume("/v.vc", "")
+    wizard.submit_current("oldpass")
+    assert set(wizard.method_buttons) == {"pin", "password", "pattern", "grid5"}
+    wizard.method_buttons["grid5"].click()
+    for _ in range(2):
+        pad = wizard.input_page.widget
+        assert isinstance(pad, DotGridPad)
+        for index in (24, 0, 0, 12):
+            pad.press(index)
+        if wizard.step == "new":
+            pad.ok_button.click()
+        else:
+            with qtbot.waitSignal(wizard.completed, timeout=3000):
+                pad.ok_button.click()
+    assert log == [("/v.vc", "oldpass", "25-1-1-13")]
+    assert saved[-1]["unlock"]["method"] == "grid5"

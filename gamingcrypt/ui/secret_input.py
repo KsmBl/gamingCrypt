@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import QPointF, Qt, Signal
+from PySide6.QtCore import QPointF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLineEdit, QVBoxLayout, QWidget
 
@@ -12,7 +12,7 @@ from gamingcrypt.ui import theme
 from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button
 from gamingcrypt.unlock import secrets
 
-METHOD_LABELS = {"pin": "PIN", "password": "Password", "pattern": "Pattern"}
+METHOD_LABELS = {"pin": "PIN", "password": "Password", "pattern": "Swipe pattern", "grid5": "5×5 Pattern"}
 
 
 class PinPad(QWidget):
@@ -155,6 +155,109 @@ class PatternWidget(QWidget):
             painter.drawEllipse(self.node_center(i), r, r)
 
 
+class DotCanvas(QWidget):
+    """Square grid of dots; a tap emits the dot index. Doesn't reveal the tap order."""
+
+    dot_tapped = Signal(int)
+
+    def __init__(self, size: int = 5, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.size = size
+        self.setMinimumSize(400, 400)
+        self.flash: int | None = None
+        self._flash_timer = QTimer(self)
+        self._flash_timer.setSingleShot(True)
+        self._flash_timer.timeout.connect(self._end_flash)
+
+    def _cell(self) -> float:
+        return min(self.width(), self.height()) / self.size
+
+    def node_center(self, index: int) -> QPointF:
+        cell = self._cell()
+        side = cell * self.size
+        row, col = divmod(index, self.size)
+        return QPointF((self.width() - side) / 2 + (col + 0.5) * cell,
+                       (self.height() - side) / 2 + (row + 0.5) * cell)
+
+    def node_at(self, pos: QPointF) -> int | None:
+        radius = self._cell() * 0.45
+        for i in range(self.size * self.size):
+            c = self.node_center(i)
+            if math.hypot(pos.x() - c.x(), pos.y() - c.y()) <= radius:
+                return i
+        return None
+
+    def mousePressEvent(self, event):  # noqa: N802
+        node = self.node_at(event.position())
+        if node is not None:
+            self.flash = node
+            self._flash_timer.start(150)
+            self.update()
+            self.dot_tapped.emit(node)
+
+    def _end_flash(self) -> None:
+        self.flash = None
+        self.update()
+
+    def paintEvent(self, _event):  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        cell = self._cell()
+        for i in range(self.size * self.size):
+            active = i == self.flash
+            painter.setBrush(QColor(theme.ACCENT if active else theme.SURFACE_HI))
+            r = cell * (0.3 if active else 0.22)
+            painter.drawEllipse(self.node_center(i), r, r)
+
+
+class DotGridPad(QWidget):
+    """5x5 dots: tap them in your secret order, then confirm."""
+
+    submitted = Signal(list)
+
+    def __init__(self, size: int = secrets.DOT_GRID_SIZE, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.nodes: list[int] = []
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.display = QLineEdit()
+        self.display.setReadOnly(True)
+        self.display.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.display.setFixedWidth(340)
+        layout.addWidget(self.display, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.canvas = DotCanvas(size)
+        self.canvas.dot_tapped.connect(self.press)
+        layout.addWidget(self.canvas, 1)
+        row = QHBoxLayout()
+        row.addStretch()
+        self.back_button = big_button("⌫")
+        self.back_button.clicked.connect(self.backspace)
+        row.addWidget(self.back_button)
+        self.ok_button = big_button("✓", "primary")
+        self.ok_button.clicked.connect(lambda: self.submitted.emit(list(self.nodes)))
+        row.addWidget(self.ok_button)
+        row.addStretch()
+        layout.addLayout(row)
+
+    def press(self, index: int) -> None:
+        if len(self.nodes) < 64:
+            self.nodes.append(index)
+        self._update_display()
+
+    def backspace(self) -> None:
+        if self.nodes:
+            self.nodes.pop()
+        self._update_display()
+
+    def clear(self) -> None:
+        self.nodes = []
+        self._update_display()
+
+    def _update_display(self) -> None:
+        self.display.setText("●" * len(self.nodes))
+
+
 class PasswordEntry(QWidget):
     submitted = Signal(str)
 
@@ -194,6 +297,7 @@ class SecretInput(QWidget):
         "pin": secrets.pin_to_secret,
         "password": secrets.password_to_secret,
         "pattern": secrets.pattern_to_secret,
+        "grid5": secrets.dot_grid_to_secret,
     }
 
     def __init__(self, method: str, parent: QWidget | None = None):
@@ -209,6 +313,9 @@ class SecretInput(QWidget):
         elif method == "pattern":
             self.widget = PatternWidget()
             self.widget.pattern_entered.connect(self.submit)
+        elif method == "grid5":
+            self.widget = DotGridPad()
+            self.widget.submitted.connect(self.submit)
         else:
             self.widget = PasswordEntry()
             self.widget.submitted.connect(self.submit)

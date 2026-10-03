@@ -7,6 +7,8 @@ created with exactly that string:
 * password -> the text as typed
 * pattern  -> the visited dots of the 3x3 grid numbered 1-9 (row by row),
               e.g. an "L" shape top-left -> bottom-right is ``"14789"``
+* grid5    -> the tapped dots of the 5x5 grid numbered 1-25 (row by row) in tap
+              order, joined with dashes, e.g. ``"1-7-13-25"`` (repeats allowed)
 """
 
 from __future__ import annotations
@@ -14,6 +16,8 @@ from __future__ import annotations
 MIN_PIN_LENGTH = 4
 MIN_PATTERN_LENGTH = 4
 GRID_SIZE = 3
+DOT_GRID_SIZE = 5
+MIN_DOT_TAPS = 4
 
 
 class InvalidSecret(ValueError):
@@ -43,3 +47,12 @@ def pattern_to_secret(nodes: list[int]) -> str:
     if any(n < 0 or n >= GRID_SIZE * GRID_SIZE for n in nodes):
         raise InvalidSecret("Invalid dot in pattern")
     return "".join(str(n + 1) for n in nodes)
+
+
+def dot_grid_to_secret(nodes: list[int], size: int = DOT_GRID_SIZE) -> str:
+    """``nodes`` are 0-based indices of the tapped dots, in tap order (repeats allowed)."""
+    if len(nodes) < MIN_DOT_TAPS:
+        raise InvalidSecret(f"Tap at least {MIN_DOT_TAPS} dots")
+    if any(n < 0 or n >= size * size for n in nodes):
+        raise InvalidSecret("Invalid dot")
+    return "-".join(str(n + 1) for n in nodes)

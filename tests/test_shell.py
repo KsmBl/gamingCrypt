@@ -121,7 +121,7 @@ def test_settings_reset_authentication(qtbot):
     wizard.submit_new("14789")
     wizard.submit_confirm("14789")
     qtbot.waitUntil(lambda: tab.currentWidget() is tab.overview)
-    assert "Pattern" in tab.method_label.text()
+    assert "Swipe pattern" in tab.method_label.text()
     assert "changed" in tab.status.text()
     assert saved[-1]["unlock"]["method"] == "pattern"
 

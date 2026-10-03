@@ -15,10 +15,10 @@ your Steam library.
 
 ## Features
 
-- **Unlock screen**: PIN pad, password with on-screen keyboard, or a 3×3 swipe pattern
+- **Unlock screen**: PIN pad, password with on-screen keyboard, a 3×3 swipe pattern, or a 5×5 tap pattern
   - Mounts your VeraCrypt volume (device or file container); the password goes to VeraCrypt over stdin
 - **First-start setup**: pick your volume and unlock method, enter the value twice, and GamingCrypt re-keys the volume
-- **Settings → Reset authentication method**: switch between PIN, password and pattern at any time
+- **Settings → Reset authentication method**: switch between PIN, password, swipe pattern and 5×5 pattern at any time
 - **Tabs**: Games, Movies, Series, Music, Pictures, Settings (the media tabs show *coming soon*)
 - **Games**
   - Search your installed games
@@ -56,7 +56,8 @@ The secret you enter **is** the VeraCrypt password:
 |----------|---------------------------------------------------------------------------|
 | PIN      | the digits, e.g. `482916` (at least 4)                                    |
 | Password | the text as typed                                                         |
-| Pattern  | the touched dots numbered 1–9 row by row, e.g. an "L" `1→4→7→8→9` = `14789` |
+| Swipe pattern | the touched dots numbered 1–9 row by row, e.g. an "L" `1→4→7→8→9` = `14789` |
+| 5×5 Pattern | the tapped dots numbered 1–25 row by row **in tap order**, joined with `-`, repeats allowed, e.g. `1-7-13-25` (at least 4 taps) |
 
 The first-start wizard (and *Settings → Reset authentication method*) asks for the
 current password, then for the new method and value, and changes the volume's
@@ -95,7 +96,7 @@ the Steam client (`steam://` URIs).
 | Key | Meaning |
 |---|---|
 | `fullscreen` | start in fullscreen (default `true`) |
-| `unlock.method` | `pin`, `password` or `pattern` |
+| `unlock.method` | `pin`, `password`, `pattern` (3×3 swipe) or `grid5` (5×5 tap) |
 | `unlock.volume` | VeraCrypt volume, e.g. `/dev/nvme0n1p3` or `~/games.vc` |
 | `unlock.mount_point` | optional, e.g. `/mnt/games` (empty = VeraCrypt picks one) |
 | `unlock.use_sudo` | mount through `sudo -n` + helper (default `true`) |

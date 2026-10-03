@@ -143,3 +143,54 @@ def test_lock_screen_unconfigured_allows_skip(qtbot):
     assert not screen.skip_button.isHidden()
     with qtbot.waitSignal(screen.unlocked):
         screen.skip_button.click()
+
+
+def test_dot_grid_taps_in_order(qtbot):
+    from gamingcrypt.ui.secret_input import DotGridPad
+
+    pad = DotGridPad()
+    qtbot.addWidget(pad)
+    pad.resize(500, 600)
+    pad.show()
+    for index in (0, 24, 24, 12):
+        qtbot.mouseClick(pad.canvas, Qt.MouseButton.LeftButton, pos=pad.canvas.node_center(index).toPoint())
+    assert pad.nodes == [0, 24, 24, 12]
+    assert pad.display.text() == "●●●●"  # order is not revealed
+    pad.backspace()
+    pad.press(6)
+    with qtbot.waitSignal(pad.submitted) as blocker:
+        pad.ok_button.click()
+    assert blocker.args == [[0, 24, 24, 6]]
+
+
+def test_dot_grid_tap_between_dots_is_ignored(qtbot):
+    from gamingcrypt.ui.secret_input import DotGridPad
+
+    pad = DotGridPad()
+    qtbot.addWidget(pad)
+    pad.resize(500, 600)
+    pad.show()
+    a, b = pad.canvas.node_center(0), pad.canvas.node_center(6)
+    assert pad.canvas.node_at(QPointF((a.x() + b.x()) / 2, (a.y() + b.y()) / 2)) is None
+
+
+def test_lock_screen_dot_grid_unlocks(qtbot):
+    unlocker = FakeUnlocker("1-7-13-25")
+    screen = LockScreen(unlocker, "grid5")
+    qtbot.addWidget(screen)
+    assert "5×5" in screen.subtitle.text()
+    pad = screen.input.widget
+    for index in (0, 6, 12, 24):
+        pad.press(index)
+    with qtbot.waitSignal(screen.unlocked, timeout=3000):
+        pad.ok_button.click()
+
+
+def test_lock_screen_dot_grid_too_short(qtbot):
+    unlocker = FakeUnlocker()
+    screen = LockScreen(unlocker, "grid5")
+    qtbot.addWidget(screen)
+    screen.input.widget.press(3)
+    screen.input.widget.ok_button.click()
+    assert unlocker.attempts == [] and "at least" in screen.status.text()
+    assert screen.input.widget.nodes == []

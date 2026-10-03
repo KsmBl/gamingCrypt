@@ -30,10 +30,10 @@ class LockScreen(QWidget):
 
         self.input = SecretInput(method)
         self.method = self.input.method
-        subtitle = QLabel(f"Enter your {METHOD_LABELS[self.method]}")
-        subtitle.setObjectName("subtitle")
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(subtitle)
+        self.subtitle = QLabel(f"Enter your {METHOD_LABELS[self.method]}")
+        self.subtitle.setObjectName("subtitle")
+        self.subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.subtitle)
         self.input.secret_entered.connect(self._attempt)
         self.input.invalid.connect(lambda msg: set_status(self.status, msg, error=True))
         layout.addWidget(self.input, 1)

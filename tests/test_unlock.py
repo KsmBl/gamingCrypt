@@ -173,3 +173,16 @@ def test_real_change_password_roundtrip(tmp_path):
     wrong = unlocker.change_password("1234", "0000")
     assert not wrong.success and "Wrong code" in wrong.message
     assert unlocker.change_password("14789", "pass word!").success
+
+
+def test_dot_grid_secret_keeps_order_and_repeats():
+    assert secrets.dot_grid_to_secret([0, 6, 12, 24]) == "1-7-13-25"
+    assert secrets.dot_grid_to_secret([4, 4, 0, 4]) == "5-5-1-5"
+    # dashes keep 1,2 and 12 apart
+    assert secrets.dot_grid_to_secret([0, 1, 0, 1]) != secrets.dot_grid_to_secret([11, 0, 1, 0])
+
+
+@pytest.mark.parametrize("nodes", [[0, 1, 2], [0, 1, 2, 25], [-1, 0, 1, 2]])
+def test_dot_grid_invalid(nodes):
+    with pytest.raises(secrets.InvalidSecret):
+        secrets.dot_grid_to_secret(nodes)
