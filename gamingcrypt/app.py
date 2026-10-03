@@ -11,6 +11,8 @@ from typing import Callable
 from PySide6.QtCore import QThreadPool
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QWidget
 
+import logging
+
 from gamingcrypt import config as config_mod
 from gamingcrypt.ui import theme
 from gamingcrypt.ui.auth_setup import AuthSetupWizard
@@ -18,6 +20,9 @@ from gamingcrypt.ui.lock_screen import LockScreen
 from gamingcrypt.ui.settings_tab import SettingsTab
 from gamingcrypt.ui.shell import Shell
 from gamingcrypt.unlock.veracrypt import VeraCryptUnlocker
+
+
+log = logging.getLogger("gamingcrypt.app")
 
 
 class MainWindow(QMainWindow):
@@ -36,9 +41,14 @@ class MainWindow(QMainWindow):
         from gamingcrypt.ui.game_watcher import GameWatcher
 
         # While a game runs the launcher steps aside; it comes back when the game ends.
+        from gamingcrypt.ui.launch_overlay import LaunchOverlay
+
         self.game_watcher = GameWatcher(parent=self)
-        self.game_watcher.finished.connect(lambda _appid: self.bring_to_front())
-        self.game_watcher.failed.connect(lambda _appid: self.bring_to_front())
+        self.launch_overlay = LaunchOverlay(self)
+        self.launch_overlay.cancelled.connect(self.stop_watching_game)
+        self.game_watcher.visible.connect(lambda _appid: self.step_aside())
+        self.game_watcher.finished.connect(lambda _appid: self.game_over())
+        self.game_watcher.failed.connect(lambda _appid: self.game_over())
         # Device controls (display, power, audio); empty in tests unless given.
         from gamingcrypt.system.controls import SystemControls
 
@@ -70,22 +80,52 @@ class MainWindow(QMainWindow):
         self.save(self.config)
         return True
 
-    def minimize_for_steam(self) -> None:
-        self.showMinimized()
+    def step_aside(self) -> None:
+        """Make room for a game or a Steam window.
+
+        Hidden, not minimised: on Wayland an app may minimise itself but is not
+        allowed to un-minimise itself later - showing a hidden window again
+        creates a fresh one, which the compositor puts on top.
+        """
+        log.info("stepping aside")
+        self.hide()
+
+    # Steam windows (store, Steam's own dialogs) would open behind the launcher.
+    minimize_for_steam = step_aside
 
     def game_launched(self, appid: int) -> None:
-        """Even a windowed game must be on top - so the fullscreen launcher minimises."""
-        self.showMinimized()
+        """Stay visible ("Starting …") until the game draws, then step aside."""
+        self.launch_overlay.show_for(self.game_name(appid))
         self.game_watcher.watch(appid)
 
+    def game_name(self, appid: int) -> str:
+        games = getattr(self.shell, "pages", {}).get("Games") if self.shell else None
+        game = getattr(games, "games", {}).get(appid) if games is not None else None
+        return game.name if game is not None else "your game"
+
+    def game_over(self) -> None:
+        self.launch_overlay.hide()
+        self.bring_to_front()
+
+    def stop_watching_game(self) -> None:
+        self.game_watcher._stop()
+        self.launch_overlay.hide()
+
     def bring_to_front(self) -> None:
-        """Another `gamingcrypt` start (or the launcher icon) brings this window back."""
+        """Back after a game, or when `gamingcrypt` / the launcher icon is started again."""
+        log.info("coming back to the front")
+        if self.isMinimized():
+            self.hide()  # see step_aside(): a fresh window instead of un-minimising
         if self.config.get("fullscreen", True) and not self.windowed:
             self.showFullScreen()
         else:
             self.showNormal()
         self.raise_()
         self.activateWindow()
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        self.launch_overlay.setGeometry(self.rect())
 
     def closeEvent(self, event):  # noqa: N802
         current = self.stack.currentWidget()
@@ -225,8 +265,12 @@ def main(argv: list[str] | None = None) -> int:
 
         for line in SteamService(cfg["steam"], config_mod.cache_dir()).diagnose(cfg["unlock"]):
             print(line)
+        print(f"Log file: {config_mod.cache_dir() / 'gamingcrypt.log'}")
         return 0
 
+    from gamingcrypt.log import setup as setup_log
+
+    log_path = setup_log(config_mod.cache_dir())
     app = QApplication([sys.argv[0], *qt_args])
     app.setApplicationName("GamingCrypt")
     if activate_running_instance():

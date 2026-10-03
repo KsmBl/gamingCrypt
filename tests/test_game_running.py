@@ -50,34 +50,135 @@ class Clock:
         return self.now
 
 
-def test_watcher_started_then_finished(qtbot, monkeypatch):
-    monkeypatch.setattr(game_watcher, "POLL_MS", 10)
-    running = set()
-    watcher = GameWatcher(running=lambda: running)
+class Game:
+    """Scripted game: processes appear, open the GPU, exit."""
+
+    def __init__(self):
+        self.pids: set[int] = set()
+        self.drawing = False
+
+    def processes(self, appid):
+        return set(self.pids)
+
+    def gpu(self, pids):
+        return self.drawing
+
+
+def watcher_for(game, clock):
+    w = GameWatcher(processes=game.processes, gpu=game.gpu, clock=clock)
     events = []
-    watcher.started.connect(lambda a: events.append(("started", a)))
-    watcher.finished.connect(lambda a: events.append(("finished", a)))
-    watcher.watch(620)
-    watcher.poll()
-    assert events == [] and watcher.active  # still launching
-    running.add(620)
-    qtbot.waitUntil(lambda: events == [("started", 620)])
-    running.clear()
-    qtbot.waitUntil(lambda: events[-1] == ("finished", 620))
-    assert not watcher.active
+    for name in ("started", "visible", "finished", "failed"):
+        getattr(w, name).connect(lambda appid, n=name: events.append(n))
+    return w, events
 
 
-def test_watcher_gives_up_if_game_never_starts(qtbot):
-    clock = Clock()
-    watcher = GameWatcher(running=set, clock=clock)
-    failed = []
-    watcher.failed.connect(failed.append)
-    watcher.watch(620)
-    watcher.poll()
-    assert failed == []
+def test_watcher_phases(qtbot):
+    game, clock = Game(), Clock()
+    w, events = watcher_for(game, clock)
+    w.watch(620)
+    w.poll()
+    assert events == [] and w.phase == "launching"
+    game.pids = {10, 11}
+    w.poll()
+    assert events == ["started"] and w.phase == "starting"  # process there, not drawing yet
+    clock.now += 10
+    w.poll()
+    assert events == ["started"]  # still no window -> launcher stays (no desktop flash)
+    game.drawing = True
+    w.poll()
+    assert events == ["started"]  # GPU just opened, give the window a moment
+    clock.now += game_watcher.WINDOW_DELAY_S
+    w.poll()
+    assert events == ["started", "visible"] and w.phase == "playing"
+    w.poll()
+    assert events == ["started", "visible"]
+    game.pids = set()
+    w.poll()
+    assert events == ["started", "visible", "finished"] and not w.active
+
+
+def test_watcher_steps_aside_without_gpu_after_fallback():
+    game, clock = Game(), Clock()
+    w, events = watcher_for(game, clock)
+    w.watch(1)
+    game.pids = {5}
+    w.poll()
+    clock.now += game_watcher.NO_GPU_FALLBACK_S
+    w.poll()
+    assert events == ["started", "visible"]
+
+
+def test_watcher_game_exits_before_drawing():
+    game, clock = Game(), Clock()
+    w, events = watcher_for(game, clock)
+    w.watch(1)
+    game.pids = {5}
+    w.poll()
+    game.pids = set()
+    w.poll()
+    assert events == ["started", "finished"]
+
+
+def test_watcher_gives_up_if_game_never_starts():
+    game, clock = Game(), Clock()
+    w, events = watcher_for(game, clock)
+    w.watch(620)
     clock.now = game_watcher.LAUNCH_TIMEOUT_S + 1
-    watcher.poll()
-    assert failed == [620] and not watcher.active
+    w.poll()
+    assert events == ["failed"] and not w.active
+
+
+# --- process tree / GPU ---------------------------------------------------------------
+
+def fake_tree(tmp_path):
+    proc = fake_proc(tmp_path, {
+        100: ["reaper", "SteamLaunch", "AppId=1557740", "--", "wrapper"],
+        101: ["steam-launch-wrapper"],
+        102: ["Rounds.exe"],
+        200: ["reaper", "SteamLaunch", "AppId=999"],
+        300: ["firefox"],
+    })
+    for pid, ppid, comm in ((100, 1, "reaper"), (101, 100, "wrapper"), (102, 101, "Rounds (x) .exe"),
+                            (200, 1, "reaper"), (300, 1, "firefox")):
+        (proc / str(pid) / "stat").write_text(f"{pid} ({comm}) S {ppid} 1 1 0 -1\n")
+        (proc / str(pid) / "fd").mkdir()
+    return proc
+
+
+def test_game_processes_whole_tree(tmp_path):
+    from gamingcrypt.steam.running import game_processes
+
+    proc = fake_tree(tmp_path)
+    assert game_processes(1557740, proc) == {100, 101, 102}
+    assert game_processes(999, proc) == {200}
+    assert game_processes(5, proc) == set()
+
+
+def test_uses_gpu(tmp_path):
+    from gamingcrypt.steam.running import uses_gpu
+
+    proc = fake_tree(tmp_path)
+    (proc / "102/fd/3").symlink_to("/dev/null")
+    assert not uses_gpu({100, 101, 102}, proc)
+    (proc / "102/fd/7").symlink_to("/dev/dri/renderD128")
+    assert uses_gpu({100, 101, 102}, proc)
+    assert not uses_gpu({300}, proc)
+
+
+def test_real_process_tree_and_gpu():
+    from gamingcrypt.steam.running import game_processes, uses_gpu
+
+    process = subprocess.Popen(["sh", "-c", "sleep 30; true", "SteamLaunch", "AppId=4243"])
+    try:
+        deadline = time.time() + 3
+        while time.time() < deadline and len(game_processes(4243)) < 2:
+            time.sleep(0.05)
+        tree = game_processes(4243)
+        assert process.pid in tree and len(tree) >= 2  # sh and its sleep child
+        assert not uses_gpu(tree)
+    finally:
+        process.kill()
+        process.wait()
 
 
 def test_client_play_reports_launch():
@@ -104,13 +205,12 @@ def test_service_hands_play_hook_to_client(tmp_path):
     assert svc.client.on_play is hook
 
 
-def test_launcher_steps_aside_while_game_runs(qtbot, monkeypatch):
+def make_window(qtbot, monkeypatch):
     from gamingcrypt.app import MainWindow
     from gamingcrypt.config import DEFAULTS
     from gamingcrypt.ui.games_tab import GamesTab
     from tests.fakes import FakeService
 
-    monkeypatch.setattr(game_watcher, "POLL_MS", 10)
     service = FakeService()
     window = MainWindow(copy.deepcopy(DEFAULTS), lambda c: None,
                         page_factory=lambda cfg: {"Games": GamesTab(service)})
@@ -118,37 +218,83 @@ def test_launcher_steps_aside_while_game_runs(qtbot, monkeypatch):
     window.windowed = True
     window.show()
     window.show_shell()
-    assert service.on_game_launch == window.game_launched
-    # The headless test platform has no window manager, so check what GamingCrypt asks for.
+    window.shell.pages["Games"].games.update({g.appid: g for g in service.games})
     calls = []
-    monkeypatch.setattr(window, "showMinimized", lambda: calls.append("minimize"))
-    monkeypatch.setattr(window, "bring_to_front", lambda: calls.append("restore"))
-    running = set()
-    window.game_watcher.running = lambda: running
+    monkeypatch.setattr(window, "step_aside", lambda: calls.append("aside"))
+    monkeypatch.setattr(window, "bring_to_front", lambda: calls.append("back"))
+    return window, service, calls
+
+
+def test_launcher_waits_for_the_game_window_then_steps_aside(qtbot, monkeypatch):
+    window, service, calls = make_window(qtbot, monkeypatch)
+    assert service.on_game_launch == window.game_launched
+    game, clock = Game(), Clock()
+    window.game_watcher.processes, window.game_watcher.gpu, window.game_watcher.clock = game.processes, game.gpu, clock
     window.game_launched(620)
-    assert calls == ["minimize"]  # the game is on top, windowed or not
-    running.add(620)
-    qtbot.waitUntil(lambda: window.game_watcher.seen)
+    # stays visible with a "Starting …" screen - no desktop flash while Steam/Proton start
+    assert calls == [] and window.launch_overlay.isVisible()
+    assert window.launch_overlay.label.text() == "Starting Portal 2…"
+    game.pids = {1}
     window.game_watcher.poll()
-    assert calls == ["minimize"]  # stays out of the way while playing
-    running.clear()
-    qtbot.waitUntil(lambda: calls == ["minimize", "restore"])  # back after the game
-    assert not window.game_watcher.active
+    assert calls == []
+    game.drawing = True
+    window.game_watcher.poll()
+    clock.now += game_watcher.WINDOW_DELAY_S
+    window.game_watcher.poll()
+    assert calls == ["aside"]
+    game.pids = set()
+    window.game_watcher.poll()
+    assert calls == ["aside", "back"] and not window.launch_overlay.isVisible()
 
 
 def test_launcher_comes_back_if_game_never_starts(qtbot, monkeypatch):
-    from gamingcrypt.app import MainWindow
-    from gamingcrypt.config import DEFAULTS
-
-    window = MainWindow(copy.deepcopy(DEFAULTS), lambda c: None)
-    qtbot.addWidget(window)
-    calls = []
-    monkeypatch.setattr(window, "showMinimized", lambda: calls.append("minimize"))
-    monkeypatch.setattr(window, "bring_to_front", lambda: calls.append("restore"))
+    window, service, calls = make_window(qtbot, monkeypatch)
     clock = Clock()
-    window.game_watcher.running = set
-    window.game_watcher.clock = clock
+    window.game_watcher.processes, window.game_watcher.clock = (lambda appid: set()), clock
     window.game_launched(620)
     clock.now += game_watcher.LAUNCH_TIMEOUT_S + 1
     window.game_watcher.poll()
-    assert calls == ["minimize", "restore"]
+    assert calls == ["back"] and not window.launch_overlay.isVisible()
+
+
+def test_back_button_on_overlay(qtbot, monkeypatch):
+    window, service, calls = make_window(qtbot, monkeypatch)
+    window.game_watcher.processes = lambda appid: set()
+    window.game_launched(400)
+    assert window.launch_overlay.label.text() == "Starting Portal…"
+    window.launch_overlay.back_button.click()
+    assert not window.launch_overlay.isVisible() and not window.game_watcher.active
+
+
+def test_step_aside_hides_and_comes_back_without_unminimising(qtbot):
+    """Wayland: a minimised app can't restore itself - so hide and show a fresh window."""
+    import copy as _copy
+
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.config import DEFAULTS
+
+    window = MainWindow(_copy.deepcopy(DEFAULTS), lambda c: None)
+    qtbot.addWidget(window)
+    window.windowed = True
+    window.show()
+    window.step_aside()
+    assert window.isHidden()
+    window.bring_to_front()
+    assert window.isVisible() and not window.isMinimized()
+    window.showMinimized()
+    window.bring_to_front()
+    assert window.isVisible() and not window.isMinimized()
+    assert window.minimize_for_steam == window.step_aside
+
+
+def test_log_file(tmp_path):
+    import logging
+
+    from gamingcrypt.log import setup
+
+    path = setup(tmp_path)
+    logging.getLogger("gamingcrypt.games").info("app 620 started")
+    for handler in logging.getLogger("gamingcrypt").handlers:
+        handler.flush()
+    assert "app 620 started" in path.read_text()
+    logging.getLogger("gamingcrypt").handlers.clear()

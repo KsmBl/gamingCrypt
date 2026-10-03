@@ -121,11 +121,21 @@ installed games are shown, and the Steam page says so.
 
 ### Playing
 
-When you press **Play**, GamingCrypt minimises itself, so the game is on top, windowed or
-not. It watches for the game: Steam starts every Linux game with `SteamLaunch AppId=<id>`,
-which is visible in `/proc`. When the game exits, GamingCrypt comes back to fullscreen. If
-the game doesn't start within 3 minutes (for example because Steam needs an update first),
-GamingCrypt comes back anyway.
+When you press **Play**:
+1. GamingCrypt shows *Starting <game>…* while Steam and Proton prepare the game, so you
+   never see the desktop in between.
+2. When one of the game's processes opens the GPU, its window is about to appear.
+   Shortly after, GamingCrypt steps aside, so the game is on top, windowed or not.
+3. When the game exits, GamingCrypt comes back to fullscreen.
+
+How it works:
+- **Detecting the game:** Steam starts every Linux game with `SteamLaunch AppId=<id>`, so
+  the game's whole process tree is visible in `/proc`.
+- **Stepping aside:** GamingCrypt hides its window instead of minimising it. On Wayland an
+  app can't un-minimise itself, but showing a hidden window again works.
+- **Fallbacks:** if the game never starts, GamingCrypt returns after 3 minutes. *Back to
+  GamingCrypt* on the start screen cancels waiting.
+- **Troubleshooting:** what happened is logged to `~/.cache/gamingcrypt/gamingcrypt.log`.
 
 ### Steam windows
 
