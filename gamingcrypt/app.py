@@ -33,6 +33,12 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.input_service = input_service
         self.windowed = False
+        from gamingcrypt.ui.game_watcher import GameWatcher
+
+        # While a game runs the launcher steps aside; it comes back when the game ends.
+        self.game_watcher = GameWatcher(parent=self)
+        self.game_watcher.finished.connect(lambda _appid: self.bring_to_front())
+        self.game_watcher.failed.connect(lambda _appid: self.bring_to_front())
         # Device controls (display, power, audio); empty in tests unless given.
         from gamingcrypt.system.controls import SystemControls
 
@@ -66,6 +72,11 @@ class MainWindow(QMainWindow):
 
     def minimize_for_steam(self) -> None:
         self.showMinimized()
+
+    def game_launched(self, appid: int) -> None:
+        """Even a windowed game must be on top - so the fullscreen launcher minimises."""
+        self.showMinimized()
+        self.game_watcher.watch(appid)
 
     def bring_to_front(self) -> None:
         """Another `gamingcrypt` start (or the launcher icon) brings this window back."""
@@ -115,6 +126,7 @@ class MainWindow(QMainWindow):
         if service is not None:
             # Steam windows (store, Steam's own dialogs) would open *behind* the fullscreen launcher.
             service.on_steam_ui = self.minimize_for_steam
+            service.on_game_launch = self.game_launched
         self.shell = Shell(pages)
         self.shell.exit_requested.connect(self.close)
         self._replace(self.shell)

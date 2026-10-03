@@ -119,6 +119,14 @@ installed games are shown, and the Steam page says so.
 - **Safe by design:** only the game's own folder under `steamapps/common` is ever deleted.
 - **Turning it off:** `"steam": {"silent_uninstall": false}` uses Steam's dialog again.
 
+### Playing
+
+When you press **Play**, GamingCrypt minimises itself, so the game is on top, windowed or
+not. It watches for the game: Steam starts every Linux game with `SteamLaunch AppId=<id>`,
+which is visible in `/proc`. When the game exits, GamingCrypt comes back to fullscreen. If
+the game doesn't start within 3 minutes (for example because Steam needs an update first),
+GamingCrypt comes back anyway.
+
 ### Steam windows
 
 Some things still need a Steam window: buying, the first install of a free game, and

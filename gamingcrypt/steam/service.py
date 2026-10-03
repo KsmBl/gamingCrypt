@@ -36,6 +36,7 @@ class SteamService:
         self.install_library = ""
         # Set by the app: called when a Steam window opens (see SteamClient.on_ui).
         self.on_steam_ui = None
+        self.on_game_launch = None  # set by the app: a game was started
         self._lock = threading.Lock()
         self._metadata: dict[str, dict] = self._read_json("steam_metadata.json", {})
 
@@ -46,6 +47,8 @@ class SteamService:
             self._client = SteamClient(self.cfg.get("command") or None)
         if getattr(self._client, "on_ui", None) is None and self.on_steam_ui is not None:
             self._client.on_ui = self.on_steam_ui
+        if getattr(self._client, "on_play", None) is None and self.on_game_launch is not None:
+            self._client.on_play = self.on_game_launch
         return self._client
 
     def _sync_account(self) -> None:

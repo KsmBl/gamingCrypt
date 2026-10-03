@@ -32,6 +32,8 @@ class SteamClient:
         # Called after opening a Steam *window* (store, install/uninstall dialog), so the
         # fullscreen launcher can get out of the way instead of hiding it.
         self.on_ui: Callable[[], None] | None = None
+        # Called after a game was launched (the launcher should step aside).
+        self.on_play: Callable[[int], None] | None = None
 
     def _ui(self, ok: bool) -> bool:
         if ok and self.on_ui is not None:
@@ -52,7 +54,10 @@ class SteamClient:
         return True
 
     def play(self, appid: int) -> bool:
-        return self.open_uri(f"steam://rungameid/{int(appid)}")
+        ok = self.open_uri(f"steam://rungameid/{int(appid)}")
+        if ok and self.on_play is not None:
+            self.on_play(int(appid))
+        return ok
 
     def install(self, appid: int) -> bool:
         return self._ui(self.open_uri(f"steam://install/{int(appid)}"))
