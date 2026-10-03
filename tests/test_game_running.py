@@ -311,3 +311,48 @@ def test_loading_screen_has_cover_and_spinner(qtbot, monkeypatch):
     qtbot.waitUntil(lambda: overlay.spinner.angle != before)  # it animates
     overlay.back_button.click()
     assert not overlay.spinner.timer.isActive()  # no animation in the background
+
+
+def test_game_page_forgets_starting_message_after_the_game(qtbot, monkeypatch):
+    window, service, calls = make_window(qtbot, monkeypatch)
+    games = window.shell.pages["Games"]
+    games.open_game(620)
+    page = games.currentWidget()
+    game = Game()
+    window.game_watcher.processes, window.game_watcher.gpu = game.processes, game.gpu
+    service.client.play = lambda appid: window.game_launched(appid) or True
+    page.main_button.click()
+    assert page.status.text() == "Starting Portal 2…"
+    game.pids = {1}
+    window.game_watcher.poll()
+    game.pids = set()
+    window.game_watcher.poll()  # game exited
+    assert page.status.text() == ""
+
+
+def test_game_page_says_when_game_did_not_start(qtbot, monkeypatch):
+    window, service, calls = make_window(qtbot, monkeypatch)
+    games = window.shell.pages["Games"]
+    games.open_game(620)
+    page = games.currentWidget()
+    clock = Clock()
+    window.game_watcher.processes, window.game_watcher.clock = (lambda appid: set()), clock
+    service.client.play = lambda appid: window.game_launched(appid) or True
+    page.main_button.click()
+    clock.now += game_watcher.LAUNCH_TIMEOUT_S + 1
+    window.game_watcher.poll()
+    assert "didn't start" in page.status.text() and page.status.property("error")
+
+
+def test_back_button_on_loading_screen_clears_message_and_other_games_untouched(qtbot, monkeypatch):
+    window, service, calls = make_window(qtbot, monkeypatch)
+    games = window.shell.pages["Games"]
+    games.open_game(620)
+    page = games.currentWidget()
+    window.game_watcher.processes = lambda appid: set()
+    service.client.play = lambda appid: window.game_launched(appid) or True
+    page.main_button.click()
+    window.game_over(1145360)  # another game's end doesn't touch this page
+    assert page.status.text() == "Starting Portal 2…"
+    window.launch_overlay.back_button.click()
+    assert page.status.text() == ""

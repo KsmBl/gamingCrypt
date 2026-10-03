@@ -143,6 +143,10 @@ class StorePage(QWidget):
             ok, message = client.open_store(item.appid), "Opened the store page in Steam"
         set_status(self.status, message if ok else "Could not reach Steam - is it installed?", error=not ok)
 
+    def game_session_ended(self, appid: int, failed: bool) -> None:
+        if self.status.text().startswith("Starting "):
+            set_status(self.status, "Didn't start - check Steam" if failed else "", error=failed)
+
     # search -----------------------------------------------------------------
     def do_search(self) -> None:
         term = self.search.text().strip()

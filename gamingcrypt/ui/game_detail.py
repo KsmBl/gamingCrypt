@@ -116,6 +116,15 @@ class GameDetailPage(QWidget):
         self.uninstall_button.setVisible(g.installed)
         self.no_options.setVisible(not g.installed)
 
+    def game_session_ended(self, appid: int, failed: bool) -> None:
+        """Called when the launched game exits (or never started)."""
+        if appid != self.game.appid:
+            return
+        if failed:
+            set_status(self.status, f"{self.game.name} didn't start - check Steam", error=True)
+        else:
+            set_status(self.status, "")
+
     def size_text(self) -> str:
         g = self.game
         if g.installed and g.size_on_disk:

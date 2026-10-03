@@ -47,8 +47,8 @@ class MainWindow(QMainWindow):
         self.launch_overlay = LaunchOverlay(self)
         self.launch_overlay.cancelled.connect(self.stop_watching_game)
         self.game_watcher.visible.connect(lambda _appid: self.step_aside())
-        self.game_watcher.finished.connect(lambda _appid: self.game_over())
-        self.game_watcher.failed.connect(lambda _appid: self.game_over())
+        self.game_watcher.finished.connect(lambda appid: self.game_over(appid))
+        self.game_watcher.failed.connect(lambda appid: self.game_over(appid, failed=True))
         # Device controls (display, power, audio); empty in tests unless given.
         from gamingcrypt.system.controls import SystemControls
 
@@ -104,12 +104,24 @@ class MainWindow(QMainWindow):
         game = getattr(games, "games", {}).get(appid) if games is not None else None
         return game.name if game is not None else "your game"
 
-    def game_over(self) -> None:
+    def game_over(self, appid: int | None = None, failed: bool = False) -> None:
+        # Pages showing "Starting <game>…" must not keep saying so after the game.
+        if self.shell is not None and appid is not None:
+            for page in self.shell.findChildren(QWidget):
+                hook = getattr(page, "game_session_ended", None)
+                if callable(hook):
+                    hook(appid, failed)
         self.launch_overlay.hide()
         self.bring_to_front()
 
     def stop_watching_game(self) -> None:
+        appid = self.game_watcher.appid
         self.game_watcher._stop()
+        if appid is not None and self.shell is not None:
+            for page in self.shell.findChildren(QWidget):
+                hook = getattr(page, "game_session_ended", None)
+                if callable(hook):
+                    hook(appid, False)
         self.launch_overlay.hide()
 
     def bring_to_front(self) -> None:
