@@ -228,10 +228,8 @@ class KeyboardFocusFilter(QObject):
         edit.installEventFilter(self)
 
     def eventFilter(self, obj, event):  # noqa: N802
-        if isinstance(obj, QLineEdit) and event.type() in (
-            QEvent.Type.FocusIn,
-            QEvent.Type.MouseButtonPress,
-        ):
+        # Only on a real tap - auto focus at startup must not pop up the keyboard.
+        if isinstance(obj, QLineEdit) and event.type() == QEvent.Type.MouseButtonPress:
             self.keyboard.set_target(obj)
             self.keyboard.show()
         return False

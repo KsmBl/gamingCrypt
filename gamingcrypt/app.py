@@ -72,7 +72,11 @@ class MainWindow(QMainWindow):
 
 
 def default_pages(config: dict) -> dict[str, QWidget]:
-    return {}
+    from gamingcrypt.steam.service import SteamService
+    from gamingcrypt.ui.games_tab import GamesTab
+
+    service = SteamService(config["steam"], config_mod.cache_dir())
+    return {"Games": GamesTab(service)}
 
 
 def main(argv: list[str] | None = None) -> int:
