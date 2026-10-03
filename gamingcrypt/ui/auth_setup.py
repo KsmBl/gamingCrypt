@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import threading
 from pathlib import Path
 from typing import Callable
 
@@ -130,15 +131,19 @@ class AuthSetupWizard(QWidget):
         self.create_page = self._build_create_page()
         self.method_page = self._build_method_page()
         self.done_page = self._build_done_page()
-        for page in (self.source_page, self.volume_page, self.create_page, self.method_page, self.done_page):
+        self.creating_page = self._build_creating_page()
+        for page in (self.source_page, self.volume_page, self.create_page, self.method_page,
+                     self.creating_page, self.done_page):
             self.stack.addWidget(page)
         self.input_page: SecretInput | None = None
 
         self.status = _label("", "status")
         layout.addWidget(self.status)
         buttons = QHBoxLayout()
-        self.cancel_button = big_button("Skip setup" if first_start else "Cancel")
-        self.cancel_button.clicked.connect(self.cancelled.emit)
+        self._cancel_text = "Skip setup" if first_start else "Cancel"
+        self._cancel_event: threading.Event | None = None
+        self.cancel_button = big_button(self._cancel_text)
+        self.cancel_button.clicked.connect(self._cancel_clicked)
         buttons.addWidget(self.cancel_button)
         buttons.addStretch()
         self.back_button = big_button("‹ Back")
@@ -218,6 +223,16 @@ class AuthSetupWizard(QWidget):
         v.addLayout(row2)
         self.path_edit.textChanged.connect(self._update_free_space)
         self._update_free_space()
+        v.addStretch()
+        return page
+
+    def _build_creating_page(self) -> QWidget:
+        page = QWidget()
+        v = QVBoxLayout(page)
+        v.addStretch()
+        self.progress_label = _label("0%", "title")
+        v.addWidget(self.progress_label)
+        v.addWidget(_label("Please wait - you can cancel, which deletes the unfinished container."))
         v.addStretch()
         return page
 
@@ -393,18 +408,34 @@ class AuthSetupWizard(QWidget):
             lambda exc: self._applied(UnlockResult(False, str(exc))),
         )
 
+    def _cancel_clicked(self) -> None:
+        if self.busy and self.creating:
+            if self._cancel_event is not None:
+                self._cancel_event.set()
+            self.cancel_button.setEnabled(False)
+            set_status(self.status, "Cancelling…")
+            return
+        if not self.busy:
+            self.cancelled.emit()
+
     def _apply_create(self) -> None:
         self._set_nav(False)
         self.new_kdf = new_kdf = self.new_kdf_params()
         unlock_cfg = dict(self.config["unlock"], volume=self.volume, mount_point=self.mount_point, kdf=new_kdf)
         unlocker = self.unlocker_factory(unlock_cfg)
         path, size, secret, quick = self.volume, self.size_gb, self.new_secret, self.quick
-        self.stack.setCurrentWidget(self.done_page)
-        self.done_label.setText("")
+        self._cancel_event = cancel = threading.Event()
+        # While creating there is nothing to continue to - only "Cancel creation".
+        self.step = "creating"
+        self.stack.setCurrentWidget(self.creating_page)
+        self.progress_label.setText("0%")
         self.hint.setText("Creating your encrypted container…")
-        set_status(self.status, "Creating container… 0%")
+        self.cancel_button.setText("Cancel creation")
+        self.cancel_button.setEnabled(True)
+        set_status(self.status, "")
         run_async(
-            lambda: unlocker.create_volume(path, size, secret, quick, progress=self._bridge.progress.emit),
+            lambda: unlocker.create_volume(path, size, secret, quick, progress=self._bridge.progress.emit,
+                                           cancel=cancel),
             self._applied,
             lambda exc: self._applied(UnlockResult(False, str(exc))),
             owner=self,
@@ -412,11 +443,17 @@ class AuthSetupWizard(QWidget):
 
     def _show_progress(self, percent: float) -> None:
         if self.busy:
-            set_status(self.status, f"Creating container… {percent:.0f}%")
+            self.progress_label.setText(f"{percent:.0f}%")
 
     def _applied(self, result: UnlockResult) -> None:
         self.busy = False
+        self._cancel_event = None
+        self.cancel_button.setText(self._cancel_text)
         self.cancel_button.setEnabled(True)
+        if result.cancelled:
+            self.choose_create()
+            set_status(self.status, "Creation cancelled - the unfinished container was deleted")
+            return
         if not result.success:
             set_status(self.status, result.message, error=True)
             if self.creating:
@@ -441,5 +478,6 @@ class AuthSetupWizard(QWidget):
                 "then install games onto it."
             )
             self.stack.setCurrentWidget(self.done_page)
+            self.cancel_button.hide()  # finished: the only way on is Continue
             return
         self.completed.emit()

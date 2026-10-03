@@ -14,10 +14,13 @@ class FakeUnlocker:
         self.log = log
         self.current = current
 
-    def create_volume(self, path, size_gb, secret, quick=True, progress=None):
+    def create_volume(self, path, size_gb, secret, quick=True, progress=None, cancel=None):
         self.log.append(("create", path, size_gb, secret, quick, self.cfg.get("kdf")))
         if progress:
             progress(50.0)
+        if self.current == "slow-create":
+            cancel.wait(5)
+            return UnlockResult(False, "Creation cancelled", cancelled=True)
         if self.current == "fail-create":
             return UnlockResult(False, "Not enough free disk space")
         return UnlockResult(True, "Container created")
@@ -248,7 +251,7 @@ def test_create_shows_progress(qtbot, tmp_path):
     wizard, *_ = make(qtbot)
     wizard.busy = True
     wizard._show_progress(42.4)
-    assert wizard.status.text() == "Creating container… 42%"
+    assert wizard.progress_label.text() == "42%"
 
 
 def test_create_failure_returns_to_form(qtbot, tmp_path):
@@ -278,3 +281,42 @@ def test_back_from_create_to_source(qtbot):
     wizard.choose_create()
     wizard.show_volume_step()
     assert wizard.step == "source" and not wizard.creating
+
+
+def start_create(qtbot, wizard, tmp_path):
+    wizard.choose_create()
+    wizard.submit_create(str(tmp_path / "g.vc"), "8", "", free_bytes=PLENTY)
+    wizard.choose_method("pin")
+    wizard.submit_new("1234")
+    wizard.submit_confirm("1234")
+
+
+def test_no_continue_while_creating_only_cancel(qtbot, tmp_path):
+    wizard, cfg, saved, log = make(qtbot, current="slow-create")
+    wizard.show()
+    start_create(qtbot, wizard, tmp_path)
+    assert wizard.step == "creating"
+    assert wizard.stack.currentWidget() is wizard.creating_page
+    assert wizard.next_button.isHidden() and wizard.back_button.isHidden()
+    assert wizard.done_page.isHidden()  # no Continue reachable
+    assert wizard.cancel_button.text() == "Cancel creation" and wizard.cancel_button.isEnabled()
+    qtbot.waitUntil(lambda: wizard.progress_label.text() == "50%")
+    cancelled = []
+    wizard.cancelled.connect(lambda: cancelled.append(1))
+    wizard.cancel_button.click()
+    assert "Cancelling" in wizard.status.text() and not wizard.cancel_button.isEnabled()
+    qtbot.waitUntil(lambda: not wizard.busy, timeout=6000)
+    # back on the form, setup not left, nothing saved
+    assert wizard.step == "create"
+    assert "cancelled" in wizard.status.text()
+    assert wizard.cancel_button.text() == "Skip setup" and wizard.cancel_button.isEnabled()
+    assert cancelled == [] and saved == []
+
+
+def test_continue_only_after_creation_finished(qtbot, tmp_path):
+    wizard, cfg, saved, log = make(qtbot)
+    wizard.show()
+    start_create(qtbot, wizard, tmp_path)
+    qtbot.waitUntil(lambda: wizard.step == "done")
+    assert wizard.cancel_button.isHidden()
+    assert wizard.stack.currentWidget() is wizard.done_page
