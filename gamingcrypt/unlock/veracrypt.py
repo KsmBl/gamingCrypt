@@ -63,6 +63,22 @@ class VeraCryptUnlocker:
             cmd.append(self.mount_point)
         return cmd
 
+    def change_password_command(self, new_secret: str) -> list[str]:
+        # VeraCrypt can only read the *current* password from stdin, the new one
+        # has to be passed as argument.
+        keyfiles = ",".join(self.keyfiles)
+        return self._base() + [
+            "--stdin",
+            f"--pim={self.pim}",
+            f"--keyfiles={keyfiles}",
+            f"--new-password={new_secret}",
+            f"--new-pim={self.pim}",
+            f"--new-keyfiles={keyfiles}",
+            "--random-source=/dev/urandom",
+            "-C",
+            self.volume,
+        ]
+
     def list_command(self) -> list[str]:
         return self._base() + ["--list", self.volume]
 
@@ -73,19 +89,9 @@ class VeraCryptUnlocker:
             return False
         return result.returncode == 0 and self.volume in (result.stdout or "")
 
-    def unlock(self, secret: str) -> UnlockResult:
-        if not self.configured:
-            return UnlockResult(False, "No VeraCrypt volume configured")
-        if self.is_mounted():
-            return UnlockResult(True, "Volume already mounted")
+    def _run(self, cmd: list[str], secret: str, ok_message: str) -> UnlockResult:
         try:
-            result = self.runner(
-                self.mount_command(),
-                input=secret + "\n",
-                capture_output=True,
-                text=True,
-                timeout=self.timeout,
-            )
+            result = self.runner(cmd, input=secret + "\n", capture_output=True, text=True, timeout=self.timeout)
         except FileNotFoundError:
             return UnlockResult(False, f"'{self.binary}' not found - is VeraCrypt installed?")
         except subprocess.TimeoutExpired:
@@ -93,9 +99,24 @@ class VeraCryptUnlocker:
         except (OSError, subprocess.SubprocessError) as exc:
             return UnlockResult(False, f"Could not run VeraCrypt: {exc}")
         output = f"{result.stdout or ''}\n{result.stderr or ''}"
-        if result.returncode == 0 and "error" not in output.lower():
-            return UnlockResult(True, "Unlocked")
+        if result.returncode == 0 and "error:" not in output.lower():
+            return UnlockResult(True, ok_message)
         return UnlockResult(False, explain_error(output))
+
+    def change_password(self, current_secret: str, new_secret: str) -> UnlockResult:
+        """Re-key the volume header so ``new_secret`` unlocks it from now on."""
+        if not self.configured:
+            return UnlockResult(False, "No VeraCrypt volume configured")
+        if current_secret == new_secret:
+            return UnlockResult(True, "Unchanged")
+        return self._run(self.change_password_command(new_secret), current_secret, "Unlock method changed")
+
+    def unlock(self, secret: str) -> UnlockResult:
+        if not self.configured:
+            return UnlockResult(False, "No VeraCrypt volume configured")
+        if self.is_mounted():
+            return UnlockResult(True, "Volume already mounted")
+        return self._run(self.mount_command(), secret, "Unlocked")
 
 
 def explain_error(output: str) -> str:

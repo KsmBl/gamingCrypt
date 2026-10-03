@@ -126,3 +126,50 @@ def test_from_config():
 def test_explain_error_fallback():
     assert explain_error("foo\nbar baz\n") == "bar baz"
     assert explain_error("") == "Unlocking failed"
+
+
+def test_change_password_command_reads_current_from_stdin():
+    runner = FakeRunner([(0, "Password, PIM and/or keyfile(s) successfully changed.", "")])
+    result = make(runner).change_password("1234", "14789")
+    assert result.success
+    cmd, kwargs = runner.calls[0]
+    assert kwargs["input"] == "1234\n"
+    assert "--new-password=14789" in cmd
+    assert cmd[-2:] == ["-C", "/dev/sdb1"]
+    assert not any("1234" in part for part in cmd)
+
+
+def test_change_password_wrong_current():
+    runner = FakeRunner([(1, "", "Error: Operation failed due to one or more of the following:\n - Incorrect password.")])
+    result = make(runner).change_password("0000", "1111")
+    assert not result.success and "Wrong code" in result.message
+
+
+def test_change_password_same_secret_is_noop():
+    runner = FakeRunner([])
+    assert make(runner).change_password("1234", "1234").success
+    assert runner.calls == []
+
+
+# --- real VeraCrypt (container files don't need root to re-key) -------------
+
+import shutil  # noqa: E402
+
+needs_veracrypt = pytest.mark.skipif(shutil.which("veracrypt") is None, reason="veracrypt not installed")
+
+
+@needs_veracrypt
+def test_real_change_password_roundtrip(tmp_path):
+    volume = tmp_path / "test.vc"
+    created = subprocess.run(
+        ["veracrypt", "--text", "--non-interactive", "--stdin", "--create", str(volume), "--size=2M",
+         "--volume-type=normal", "--encryption=AES", "--hash=SHA-512", "--filesystem=none",
+         "--pim=0", "--keyfiles=", "--random-source=/dev/urandom"],
+        input="1234\n", capture_output=True, text=True, timeout=120,
+    )
+    assert created.returncode == 0, created.stderr
+    unlocker = VeraCryptUnlocker(volume=str(volume), use_sudo=False)
+    assert unlocker.change_password("1234", "14789").success
+    wrong = unlocker.change_password("1234", "0000")
+    assert not wrong.success and "Wrong code" in wrong.message
+    assert unlocker.change_password("14789", "pass word!").success
