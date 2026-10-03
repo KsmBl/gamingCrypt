@@ -28,6 +28,7 @@ your Steam library.
 - **Downloads tab**: every queued, running and paused Steam download with progress, and a count in the tab bar
 - **Device settings**: resolution, refresh rate, brightness, max power consumption (TDP), audio output and input device and their volume
 - **Controller**: calibrate the analog sticks and triggers and map every button; games get a virtual Xbox controller with your setup
+- **Browse with the controller**: the whole UI works with D-pad / stick, A, B, LB/RB, as well as with touch
 - **Games**
   - Search your installed games
   - **Steam** card with your whole library (installed, plus every owned game when a Web API key is set)
@@ -214,6 +215,25 @@ so when something isn't available:
 - **After a reboot:** the resolution and power limit you chose are re-applied when
   GamingCrypt starts.
 - **Not supported:** gamescope (Steam's game mode) and GNOME can't be controlled this way yet.
+
+## Browsing with the controller
+
+| Input | Action |
+|---|---|
+| D-pad / left stick | move the highlight to the nearest item in that direction (hold to repeat) |
+| A | select: press a button, open a game, open a dropdown, open the keyboard on a text field |
+| B | back: previous page, close the keyboard, close a dropdown, cancel the loading screen |
+| LB / RB | previous / next top tab |
+| Start | confirm a swipe pattern |
+
+Notes:
+- **Sliders:** left and right change their value.
+- **On-screen keyboard:** browse its keys with the D-pad and type with A.
+- **Lock screen:** the PIN pad and the 5×5 pattern work with D-pad and A. For the swipe
+  pattern, A adds the dot under the cursor, Start confirms and B clears.
+- **Your mapping applies to the UI too:** GamingCrypt reads the controller through it, or
+  through the virtual controller when that's on.
+- **When it's paused:** while you remap buttons or calibrate, and while a game is running.
 
 ## Controller: calibration and button mapping
 

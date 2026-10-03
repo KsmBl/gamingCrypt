@@ -38,7 +38,8 @@ def big_button(text: str, object_name: str = "", checkable: bool = False) -> QPu
     if object_name:
         button.setObjectName(object_name)
     button.setCheckable(checkable)
-    button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    # Reachable with the controller, but a finger tap doesn't steal focus from text fields.
+    button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
     return button
 
 
@@ -137,6 +138,8 @@ class OnScreenKeyboard(QWidget):
     def __init__(self, target: QLineEdit | None = None, parent: QWidget | None = None, compact: bool = False):
         super().__init__(parent)
         self._target = target
+        # Pop-up keyboards (search fields) close on "back"; permanent ones stay.
+        self.hide_on_back = False
         if compact:
             self.setStyleSheet("QPushButton#key { min-height: 42px; padding: 2px; }")
         self._shift = False

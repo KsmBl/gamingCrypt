@@ -95,6 +95,7 @@ class Tappable(QFrame):
         super().__init__(parent)
         self._press: QPoint | None = None
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)  # controller navigation
 
     def mousePressEvent(self, event):  # noqa: N802
         self._press = event.globalPosition().toPoint()

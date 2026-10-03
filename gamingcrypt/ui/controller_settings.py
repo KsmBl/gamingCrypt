@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from gamingcrypt.input import evdev as e
 from gamingcrypt.input.profile import BUTTONS, TRIGGER_AXES, CalibrationSession, Capture, Profile, Translator
 from gamingcrypt.input.remapper import read_absinfo
-from gamingcrypt.ui import theme
+from gamingcrypt.ui import navigator, theme
 from gamingcrypt.ui.system_settings import Section, _label, _on_change, _slider
 from gamingcrypt.ui.widgets import big_button, set_status
 
@@ -224,6 +224,7 @@ class ControllerPage(QWidget):
         self.stop_reader()
         self.cancel_calibration()
         self.capture = None
+        navigator.set_paused(False)
         self.service.resume(self._was_running or self.service.enabled)
 
     def start_reader(self) -> None:
@@ -308,11 +309,13 @@ class ControllerPage(QWidget):
     def start_capture(self, name: str) -> None:
         if self.capture is not None and self.capture[0] == name:
             self.capture = None  # tapping again cancels
+            navigator.set_paused(False)
             self.refresh_rows()
             return
         self.refresh_rows()
         current = dict(self.translator.abs) if self.translator else None
         self.capture = (name, Capture(self.absinfo, current))
+        navigator.set_paused(True)  # the next press is the new binding, not a UI action
         label, button = self.rows[name]
         label.setText("Press the button now…")
         button.setText("Cancel")
@@ -320,6 +323,7 @@ class ControllerPage(QWidget):
 
     def assign(self, name: str, source) -> None:
         self.capture = None
+        navigator.set_paused(False)
         self.profile.buttons[name] = source
         if name in TRIGGER_AXES:
             info = self.absinfo.get(source.code) if source.kind == "abs" else None
@@ -345,6 +349,7 @@ class ControllerPage(QWidget):
         if self.profile is None:
             return
         self.session = CalibrationSession(self.profile, self.absinfo)
+        navigator.set_paused(True)  # moving sticks / triggers must not move the UI focus
         self._set_calibration_ui(True)
         self.next_button.setText("Next")
         self.calibration_text.setText("Step 1/2: don't touch the sticks and triggers, then tap Next.")
@@ -365,12 +370,14 @@ class ControllerPage(QWidget):
             return
         self.profile = profile
         self.session = None
+        navigator.set_paused(False)
         self._set_calibration_ui(False)
         self.save()
         self.refresh_rows()
         set_status(self.sticks.status, f"{message} - deadzone {profile.deadzone:.0%}")
 
     def cancel_calibration(self) -> None:
+        navigator.set_paused(False)
         if self.session is not None:
             self.session = None
             self._set_calibration_ui(False)

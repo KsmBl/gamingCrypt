@@ -51,6 +51,11 @@ class Shell(QWidget):
             downloads.count_changed.connect(lambda n: self.set_badge("Downloads", n))
         self.show_tab(TABS[0])
 
+    def cycle_tab(self, delta: int) -> None:
+        """LB / RB on the controller."""
+        index = (TABS.index(self.current_tab) + delta) % len(TABS)
+        self.show_tab(TABS[index])
+
     def set_badge(self, name: str, count: int) -> None:
         """e.g. "Downloads (2)" - plain name when there's nothing."""
         self.tab_buttons[name].setText(f"{name} ({count})" if count else name)

@@ -77,6 +77,35 @@ class PatternWidget(QWidget):
         self.nodes: list[int] = []
         self._cursor: QPointF | None = None
         self._error = False
+        # Controller: a cursor over the dots; A adds a dot, Start confirms, B clears.
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.pad_cursor = 4
+
+    def gamepad_direction(self, dx: int, dy: int) -> bool:
+        row, col = divmod(self.pad_cursor, self.SIZE)
+        row, col = row + dy, col + dx
+        if not (0 <= row < self.SIZE and 0 <= col < self.SIZE):
+            return False  # leave the pattern
+        self.pad_cursor = row * self.SIZE + col
+        self.update()
+        return True
+
+    def gamepad_activate(self) -> bool:
+        self._error = False
+        self.add_node(self.pad_cursor)
+        self.update()
+        return True
+
+    def gamepad_start(self) -> bool:
+        if self.nodes:
+            self.pattern_entered.emit(list(self.nodes))
+        return True
+
+    def gamepad_back(self) -> bool:
+        if self.nodes:
+            self.reset()
+            return True
+        return False
 
     # geometry ---------------------------------------------------------------
     def _cell(self) -> float:
@@ -153,6 +182,10 @@ class PatternWidget(QWidget):
             painter.setBrush(color if active else QColor(theme.SURFACE_HI))
             r = cell * (0.16 if active else 0.11)
             painter.drawEllipse(self.node_center(i), r, r)
+        if self.hasFocus():
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor(theme.ACCENT_HI), cell * 0.03))
+            painter.drawEllipse(self.node_center(self.pad_cursor), cell * 0.24, cell * 0.24)
 
 
 class DotCanvas(QWidget):
@@ -165,6 +198,8 @@ class DotCanvas(QWidget):
         self.size = size
         self.setMinimumSize(400, 400)
         self.flash: int | None = None
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.pad_cursor = (size * size) // 2
         self._flash_timer = QTimer(self)
         self._flash_timer.setSingleShot(True)
         self._flash_timer.timeout.connect(self._end_flash)
@@ -195,6 +230,22 @@ class DotCanvas(QWidget):
             self.update()
             self.dot_tapped.emit(node)
 
+    def gamepad_direction(self, dx: int, dy: int) -> bool:
+        row, col = divmod(self.pad_cursor, self.size)
+        row, col = row + dy, col + dx
+        if not (0 <= row < self.size and 0 <= col < self.size):
+            return False  # e.g. down from the last row -> to the ⌫ / ✓ buttons
+        self.pad_cursor = row * self.size + col
+        self.update()
+        return True
+
+    def gamepad_activate(self) -> bool:
+        self.flash = self.pad_cursor
+        self._flash_timer.start(150)
+        self.update()
+        self.dot_tapped.emit(self.pad_cursor)
+        return True
+
     def _end_flash(self) -> None:
         self.flash = None
         self.update()
@@ -209,6 +260,10 @@ class DotCanvas(QWidget):
             painter.setBrush(QColor(theme.ACCENT if active else theme.SURFACE_HI))
             r = cell * (0.3 if active else 0.22)
             painter.drawEllipse(self.node_center(i), r, r)
+        if self.hasFocus():
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor(theme.ACCENT_HI), cell * 0.04))
+            painter.drawEllipse(self.node_center(self.pad_cursor), cell * 0.38, cell * 0.38)
 
 
 class DotGridPad(QWidget):

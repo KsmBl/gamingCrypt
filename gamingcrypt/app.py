@@ -124,6 +124,14 @@ class MainWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
 
+    def nav_root(self) -> QWidget:
+        """Controller navigation stays inside the loading screen while it's shown."""
+        return self.launch_overlay if self.launch_overlay.isVisible() else self
+
+    def switch_tab(self, delta: int) -> None:
+        if self.shell is not None and self.stack.currentWidget() is self.shell:
+            self.shell.cycle_tab(delta)
+
     def resizeEvent(self, event):  # noqa: N802
         super().resizeEvent(event)
         self.launch_overlay.setGeometry(self.rect())
@@ -290,6 +298,12 @@ def main(argv: list[str] | None = None) -> int:
     input_service.start()  # virtual controller with the user's mapping, if enabled
     window = MainWindow(cfg, save, page_factory=default_pages, system=system, input_service=input_service)
     window.windowed = args.windowed
+    from gamingcrypt.input.nav_source import NavSource
+    from gamingcrypt.ui.navigator import GamepadNavigator
+
+    navigator = GamepadNavigator(window, tab_switch=window.switch_tab)
+    nav_source = NavSource(input_service, navigator.bridge.event.emit)
+    nav_source.start()
     server = listen_for_activation(window.bring_to_front)  # noqa: F841 - keep alive
     if cfg.get("fullscreen", True) and not args.windowed:
         window.showFullScreen()
@@ -297,6 +311,7 @@ def main(argv: list[str] | None = None) -> int:
         window.resize(1280, 800)
         window.show()
     code = app.exec()
+    nav_source.stop()
     # Let background work finish cleanly, e.g. a cancelled container creation
     # still has to delete its unfinished file.
     QThreadPool.globalInstance().waitForDone(30_000)

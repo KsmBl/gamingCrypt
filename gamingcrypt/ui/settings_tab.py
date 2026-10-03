@@ -213,6 +213,19 @@ class SettingsTab(QStackedWidget):
         self.addWidget(self.wizard)
         self.setCurrentWidget(self.wizard)
 
+    def gamepad_back(self) -> bool:
+        page = self.currentWidget()
+        if page is self.overview:
+            return False
+        if page is self.wizard:
+            if self.wizard.gamepad_back():
+                return True
+            if self.wizard.cancel_button.isEnabled():
+                self.wizard.cancel_button.click()
+            return True
+        self.close_page("")
+        return True
+
     def show_sub_tab(self, name: str) -> None:
         self.current_sub_tab = name
         self.sub_stack.setCurrentWidget(self.sub_pages[name])

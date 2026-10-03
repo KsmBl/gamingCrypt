@@ -193,6 +193,13 @@ class AuthSetupWizard(QWidget):
         self._focus_filter.watch(edit)
         return edit
 
+    def gamepad_back(self) -> bool:
+        """B on the volume/new-container form -> back to the choice."""
+        if self.back_button.isVisible():
+            self.show_volume_step()
+            return True
+        return False
+
     def _set_nav(self, visible: bool) -> None:
         """Back/Next only exist on the form pages (volume path / new container)."""
         self.back_button.setVisible(visible)

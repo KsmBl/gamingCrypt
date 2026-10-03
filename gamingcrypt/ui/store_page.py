@@ -96,6 +96,7 @@ class StorePage(QWidget):
 
         self.keyboard = OnScreenKeyboard(self.search)
         self.keyboard.submitted.connect(self.do_search)
+        self.keyboard.hide_on_back = True
         self._focus_filter = KeyboardFocusFilter(self.keyboard, self)
         self._focus_filter.watch(self.search)
         layout.addWidget(self.keyboard)

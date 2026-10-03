@@ -78,6 +78,7 @@ class GamesHome(QWidget):
         self.keyboard = OnScreenKeyboard(self.search)
         self.keyboard.submitted.connect(self.keyboard.hide)
         self.keyboard.hide()
+        self.keyboard.hide_on_back = True
         self._focus_filter = KeyboardFocusFilter(self.keyboard, self)
         self._focus_filter.watch(self.search)
         layout.addWidget(self.keyboard)
@@ -153,6 +154,12 @@ class GamesTab(QStackedWidget):
             current.on_return()
         if current is self.home:
             self.reload_installed()
+
+    def gamepad_back(self) -> bool:
+        if self.currentWidget() is self.home:
+            return False
+        self.back()
+        return True
 
     def back_button(self) -> QWidget:
         button = big_button("‹ Back")
