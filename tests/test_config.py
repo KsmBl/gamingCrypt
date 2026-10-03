@@ -14,7 +14,7 @@ def test_partial_file_is_merged_with_defaults(tmp_path):
     path.write_text(json.dumps({"unlock": {"volume": "/dev/sdb1"}, "fullscreen": False}))
     cfg = config.load_config(path)
     assert cfg["unlock"]["volume"] == "/dev/sdb1"
-    assert cfg["unlock"]["methods"] == ["pin", "password", "pattern"]
+    assert cfg["unlock"]["method"] == ""
     assert cfg["fullscreen"] is False
     assert cfg["steam"]["country"] == "de"
 

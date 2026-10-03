@@ -11,8 +11,9 @@ from typing import Any
 DEFAULTS: dict[str, Any] = {
     "fullscreen": True,
     "unlock": {
-        # Which unlock methods are offered on the lock screen.
-        "methods": ["pin", "password", "pattern"],
+        # Unlock method chosen in the first-start setup: "pin", "password" or
+        # "pattern". Empty = setup has not been done yet.
+        "method": "",
         # Path to the VeraCrypt volume (file container or device, e.g. /dev/sda2).
         "volume": "",
         # Where the volume gets mounted. Empty = let VeraCrypt choose.

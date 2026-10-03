@@ -1,7 +1,8 @@
 import pytest
 from PySide6.QtCore import QPointF, Qt
 
-from gamingcrypt.ui.lock_screen import LockScreen, PatternWidget, PinPad, between_node
+from gamingcrypt.ui.lock_screen import LockScreen
+from gamingcrypt.ui.secret_input import PatternWidget, PinPad, between_node
 from gamingcrypt.ui.widgets import OnScreenKeyboard
 from gamingcrypt.unlock.veracrypt import UnlockResult
 
@@ -80,59 +81,64 @@ def test_keyboard_types_into_target(qtbot):
 
 def test_lock_screen_correct_pin_unlocks(qtbot):
     unlocker = FakeUnlocker("4711")
-    screen = LockScreen(unlocker)
+    screen = LockScreen(unlocker, "pin")
     qtbot.addWidget(screen)
     with qtbot.waitSignal(screen.unlocked, timeout=3000):
         for key in "4711✓":
-            screen.pin_pad.press(key)
+            screen.input.widget.press(key)
     assert unlocker.attempts == ["4711"]
 
 
 def test_lock_screen_wrong_pin_shows_error(qtbot):
     unlocker = FakeUnlocker("4711")
-    screen = LockScreen(unlocker)
+    screen = LockScreen(unlocker, "pin")
     qtbot.addWidget(screen)
     for key in "0000✓":
-        screen.pin_pad.press(key)
+        screen.input.widget.press(key)
     qtbot.waitUntil(lambda: not screen.busy)
     assert "Wrong code" in screen.status.text()
-    assert screen.pin_pad.display.text() == ""
+    assert screen.input.widget.display.text() == ""
 
 
 def test_lock_screen_short_pin_is_rejected_without_calling_veracrypt(qtbot):
     unlocker = FakeUnlocker()
-    screen = LockScreen(unlocker)
+    screen = LockScreen(unlocker, "pin")
     qtbot.addWidget(screen)
     for key in "12✓":
-        screen.pin_pad.press(key)
+        screen.input.widget.press(key)
     assert unlocker.attempts == []
     assert "at least" in screen.status.text()
 
 
-def test_lock_screen_password_and_pattern(qtbot):
-    unlocker = FakeUnlocker("14789")
-    screen = LockScreen(unlocker)
+def test_lock_screen_password(qtbot):
+    unlocker = FakeUnlocker("secret")
+    screen = LockScreen(unlocker, "password")
     qtbot.addWidget(screen)
-    screen.select_method("password")
-    assert screen.stack.currentWidget() is screen.password
-    screen.password.edit.setText("nope")
-    screen.password.keyboard.submitted.emit()
+    screen.input.widget.edit.setText("nope")
+    screen.input.widget.keyboard.submitted.emit()
     qtbot.waitUntil(lambda: not screen.busy)
     assert unlocker.attempts == ["nope"]
-    screen.select_method("pattern")
+    screen.input.widget.edit.setText("secret")
     with qtbot.waitSignal(screen.unlocked, timeout=3000):
-        screen.pattern.pattern_entered.emit([0, 3, 6, 7, 8])
+        screen.input.widget.keyboard.submitted.emit()
 
 
-def test_lock_screen_only_configured_methods(qtbot):
-    screen = LockScreen(FakeUnlocker(), methods=["pattern", "bogus"])
+def test_lock_screen_pattern(qtbot):
+    unlocker = FakeUnlocker("14789")
+    screen = LockScreen(unlocker, "pattern")
     qtbot.addWidget(screen)
-    assert screen.methods == ["pattern"]
-    assert screen.stack.currentWidget() is screen.pattern
+    with qtbot.waitSignal(screen.unlocked, timeout=3000):
+        screen.input.widget.pattern_entered.emit([0, 3, 6, 7, 8])
+
+
+def test_lock_screen_unknown_method_falls_back_to_password(qtbot):
+    screen = LockScreen(FakeUnlocker(), "bogus")
+    qtbot.addWidget(screen)
+    assert screen.method == "password"
 
 
 def test_lock_screen_unconfigured_allows_skip(qtbot):
-    screen = LockScreen(FakeUnlocker(configured=False))
+    screen = LockScreen(FakeUnlocker(configured=False), "pin")
     qtbot.addWidget(screen)
     assert not screen.skip_button.isHidden()
     with qtbot.waitSignal(screen.unlocked):

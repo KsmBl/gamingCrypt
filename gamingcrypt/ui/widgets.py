@@ -235,3 +235,11 @@ class KeyboardFocusFilter(QObject):
             self.keyboard.set_target(obj)
             self.keyboard.show()
         return False
+
+
+def set_status(label: QLabel, text: str, error: bool = False) -> None:
+    """Set a status label's text and switch its error styling."""
+    label.setText(text)
+    label.setProperty("error", error)
+    label.style().unpolish(label)
+    label.style().polish(label)
