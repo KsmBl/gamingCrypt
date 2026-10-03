@@ -95,7 +95,8 @@ class MainWindow(QMainWindow):
 
     def game_launched(self, appid: int) -> None:
         """Stay visible ("Starting …") until the game draws, then step aside."""
-        self.launch_overlay.show_for(self.game_name(appid))
+        games = self.shell.pages.get("Games") if self.shell else None
+        self.launch_overlay.show_for(self.game_name(appid), appid, getattr(games, "service", None))
         self.game_watcher.watch(appid)
 
     def game_name(self, appid: int) -> str:

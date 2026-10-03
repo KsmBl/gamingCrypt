@@ -298,3 +298,16 @@ def test_log_file(tmp_path):
         handler.flush()
     assert "app 620 started" in path.read_text()
     logging.getLogger("gamingcrypt").handlers.clear()
+
+
+def test_loading_screen_has_cover_and_spinner(qtbot, monkeypatch):
+    window, service, calls = make_window(qtbot, monkeypatch)
+    window.game_watcher.processes = lambda appid: set()
+    overlay = window.launch_overlay
+    window.game_launched(620)
+    assert overlay.isVisible() and overlay.spinner.timer.isActive()
+    assert not overlay.cover.pixmap().isNull()
+    before = overlay.spinner.angle
+    qtbot.waitUntil(lambda: overlay.spinner.angle != before)  # it animates
+    overlay.back_button.click()
+    assert not overlay.spinner.timer.isActive()  # no animation in the background
