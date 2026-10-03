@@ -1,0 +1,76 @@
+"""Colors and the global Qt stylesheet. Everything is sized for fingers."""
+
+BG = "#0f1117"
+SURFACE = "#1a1d27"
+SURFACE_HI = "#252a38"
+TEXT = "#e8eaf0"
+TEXT_DIM = "#8b90a0"
+ACCENT = "#4f8cff"
+ACCENT_HI = "#6fa0ff"
+DANGER = "#e5484d"
+SUCCESS = "#3fb950"
+
+STYLESHEET = f"""
+QWidget {{
+    background: {BG};
+    color: {TEXT};
+    font-size: 20px;
+}}
+QLabel {{ background: transparent; }}
+QLabel#title {{ font-size: 40px; font-weight: 700; }}
+QLabel#subtitle {{ font-size: 22px; color: {TEXT_DIM}; }}
+QLabel#status {{ font-size: 20px; color: {TEXT_DIM}; }}
+QLabel#status[error="true"] {{ color: {DANGER}; }}
+QLabel#comingSoon {{ font-size: 36px; color: {TEXT_DIM}; }}
+QLabel#cardTitle {{ font-size: 22px; font-weight: 600; }}
+QLabel#cardMeta {{ font-size: 16px; color: {TEXT_DIM}; }}
+QLabel#detailTitle {{ font-size: 36px; font-weight: 700; }}
+QLabel#detailMeta {{ font-size: 20px; color: {TEXT_DIM}; }}
+QPushButton {{
+    background: {SURFACE_HI};
+    border: none;
+    border-radius: 14px;
+    padding: 14px 26px;
+    min-height: 40px;
+    font-size: 22px;
+}}
+QPushButton:pressed {{ background: {ACCENT}; }}
+QPushButton:checked {{ background: {ACCENT}; }}
+QPushButton:disabled {{ color: {TEXT_DIM}; background: {SURFACE}; }}
+QPushButton#primary {{ background: {ACCENT}; font-weight: 700; }}
+QPushButton#primary:pressed {{ background: {ACCENT_HI}; }}
+QPushButton#danger {{ background: {DANGER}; font-weight: 700; }}
+QPushButton#key {{ padding: 6px; min-height: 52px; min-width: 52px; font-size: 22px; }}
+QPushButton#pinKey {{ min-height: 72px; min-width: 96px; font-size: 32px; border-radius: 40px; }}
+QPushButton#tab {{
+    background: transparent;
+    border-radius: 0;
+    border-bottom: 4px solid transparent;
+    padding: 18px 22px;
+    font-size: 24px;
+    color: {TEXT_DIM};
+}}
+QPushButton#tab:checked {{ color: {TEXT}; border-bottom: 4px solid {ACCENT}; }}
+QLineEdit, QComboBox {{
+    background: {SURFACE};
+    border: 2px solid {SURFACE_HI};
+    border-radius: 14px;
+    padding: 12px 18px;
+    min-height: 40px;
+    font-size: 24px;
+}}
+QLineEdit:focus {{ border-color: {ACCENT}; }}
+QComboBox QAbstractItemView {{
+    background: {SURFACE};
+    selection-background-color: {ACCENT};
+    font-size: 24px;
+}}
+QComboBox QAbstractItemView::item {{ min-height: 56px; }}
+QFrame#card {{ background: {SURFACE}; border-radius: 18px; }}
+QFrame#card:hover {{ background: {SURFACE_HI}; }}
+QFrame#topBar {{ background: {SURFACE}; }}
+QScrollArea {{ border: none; }}
+QScrollBar:vertical {{ width: 8px; background: transparent; }}
+QScrollBar::handle:vertical {{ background: {SURFACE_HI}; border-radius: 4px; min-height: 40px; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
+"""
