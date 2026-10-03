@@ -24,7 +24,8 @@ your Steam library.
 - **First-start setup**: pick an existing volume, or **create a new encrypted container**, then choose your unlock method
 - **Key derivation**: every secret is hardened with scrypt and a per-volume salt before it reaches VeraCrypt
 - **Settings → Reset authentication method**: switch between PIN, password, swipe pattern and 5×5 pattern at any time
-- **Tabs**: Games, Movies, Series, Music, Pictures, Settings (the media tabs show *coming soon*)
+- **Tabs**: Games, Downloads, Movies, Shows, Music, Pictures, Settings (the media tabs show *coming soon*)
+- **Power menu** (⏻): shut down, restart, or desktop mode (quit GamingCrypt)
 - **Downloads tab**: every queued, running and paused Steam download with progress, and a count in the tab bar
 - **Device settings**: resolution, refresh rate, brightness, max power consumption (TDP), audio output and input device and their volume
 - **Controller**: calibrate the analog sticks and triggers and map every button; games get a virtual Xbox controller with your setup
@@ -334,7 +335,7 @@ and API clients, sorting, and every UI page via pytest-qt.
 ## Roadmap
 
 - More game sources (Heroic/Epic/GOG, Lutris, emulators)
-- Movies, Series, Music, Pictures
+- Movies, Shows, Music, Pictures
 - Navigating the GamingCrypt UI with the gamepad
 - More settings
 

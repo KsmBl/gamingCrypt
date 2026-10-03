@@ -124,9 +124,30 @@ class MainWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
 
+    def power_action(self, kind: str) -> None:
+        log.info("power action: %s", kind)
+        if self.input_service is not None:
+            self.input_service.stop()  # give the real controller back first
+        ok, message = self.power_runner(kind)
+        if not ok:
+            self.shell.power_menu.show_error(message)
+            if self.input_service is not None:
+                self.input_service.start()
+
+    @staticmethod
+    def power_runner(kind: str):
+        from gamingcrypt.system.session import power_action
+
+        return power_action(kind)
+
     def nav_root(self) -> QWidget:
-        """Controller navigation stays inside the loading screen while it's shown."""
-        return self.launch_overlay if self.launch_overlay.isVisible() else self
+        """Controller navigation stays inside the loading screen / power menu while shown."""
+        if self.launch_overlay.isVisible():
+            return self.launch_overlay
+        menu = getattr(self.shell, "power_menu", None) if self.shell is not None else None
+        if menu is not None and menu.isVisible():
+            return menu
+        return self
 
     def switch_tab(self, delta: int) -> None:
         if self.shell is not None and self.stack.currentWidget() is self.shell:
@@ -177,7 +198,8 @@ class MainWindow(QMainWindow):
             service.on_steam_ui = self.minimize_for_steam
             service.on_game_launch = self.game_launched
         self.shell = Shell(pages)
-        self.shell.exit_requested.connect(self.close)
+        self.shell.exit_requested.connect(self.close)  # desktop mode
+        self.shell.power_requested.connect(self.power_action)
         self._replace(self.shell)
         self.screen_name = "shell"
 

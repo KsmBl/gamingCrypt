@@ -36,7 +36,7 @@ def test_shell_has_all_tabs_and_coming_soon(qtbot):
     qtbot.addWidget(shell)
     assert list(shell.tab_buttons) == TABS
     assert shell.current_tab == "Games"
-    for name in ["Movies", "Series", "Music", "Pictures"]:
+    for name in ["Movies", "Shows", "Music", "Pictures"]:
         shell.tab_buttons[name].click()
         assert shell.current_tab == name
         page = shell.stack.currentWidget()
@@ -51,23 +51,77 @@ def test_shell_uses_given_pages(qtbot):
     assert shell.stack.currentWidget() is custom
 
 
-def test_exit_needs_two_taps(qtbot):
+def test_power_menu_options(qtbot):
     shell = Shell()
     qtbot.addWidget(shell)
-    exits = []
-    shell.exit_requested.connect(lambda: exits.append(1))
+    shell.resize(1280, 800)
+    shell.show()
+    events = []
+    shell.exit_requested.connect(lambda: events.append("desktop"))
+    shell.power_requested.connect(events.append)
+    assert not shell.power_menu.isVisible()
     shell.exit_button.click()
-    assert exits == [] and "again" in shell.exit_button.text()
-    shell.exit_button.click()
-    assert exits == [1]
+    menu = shell.power_menu
+    assert menu.isVisible() and menu.geometry() == shell.rect()
+    assert shell.focusWidget() is menu.cancel_button  # controller A can't shut down by accident
+    menu.shutdown_button.click()
+    menu.restart_button.click()
+    menu.desktop_button.click()
+    assert events == ["shutdown", "restart", "desktop"]
+    menu.cancel_button.click()
+    assert not menu.isVisible()
 
 
-def test_exit_disarms(qtbot):
+def test_power_menu_closes_with_back(qtbot):
     shell = Shell()
     qtbot.addWidget(shell)
-    shell.exit_button.click()
-    shell._disarm_exit()
-    assert shell.exit_button.text() == "⏻"
+    shell.show()
+    assert not shell.power_menu.gamepad_back()
+    shell.open_power_menu()
+    assert shell.power_menu.gamepad_back() and not shell.power_menu.isVisible()
+
+
+def test_power_actions_run_systemctl():
+    import subprocess
+
+    from gamingcrypt.system.session import power_action
+
+    calls = []
+
+    def runner(cmd, **kw):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    assert power_action("shutdown", runner) == (True, "Shutting down…")
+    assert power_action("restart", runner)[0]
+    assert calls == [["systemctl", "poweroff"], ["systemctl", "reboot"]]
+    failing = lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, "", "Access denied")  # noqa: E731
+    assert power_action("shutdown", failing) == (False, "Access denied")
+
+    def missing(cmd, **kw):
+        raise FileNotFoundError("systemctl")
+
+    assert not power_action("restart", missing)[0]
+
+
+def test_main_window_power_actions(qtbot, monkeypatch):
+    window = MainWindow(configured(), lambda c: None, FakeUnlocker)
+    qtbot.addWidget(window)
+    window.show()
+    window.show_shell()
+    ran = []
+    monkeypatch.setattr(window, "power_runner", lambda kind: ran.append(kind) or (False, "Access denied"))
+    window.shell.open_power_menu()
+    window.shell.power_menu.shutdown_button.click()
+    assert ran == ["shutdown"]
+    assert "Access denied" in window.shell.power_menu.status.text()
+    assert window.nav_root() is window.shell.power_menu  # controller stays in the menu
+    closed = []
+    monkeypatch.setattr(window, "close", lambda: closed.append(1))
+    window.shell.exit_requested.disconnect()
+    window.shell.exit_requested.connect(window.close)
+    window.shell.power_menu.desktop_button.click()
+    assert closed == [1]
 
 
 def test_main_window_first_start_shows_setup(qtbot):

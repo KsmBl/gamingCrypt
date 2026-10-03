@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
 
+from gamingcrypt.ui.power_menu import PowerMenu
 from gamingcrypt.ui.widgets import ComingSoon, big_button
 
-TABS = ["Games", "Downloads", "Movies", "Series", "Music", "Pictures", "Settings"]
+TABS = ["Games", "Downloads", "Movies", "Shows", "Music", "Pictures", "Settings"]
 
 
 class Shell(QWidget):
-    exit_requested = Signal()
+    exit_requested = Signal()  # desktop mode
+    power_requested = Signal(str)  # "shutdown" / "restart"
 
     def __init__(self, pages: dict[str, QWidget] | None = None, parent: QWidget | None = None):
         super().__init__(parent)
@@ -37,12 +39,8 @@ class Shell(QWidget):
             self.stack.addWidget(page)
         bar_layout.addStretch()
         self.exit_button = big_button("⏻")
-        self.exit_button.clicked.connect(self._exit_tapped)
+        self.exit_button.clicked.connect(self.open_power_menu)
         bar_layout.addWidget(self.exit_button)
-        self._exit_armed = False
-        self._exit_timer = QTimer(self)
-        self._exit_timer.setSingleShot(True)
-        self._exit_timer.timeout.connect(self._disarm_exit)
 
         layout.addWidget(bar)
         layout.addWidget(self.stack, 1)
@@ -50,6 +48,18 @@ class Shell(QWidget):
         if hasattr(downloads, "count_changed"):
             downloads.count_changed.connect(lambda n: self.set_badge("Downloads", n))
         self.show_tab(TABS[0])
+
+        self.power_menu = PowerMenu(self)
+        self.power_menu.desktop.connect(self.exit_requested.emit)
+        self.power_menu.shutdown.connect(lambda: self.power_requested.emit("shutdown"))
+        self.power_menu.restart.connect(lambda: self.power_requested.emit("restart"))
+
+    def open_power_menu(self) -> None:
+        self.power_menu.open_menu()
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        self.power_menu.setGeometry(self.rect())
 
     def cycle_tab(self, delta: int) -> None:
         """LB / RB on the controller."""
@@ -65,16 +75,3 @@ class Shell(QWidget):
         self.stack.setCurrentWidget(self.pages[name])
         for tab, button in self.tab_buttons.items():
             button.setChecked(tab == name)
-
-    def _exit_tapped(self) -> None:
-        # Two taps so a stray touch doesn't close the launcher.
-        if self._exit_armed:
-            self.exit_requested.emit()
-            return
-        self._exit_armed = True
-        self.exit_button.setText("Tap again to exit")
-        self._exit_timer.start(3000)
-
-    def _disarm_exit(self) -> None:
-        self._exit_armed = False
-        self.exit_button.setText("⏻")
