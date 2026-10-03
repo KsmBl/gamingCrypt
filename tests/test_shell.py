@@ -138,7 +138,7 @@ def test_settings_reset_without_volume_asks_for_volume(qtbot):
     tab = SettingsTab(copy.deepcopy(DEFAULTS), lambda c: None, FakeUnlocker)
     qtbot.addWidget(tab)
     tab.reset_button.click()
-    assert tab.wizard.step == "volume"
+    assert tab.wizard.step == "source"
 
 
 def test_settings_shows_kdf(qtbot):

@@ -14,6 +14,14 @@ class FakeUnlocker:
         self.log = log
         self.current = current
 
+    def create_volume(self, path, size_gb, secret, quick=True, progress=None):
+        self.log.append(("create", path, size_gb, secret, quick, self.cfg.get("kdf")))
+        if progress:
+            progress(50.0)
+        if self.current == "fail-create":
+            return UnlockResult(False, "Not enough free disk space")
+        return UnlockResult(True, "Container created")
+
     def change_password(self, current, new, new_kdf=None):
         self.log.append((self.cfg["volume"], current, new))
         self.kdf_log.append((self.cfg.get("kdf"), new_kdf))
@@ -38,7 +46,10 @@ def make(qtbot, first_start=True, method="", current="oldpass"):
 
 def test_first_start_full_flow_sets_pin(qtbot):
     wizard, cfg, saved, log = make(qtbot)
+    assert wizard.step == "source"
+    wizard.existing_button.click()
     assert wizard.step == "volume"
+    assert wizard._keyboard.target() is wizard.volume_edit
     wizard.submit_volume("  /dev/sdb1 ", "/mnt/games")
     assert wizard.step == "current"
     assert wizard.input_page.method == "password"
@@ -61,6 +72,7 @@ def test_first_start_full_flow_sets_pin(qtbot):
 
 def test_empty_volume_is_rejected(qtbot):
     wizard, *_ = make(qtbot)
+    wizard.choose_existing()
     wizard.submit_volume("", "")
     assert wizard.step == "volume"
     assert "path" in wizard.status.text()
@@ -187,3 +199,82 @@ def test_failed_change_keeps_old_kdf(qtbot):
     wizard.submit_confirm("9876")
     qtbot.waitUntil(lambda: not wizard.busy)
     assert cfg["unlock"]["kdf"] == old and saved == []
+
+
+# --- create a new container ----------------------------------------------------
+
+from gamingcrypt.ui.auth_setup import validate_new_container  # noqa: E402
+
+PLENTY = lambda d: 10**15  # noqa: E731
+
+
+def test_validate_new_container(tmp_path):
+    (tmp_path / "taken.vc").write_text("")
+    assert validate_new_container("", "64", PLENTY)[0]
+    assert "exists" in validate_new_container(str(tmp_path / "taken.vc"), "64", PLENTY)[0]
+    assert "does not exist" in validate_new_container(str(tmp_path / "no" / "x.vc"), "64", PLENTY)[0]
+    assert "whole number" in validate_new_container(str(tmp_path / "x.vc"), "lots", PLENTY)[0]
+    assert "at least" in validate_new_container(str(tmp_path / "x.vc"), "0", PLENTY)[0]
+    assert "free space" in validate_new_container(str(tmp_path / "x.vc"), "64", lambda d: 10 * 1024**3)[0]
+    assert validate_new_container(str(tmp_path / "x.vc"), " 64 ", PLENTY) == (None, str(tmp_path / "x.vc"), 64)
+
+
+def test_create_container_flow(qtbot, tmp_path):
+    wizard, cfg, saved, log = make(qtbot)
+    params = {"algorithm": "scrypt", "salt": "dd" * 16, "n": 2, "r": 1, "p": 1}
+    wizard.new_kdf_params = lambda: params
+    wizard.create_button.click()
+    assert wizard.step == "create"
+    assert wizard.path_edit.text().endswith("GamingCrypt.vc")
+    assert wizard._keyboard.target() is wizard.path_edit
+    wizard.submit_create(str(tmp_path / "games.vc"), "32", str(tmp_path / "Games"), quick=False, free_bytes=PLENTY)
+    # a new container has no current password -> straight to the method choice
+    assert wizard.step == "method"
+    wizard.choose_method("grid5")
+    wizard.submit_new("1-2-3-4")
+    wizard.submit_confirm("1-2-3-4")
+    qtbot.waitUntil(lambda: wizard.step == "done")
+    assert log == [("create", str(tmp_path / "games.vc"), 32, "1-2-3-4", False, params)]
+    assert "Steam" in wizard.done_label.text() and str(tmp_path / "Games") in wizard.done_label.text()
+    unlock = saved[-1]["unlock"]
+    assert unlock["volume"] == str(tmp_path / "games.vc")
+    assert unlock["mount_point"] == str(tmp_path / "Games")
+    assert unlock["method"] == "grid5" and unlock["kdf"] == params
+    with qtbot.waitSignal(wizard.completed):
+        wizard.done_page.findChildren(type(wizard.cancel_button))[0].click()
+
+
+def test_create_shows_progress(qtbot, tmp_path):
+    wizard, *_ = make(qtbot)
+    wizard.busy = True
+    wizard._show_progress(42.4)
+    assert wizard.status.text() == "Creating container… 42%"
+
+
+def test_create_failure_returns_to_form(qtbot, tmp_path):
+    wizard, cfg, saved, log = make(qtbot, current="fail-create")
+    wizard.choose_create()
+    wizard.submit_create(str(tmp_path / "g.vc"), "8", "", free_bytes=PLENTY)
+    wizard.choose_method("pin")
+    wizard.submit_new("1234")
+    wizard.submit_confirm("1234")
+    qtbot.waitUntil(lambda: not wizard.busy)
+    assert wizard.step == "create"
+    assert "free disk space" in wizard.status.text()
+    assert saved == [] and wizard.cancel_button.isEnabled()
+
+
+def test_create_form_validation_error(qtbot, tmp_path):
+    wizard, *_ = make(qtbot)
+    wizard.choose_create()
+    wizard.size_edit.setText("abc")
+    wizard.path_edit.setText(str(tmp_path / "g.vc"))
+    wizard._keyboard.submitted.emit()
+    assert wizard.step == "create" and "whole number" in wizard.status.text()
+
+
+def test_back_from_create_to_source(qtbot):
+    wizard, *_ = make(qtbot)
+    wizard.choose_create()
+    wizard.show_volume_step()
+    assert wizard.step == "source" and not wizard.creating

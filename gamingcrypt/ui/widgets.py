@@ -134,9 +134,11 @@ class OnScreenKeyboard(QWidget):
     LETTERS = ["1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm"]
     SYMBOLS = ["1234567890", "!@#$%^&*()", "-_=+[]{};:", "'\",.<>/?\\|"]
 
-    def __init__(self, target: QLineEdit | None = None, parent: QWidget | None = None):
+    def __init__(self, target: QLineEdit | None = None, parent: QWidget | None = None, compact: bool = False):
         super().__init__(parent)
         self._target = target
+        if compact:
+            self.setStyleSheet("QPushButton#key { min-height: 42px; padding: 2px; }")
         self._shift = False
         self._symbols = False
         self._letter_buttons: list[QPushButton] = []
