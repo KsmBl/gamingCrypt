@@ -5,9 +5,13 @@ A fullscreen **touch UI for Linux gaming handhelds** whose games live on a
 password or swipe pattern**, and then you land in a console-style launcher with
 your Steam library.
 
-| Lock screen | Pattern setup | Games |
+| Lock screen | 5×5 Pattern | Swipe pattern setup |
 |---|---|---|
-| ![lock](docs/screenshots/lock.png) | ![pattern](docs/screenshots/pattern.png) | ![games](docs/screenshots/games.png) |
+| ![lock](docs/screenshots/lock.png) | ![grid5](docs/screenshots/grid5.png) | ![pattern](docs/screenshots/pattern.png) |
+
+| New container | Games | |
+|---|---|---|
+| ![create](docs/screenshots/create.png) | ![games](docs/screenshots/games.png) | |
 
 | Steam library | Game page | Settings |
 |---|---|---|
@@ -129,9 +133,26 @@ the Steam client (`steam://` URIs).
 
 - The password is sent to VeraCrypt over **stdin**, so it never shows up in the process list. VeraCrypt has no stdin option for the *new* password when you change it, so during a password change (a few seconds) the new secret is briefly visible in the process list.
 - sudo access is **not** granted to `veracrypt` itself, because that would amount to root access. It goes only to `/usr/local/lib/gamingcrypt/veracrypt-helper`, which:
-  - accepts only mount, list and change-password with a fixed set of arguments
+  - accepts only mount, list, change-password and create, each with a fixed set of arguments
   - always mounts with `nosuid,nodev`
   - only allows mount points below `/mnt`, `/media`, `/run/media` or your home directory
+  - only **creates** new container *files* (never devices): the file must not exist yet, and the folder must belong to you and be below those same locations. Afterwards the container file and its fresh ext4 filesystem are handed over to your user so Steam can install into it
+- After updating GamingCrypt, re-run `./install.sh` so the helper is updated too.
+
+## Creating a new container
+
+In the first-start setup choose **Create new encrypted container** and enter:
+- the file location (default `~/GamingCrypt.vc`)
+- the size in GB (free space is checked)
+- the mount point (default `~/GamingCrypt`)
+- quick format: on by default, fast. Turn it off for a full format, which is slow but also hides how much of the container is used.
+
+Then pick your unlock method. The container is created as AES / SHA-512 / ext4 with
+your KDF-derived password, and progress is shown live. Afterwards add the mount point
+in Steam (*Settings → Storage → Add drive*) and install games onto it.
+
+To encrypt a whole partition or SD card, create the volume with VeraCrypt itself
+and choose *Use existing VeraCrypt volume*.
 
 ## Development
 
