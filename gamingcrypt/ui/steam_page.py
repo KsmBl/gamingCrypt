@@ -91,16 +91,24 @@ class SteamLibraryPage(QWidget):
         installed = sum(1 for g in games if g.installed)
         self.count_label.setText(f"{len(games)} games · {installed} installed")
         self.apply_sort()
-        if not games:
-            self.status.setText("No Steam games found. Is Steam installed and the volume unlocked?")
-        elif not getattr(self.service, "full_library_available", True):
-            self.status.setText("Showing installed games only - add a Steam Web API key and SteamID "
-                                "in config.json to see your full library")
-        else:
-            self.status.setText("")
+        self.status.setText(self.empty_hint(games))
         self._pending = [g.appid for g in games if self.service.needs_metadata(g)]
         self._fetch_total = len(self._pending)
         self._fetch_next()
+
+    def empty_hint(self, games: list[SteamGame]) -> str:
+        """Explain *why* the list is short instead of just showing "0 games"."""
+        full = getattr(self.service, "full_library_available", True)
+        if getattr(self.service, "root", True) is None:
+            return "Steam wasn't found on this device. Install Steam and log in once, then open this page again."
+        if not games and not full:
+            return ("No installed games yet. To see every game you own, add your Steam Web API key "
+                    "in Settings → Steam.")
+        if not games:
+            return "No Steam games found."
+        if not full:
+            return "Showing installed games only - add your Steam Web API key in Settings → Steam to see your whole library."
+        return ""
 
     def _load_failed(self, exc: Exception) -> None:
         self.loading = False

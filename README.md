@@ -93,20 +93,18 @@ set up before the KDF existed keep working: do a reset once to switch them to th
 ## Steam library
 
 Installed games are read straight from Steam's library folders, including
-libraries on the encrypted drive. To also list games you **own but haven't
-installed** (and to get playtime from Steam), add a
-[Steam Web API key](https://steamcommunity.com/dev/apikey) and your SteamID64 to
-`~/.config/gamingcrypt/config.json`:
+libraries on the encrypted drive. Native, Flatpak and Snap Steam are detected
+automatically.
 
-```json
-{
-  "steam": {
-    "api_key": "YOUR_KEY",
-    "steam_id": "7656119xxxxxxxxxx",
-    "country": "de"
-  }
-}
-```
+To also list games you **own but haven't installed**, open **Settings → Steam → Set Steam API
+key** and enter a [Steam Web API key](https://steamcommunity.com/dev/apikey) (any domain name
+works). Your SteamID is detected from the account logged in to Steam. Without a key, only
+installed games are shown, and the Steam page says so.
+
+If the library looks wrong, run `gamingcrypt --diagnose`. It prints:
+- which Steam folder was found and every library folder in it, with its number of games
+- whether the encrypted drive is mounted
+- the detected account and whether an API key is set
 
 ### Encrypted drive as Steam library
 
@@ -141,7 +139,8 @@ the Steam client (`steam://` URIs).
 | `unlock.pim`, `unlock.keyfiles` | VeraCrypt PIM / keyfiles if your volume uses them |
 | `unlock.kdf` | scrypt parameters and salt (written by the setup, **back it up**) |
 | `steam.root` | Steam directory (empty = auto-detect, Flatpak included) |
-| `steam.api_key`, `steam.steam_id` | optional, for the full library |
+| `steam.api_key` | Web API key for the full library (set it in Settings → Steam) |
+| `steam.steam_id` | optional, overrides the detected SteamID64 |
 | `steam.command` | command used for `steam://` URIs (empty = auto-detect) |
 | `steam.auto_library` | add the unlocked container as Steam library (default `true`) |
 

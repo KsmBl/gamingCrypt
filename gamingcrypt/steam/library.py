@@ -31,6 +31,7 @@ def default_roots(home: Path | None = None) -> list[Path]:
         home / ".steam" / "steam",
         home / ".local" / "share" / "Steam",
         home / ".var" / "app" / "com.valvesoftware.Steam" / ".local" / "share" / "Steam",
+        home / "snap" / "steam" / "common" / ".local" / "share" / "Steam",
         home / ".steam" / "root",
     ]
 
@@ -125,3 +126,21 @@ def local_playtime(root: Path) -> dict[int, dict[str, int]]:
             entry["playtime"] = max(entry["playtime"], _int(vdf.iget(values, "Playtime")))
             entry["last_played"] = max(entry["last_played"], _int(vdf.iget(values, "LastPlayed")))
     return result
+
+
+def logged_in_user(root: Path) -> dict | None:
+    """The Steam account last used on this machine: ``{"steam_id", "name"}`` (from loginusers.vdf)."""
+    try:
+        users = vdf.iget(vdf.load(root / "config" / "loginusers.vdf"), "users", default={}) or {}
+    except (OSError, vdf.VDFError):
+        return None
+    best, best_key = None, None
+    for steam_id, info in users.items():
+        if not steam_id.isdigit() or not isinstance(info, dict):
+            continue
+        key = (vdf.iget(info, "MostRecent") == "1", _int(vdf.iget(info, "Timestamp")))
+        if best_key is None or key > best_key:
+            best_key = key
+            best = {"steam_id": steam_id,
+                    "name": vdf.iget(info, "PersonaName") or vdf.iget(info, "AccountName") or steam_id}
+    return best

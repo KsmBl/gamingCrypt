@@ -131,6 +131,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="gamingcrypt", description=__doc__)
     parser.add_argument("--windowed", action="store_true", help="don't start in fullscreen")
     parser.add_argument("--config", type=Path, help="path to config.json")
+    parser.add_argument("--diagnose", action="store_true",
+                        help="print what GamingCrypt sees of Steam, your library and the volume")
     parser.add_argument("--volume-password", action="store_true",
                         help="print the real VeraCrypt password for your PIN/pattern (recovery)")
     args, qt_args = parser.parse_known_args(argv if argv is not None else sys.argv[1:])
@@ -139,6 +141,12 @@ def main(argv: list[str] | None = None) -> int:
     cfg = config_mod.load_config(cfg_path)
     if args.volume_password:
         return print_volume_password(cfg)
+    if args.diagnose:
+        from gamingcrypt.steam.service import SteamService
+
+        for line in SteamService(cfg["steam"], config_mod.cache_dir()).diagnose(cfg["unlock"]):
+            print(line)
+        return 0
 
     app = QApplication([sys.argv[0], *qt_args])
     app.setApplicationName("GamingCrypt")

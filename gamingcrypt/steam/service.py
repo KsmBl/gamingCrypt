@@ -42,8 +42,24 @@ class SteamService:
             self._client = SteamClient(self.cfg.get("command") or None)
         return self._client
 
+    def _sync_account(self) -> None:
+        """Settings may change the key at runtime; the SteamID is detected from Steam itself."""
+        if self.cfg.get("api_key"):
+            self.api.api_key = self.cfg["api_key"]
+        if self.cfg.get("steam_id"):
+            self.api.steam_id = self.cfg["steam_id"]
+        elif not self.api.steam_id:
+            user = self.account()
+            if user:
+                self.api.steam_id = user["steam_id"]
+
+    def account(self) -> dict | None:
+        root = self.root
+        return library.logged_in_user(root) if root is not None else None
+
     @property
     def full_library_available(self) -> bool:
+        self._sync_account()
         return self.api.can_list_owned
 
     @property
@@ -65,6 +81,7 @@ class SteamService:
     # library ----------------------------------------------------------------
     def owned_games(self) -> list[dict]:
         """Owned games from the Web API, falling back to the last cached answer when offline."""
+        self._sync_account()
         if not self.api.can_list_owned:
             return []
         try:
@@ -167,6 +184,42 @@ class SteamService:
                 target.write_bytes(response.content)
                 return target
         return None
+
+    # diagnostics ------------------------------------------------------------
+    def diagnose(self, unlock_cfg: dict | None = None) -> list[str]:
+        """Human readable report of what GamingCrypt sees (``gamingcrypt --diagnose``)."""
+        import os
+
+        lines = []
+        root = self.root
+        if root is None:
+            checked = [self.cfg["root"]] if self.cfg.get("root") else [str(p) for p in library.default_roots(self.home)]
+            lines.append("Steam: NOT FOUND - checked:")
+            lines += [f"  {p}" for p in checked]
+        else:
+            lines.append(f"Steam: {root}")
+            for folder in library.library_folders(root):
+                steamapps = folder / "steamapps"
+                count = len(list(steamapps.glob("appmanifest_*.acf"))) if steamapps.is_dir() else 0
+                state = "ok" if steamapps.is_dir() else "missing steamapps (not mounted?)"
+                mounted = " [mount point]" if os.path.ismount(folder) else ""
+                lines.append(f"  library {folder}{mounted}: {count} manifests, {state}")
+            lines.append(f"  installed games (without tools): {len(library.installed_games(root))}")
+        user = self.account()
+        self._sync_account()
+        lines.append(f"Steam account: {user['name']} ({user['steam_id']})" if user else "Steam account: not detected")
+        lines.append(f"SteamID used: {self.api.steam_id or '-'}")
+        lines.append(f"Web API key: {'set' if self.api.api_key else 'NOT SET (only installed games are listed)'}")
+        if self.api.can_list_owned:
+            try:
+                lines.append(f"Owned games via Web API: {len(self.api.owned_games())}")
+            except Exception as exc:  # noqa: BLE001
+                lines.append(f"Owned games via Web API: ERROR {exc}")
+        if unlock_cfg is not None:
+            mp = os.path.expanduser(unlock_cfg.get("mount_point", ""))
+            lines.append(f"Volume: {unlock_cfg.get('volume') or '-'}")
+            lines.append(f"Mount point: {mp or '-'} ({'mounted' if mp and os.path.ismount(mp) else 'NOT mounted'})")
+        return lines
 
     # library folder on the encrypted drive -----------------------------------
     def ensure_library(self, path: str) -> library_setup.LibraryResult:
