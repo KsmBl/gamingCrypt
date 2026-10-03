@@ -34,6 +34,8 @@ class SteamService:
         self.now = now
         # Preferred library for new installs (the encrypted drive), set by the app.
         self.install_library = ""
+        # Set by the app: called when a Steam window opens (see SteamClient.on_ui).
+        self.on_steam_ui = None
         self._lock = threading.Lock()
         self._metadata: dict[str, dict] = self._read_json("steam_metadata.json", {})
 
@@ -42,6 +44,8 @@ class SteamService:
     def client(self) -> SteamClient:
         if self._client is None:
             self._client = SteamClient(self.cfg.get("command") or None)
+        if getattr(self._client, "on_ui", None) is None and self.on_steam_ui is not None:
+            self._client.on_ui = self.on_steam_ui
         return self._client
 
     def _sync_account(self) -> None:
@@ -264,6 +268,13 @@ class SteamService:
         target = self.target_library()
         return installer.install(self.root, target or Path("/nonexistent"), appid, name, self.client,
                                  owner=self.api.steam_id or "")
+
+    @property
+    def silent_uninstall(self) -> bool:
+        return bool(self.cfg.get("silent_uninstall", True))
+
+    def uninstall_game(self, appid: int) -> installer.InstallResult:
+        return installer.uninstall(self.root, appid, self.client)
 
     def install_progress(self, appid: int) -> installer.InstallProgress:
         return installer.progress(self.root, appid)

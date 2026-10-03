@@ -32,7 +32,7 @@ your Steam library.
   - Search your installed games
   - **Steam** card with your whole library (installed, plus every owned game when a Web API key is set)
   - Sort by **name, release date, playtime, price or latest update**, ascending or descending
-  - Game page: **Play** or **Download**, plus **Options → Uninstall** (tap twice to confirm)
+  - Game page: **Play** or **Download**, plus **Options → Uninstall** (tap twice to confirm, no Steam popup)
   - **Downloads without opening Steam**: owned games are queued straight onto the encrypted drive while Steam runs minimised, with progress shown in GamingCrypt
   - **Store**: search the Steam store, install free or owned games, or open a paid game's purchase page in Steam
 - Built for touch: big targets, kinetic flick scrolling, an on-screen keyboard and double-tap confirmation for destructive actions
@@ -105,6 +105,26 @@ To also list games you **own but haven't installed**, open **Settings → Steam 
 key** and enter a [Steam Web API key](https://steamcommunity.com/dev/apikey) (any domain name
 works). Your SteamID is detected from the account logged in to Steam. Without a key, only
 installed games are shown, and the Steam page says so.
+
+### Uninstalling without Steam's popup
+
+*Options → Uninstall* (tap twice) uninstalls directly:
+1. Steam is closed briefly if it's running.
+2. GamingCrypt deletes the game folder, its manifest, workshop items, shader cache and
+   unfinished downloads.
+3. Steam is started minimised again.
+
+- **Saves are kept:** the Proton prefix (`compatdata/<id>`), where many Windows games keep
+  their save games, is not deleted.
+- **Safe by design:** only the game's own folder under `steamapps/common` is ever deleted.
+- **Turning it off:** `"steam": {"silent_uninstall": false}` uses Steam's dialog again.
+
+### Steam windows
+
+Some things still need a Steam window: buying, the first install of a free game, and
+Steam's login. GamingCrypt minimises itself when it opens one, so the Steam window isn't
+hidden behind it. Start GamingCrypt again (launcher icon or `gamingcrypt`) to bring it
+back. A second start never opens a second copy.
 
 ### Several Steam accounts
 
@@ -223,6 +243,7 @@ uinput interfaces), so it also runs on read-only systems like SteamOS.
 | `system.display`, `system.power_limit_w` | display mode and power limit restored at start (set from Settings) |
 | `input.enabled`, `input.profiles` | virtual controller on/off, mapping and calibration per controller (set from Settings) |
 | `steam.silent_install` | download owned games without Steam's dialog (default `true`) |
+| `steam.silent_uninstall` | uninstall without Steam's confirmation popup (default `true`) |
 
 ## Security notes
 

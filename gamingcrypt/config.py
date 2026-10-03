@@ -53,6 +53,8 @@ DEFAULTS: dict[str, Any] = {
         "auto_library": True,
         # Download owned games in the background (no Steam install dialog).
         "silent_install": True,
+        # Uninstall without Steam's confirmation dialog (GamingCrypt asks itself).
+        "silent_uninstall": True,
     },
 }
 

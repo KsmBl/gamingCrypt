@@ -168,3 +168,31 @@ def test_reopening_page_resumes_watching(qtbot):
     page = tab.currentWidget()
     assert page.downloading
     qtbot.waitUntil(lambda: "Downloading 25%" in page.status.text())
+
+
+def test_uninstall_without_steam_dialog(qtbot):
+    tab = silent_tab(qtbot)
+    tab.service.silent_uninstall = True
+    tab.service.uninstall_game = lambda appid: InstallResult(True, "Portal 2 was uninstalled")
+    tab.open_game(620)
+    page = tab.currentWidget()
+    page.options_button.click()
+    page.uninstall_button.click()
+    page.uninstall_button.click()
+    qtbot.waitUntil(lambda: "was uninstalled" in page.status.text())
+    assert tab.service.client.actions == []  # no Steam popup
+    assert not page.game.installed and "Download" in page.main_button.text()
+    assert page.options_panel.isHidden()
+
+
+def test_uninstall_failure_keeps_game(qtbot):
+    tab = silent_tab(qtbot)
+    tab.service.silent_uninstall = True
+    tab.service.uninstall_game = lambda appid: InstallResult(False, "Steam didn't close - close it and try again")
+    tab.open_game(620)
+    page = tab.currentWidget()
+    page.options_button.click()
+    page.uninstall_button.click()
+    page.uninstall_button.click()
+    qtbot.waitUntil(lambda: "didn't close" in page.status.text())
+    assert page.game.installed and page.uninstall_button.isEnabled()

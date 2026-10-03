@@ -32,6 +32,7 @@ class MainWindow(QMainWindow):
     ):
         super().__init__()
         self.input_service = input_service
+        self.windowed = False
         # Device controls (display, power, audio); empty in tests unless given.
         from gamingcrypt.system.controls import SystemControls
 
@@ -62,6 +63,18 @@ class MainWindow(QMainWindow):
         self.config["unlock"].update(found)
         self.save(self.config)
         return True
+
+    def minimize_for_steam(self) -> None:
+        self.showMinimized()
+
+    def bring_to_front(self) -> None:
+        """Another `gamingcrypt` start (or the launcher icon) brings this window back."""
+        if self.config.get("fullscreen", True) and not self.windowed:
+            self.showFullScreen()
+        else:
+            self.showNormal()
+        self.raise_()
+        self.activateWindow()
 
     def closeEvent(self, event):  # noqa: N802
         current = self.stack.currentWidget()
@@ -98,10 +111,48 @@ class MainWindow(QMainWindow):
         pages.setdefault("Settings", SettingsTab(self.config, self.save, self.unlocker_factory, self.system,
                                                  steam_service=getattr(games, "service", None),
                                                  input_service=self.input_service))
+        service = getattr(games, "service", None)
+        if service is not None:
+            # Steam windows (store, Steam's own dialogs) would open *behind* the fullscreen launcher.
+            service.on_steam_ui = self.minimize_for_steam
         self.shell = Shell(pages)
         self.shell.exit_requested.connect(self.close)
         self._replace(self.shell)
         self.screen_name = "shell"
+
+
+SOCKET_NAME = f"gamingcrypt-{os.getuid()}"
+
+
+def activate_running_instance(name: str = SOCKET_NAME) -> bool:
+    """True if GamingCrypt already runs; it is asked to come to the front."""
+    from PySide6.QtNetwork import QLocalSocket
+
+    socket = QLocalSocket()
+    socket.connectToServer(name)
+    if not socket.waitForConnected(500):
+        return False
+    socket.write(b"raise\n")
+    socket.waitForBytesWritten(500)
+    socket.disconnectFromServer()
+    return True
+
+
+def listen_for_activation(callback: Callable[[], None], name: str = SOCKET_NAME):
+    from PySide6.QtNetwork import QLocalServer
+
+    QLocalServer.removeServer(name)  # stale socket after a crash
+    server = QLocalServer()
+    server.listen(name)
+
+    def on_connection() -> None:
+        conn = server.nextPendingConnection()
+        if conn is not None:
+            conn.disconnected.connect(conn.deleteLater)
+            callback()
+
+    server.newConnection.connect(on_connection)
+    return server
 
 
 def default_pages(config: dict) -> dict[str, QWidget]:
@@ -166,6 +217,8 @@ def main(argv: list[str] | None = None) -> int:
 
     app = QApplication([sys.argv[0], *qt_args])
     app.setApplicationName("GamingCrypt")
+    if activate_running_instance():
+        return 0  # the running GamingCrypt came to the front
     app.setStyleSheet(theme.STYLESHEET)
     from gamingcrypt.system.controls import SystemControls
     from gamingcrypt.ui.tasks import run_async
@@ -179,6 +232,8 @@ def main(argv: list[str] | None = None) -> int:
     input_service = InputService(cfg, save)
     input_service.start()  # virtual controller with the user's mapping, if enabled
     window = MainWindow(cfg, save, page_factory=default_pages, system=system, input_service=input_service)
+    window.windowed = args.windowed
+    server = listen_for_activation(window.bring_to_front)  # noqa: F841 - keep alive
     if cfg.get("fullscreen", True) and not args.windowed:
         window.showFullScreen()
     else:

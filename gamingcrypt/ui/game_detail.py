@@ -183,8 +183,25 @@ class GameDetailPage(QWidget):
             self._disarm_timer.start(4000)
             return
         self._disarm_uninstall()
-        ok = self.service.client.uninstall(self.game.appid)
-        set_status(self.status, "Confirm the uninstall in Steam" if ok else "Could not reach Steam", error=not ok)
+        if not getattr(self.service, "silent_uninstall", False):
+            ok = self.service.client.uninstall(self.game.appid)
+            set_status(self.status, "Confirm the uninstall in Steam" if ok else "Could not reach Steam", error=not ok)
+            return
+        self.uninstall_button.setEnabled(False)
+        self.main_button.setEnabled(False)
+        set_status(self.status, f"Uninstalling {self.game.name}…")
+        appid = self.game.appid
+        run_async(lambda: self.service.uninstall_game(appid), self._uninstalled,
+                  lambda exc: self._uninstalled(InstallResult(False, str(exc))), owner=self)
+
+    def _uninstalled(self, result) -> None:
+        self.uninstall_button.setEnabled(True)
+        if result.ok:
+            self.game.installed = False
+            self.game.size_on_disk = 0
+            self.options_button.setChecked(False)
+        self.refresh()
+        set_status(self.status, result.message, error=not result.ok)
 
     def _disarm_uninstall(self) -> None:
         self._uninstall_armed = False

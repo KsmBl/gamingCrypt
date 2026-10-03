@@ -210,3 +210,60 @@ def install(
     if not client.start_silent():
         return InstallResult(False, "Could not start Steam")
     return InstallResult(True, "Download started in the background")
+
+
+def _remove(path: Path, remove_tree: Callable[[Path], None]) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        remove_tree(path)
+
+
+def uninstall(
+    root: Path | None,
+    appid: int,
+    client,
+    is_running: Callable[[], bool] = library_setup.steam_running,
+    sleep: Callable[[float], None] = time.sleep,
+    remove_tree: Callable[[Path], None] | None = None,
+) -> InstallResult:
+    """Uninstall without Steam's confirmation dialog.
+
+    Deletes the game files, manifest, workshop items, shader cache and partial
+    downloads. The Proton prefix (``compatdata/<appid>``) is kept on purpose:
+    many Windows games keep their save games there.
+    """
+    import shutil
+
+    remove_tree = remove_tree or shutil.rmtree
+    manifest = find_manifest(root, appid) if root is not None else None
+    if manifest is None:
+        return InstallResult(False, "The game is not installed")
+    parsed = _manifest_numbers(manifest)
+    state = parsed[0] if parsed else {}
+    name = vdf.iget(state, "name", default="") or f"App {appid}"
+    installdir = str(vdf.iget(state, "installdir", default="") or "")
+    steamapps = manifest.parent
+    common = steamapps / "common"
+    target = common / installdir
+    # Never delete anything outside <library>/steamapps/common/<one folder>.
+    if (not installdir or installdir in (".", "..") or "/" in installdir or "\\" in installdir
+            or target.parent.resolve() != common.resolve()):
+        return InstallResult(False, f"Refusing to delete {target} - unexpected install folder")
+    was_running = is_running()
+    if was_running and not library_setup.close_steam(client, is_running, sleep):
+        return InstallResult(False, "Steam didn't close - close it and try again")
+    try:
+        _remove(target, remove_tree)
+        for extra in (steamapps / "workshop" / "content" / str(appid),
+                      steamapps / "workshop" / f"appworkshop_{appid}.acf",
+                      steamapps / "shadercache" / str(appid),
+                      steamapps / "downloading" / str(appid)):
+            _remove(extra, remove_tree)
+        manifest.unlink()
+    except OSError as exc:
+        return InstallResult(False, f"Could not delete everything: {exc}")
+    finally:
+        if was_running:
+            client.start_silent()
+    return InstallResult(True, f"{name} was uninstalled")

@@ -29,6 +29,14 @@ class SteamClient:
             command = command.split() if command else None
         self.command = list(command) if command else detect_command()
         self.launcher = launcher
+        # Called after opening a Steam *window* (store, install/uninstall dialog), so the
+        # fullscreen launcher can get out of the way instead of hiding it.
+        self.on_ui: Callable[[], None] | None = None
+
+    def _ui(self, ok: bool) -> bool:
+        if ok and self.on_ui is not None:
+            self.on_ui()
+        return ok
 
     def open_uri(self, uri: str) -> bool:
         try:
@@ -47,10 +55,10 @@ class SteamClient:
         return self.open_uri(f"steam://rungameid/{int(appid)}")
 
     def install(self, appid: int) -> bool:
-        return self.open_uri(f"steam://install/{int(appid)}")
+        return self._ui(self.open_uri(f"steam://install/{int(appid)}"))
 
     def uninstall(self, appid: int) -> bool:
-        return self.open_uri(f"steam://uninstall/{int(appid)}")
+        return self._ui(self.open_uri(f"steam://uninstall/{int(appid)}"))
 
     def shutdown(self) -> bool:
         """Ask a running Steam client to exit."""
@@ -75,4 +83,4 @@ class SteamClient:
         return True
 
     def open_store(self, appid: int) -> bool:
-        return self.open_uri(f"steam://store/{int(appid)}")
+        return self._ui(self.open_uri(f"steam://store/{int(appid)}"))
