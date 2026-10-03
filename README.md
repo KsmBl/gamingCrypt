@@ -108,6 +108,20 @@ installed** (and to get playtime from Steam), add a
 }
 ```
 
+### Encrypted drive as Steam library
+
+After every unlock GamingCrypt checks that the mounted container is a Steam library folder.
+If it isn't, it creates `steamapps` inside the container and adds the folder to Steam's
+`libraryfolders.vdf` (both `config/` and `steamapps/`), labelled *GamingCrypt*:
+- Steam rewrites these files when it exits, so a running Steam is closed first.
+- Nothing is done unless the container is really mounted, so no game folder ever ends up
+  on the unencrypted disk.
+- Turn it off with `"steam": {"auto_library": false}`.
+
+When you install a game, pick *GamingCrypt* in Steam's install dialog. To make it the
+default, use *Steam → Settings → Storage → ⋯ → Make default* once. I found no reliable
+documentation of where Steam stores the default, so GamingCrypt doesn't change it.
+
 Prices, release dates and latest-update dates come from the public store API.
 They load in the background, stay within Steam's rate limits, and are cached in
 `~/.cache/gamingcrypt`. Play, download, uninstall and store actions go through
@@ -129,6 +143,7 @@ the Steam client (`steam://` URIs).
 | `steam.root` | Steam directory (empty = auto-detect, Flatpak included) |
 | `steam.api_key`, `steam.steam_id` | optional, for the full library |
 | `steam.command` | command used for `steam://` URIs (empty = auto-detect) |
+| `steam.auto_library` | add the unlocked container as Steam library (default `true`) |
 
 ## Security notes
 
@@ -158,8 +173,8 @@ method, mount point and KDF salt. None of these are secret. On start, an existin
 container (the configured one, or `~/GamingCrypt.vc`) is recognised and you go straight
 to the unlock screen. *Create new container* is never offered while a container exists.
 If a container has no such file (one made with VeraCrypt directly, for example), setup
-asks for its current password right away. Afterwards add the mount point
-in Steam (*Settings → Storage → Add drive*) and install games onto it.
+asks for its current password right away. After you unlock it,
+GamingCrypt **adds it to Steam as a library folder automatically**.
 
 To encrypt a whole partition or SD card, create the volume with VeraCrypt itself
 and choose *Use existing VeraCrypt volume*.

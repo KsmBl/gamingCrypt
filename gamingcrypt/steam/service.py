@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from gamingcrypt.steam import library
+from gamingcrypt.steam import library, library_setup
 from gamingcrypt.steam.client import SteamClient
 from gamingcrypt.steam.models import SteamGame
 from gamingcrypt.steam.webapi import SteamAPIError, SteamWebAPI, StoreItem
@@ -167,6 +167,10 @@ class SteamService:
                 target.write_bytes(response.content)
                 return target
         return None
+
+    # library folder on the encrypted drive -----------------------------------
+    def ensure_library(self, path: str) -> library_setup.LibraryResult:
+        return library_setup.ensure_library(self.root, path, self.client)
 
     # store ------------------------------------------------------------------
     def search_store(self, term: str) -> list[StoreItem]:

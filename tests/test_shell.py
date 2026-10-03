@@ -175,3 +175,23 @@ def test_volume_password_recovery(tmp_path):
         assert main(["--config", str(path), "--volume-password"]) == 0
     finally:
         getpass.getpass = orig
+
+
+def test_default_pages_pass_mount_point_to_games(monkeypatch):
+    from gamingcrypt import app
+    from gamingcrypt.ui import games_tab
+
+    seen = {}
+
+    class Probe:
+        def __init__(self, service, library_path=""):
+            seen["path"] = library_path
+
+    monkeypatch.setattr(games_tab, "GamesTab", Probe)
+    cfg = configured()
+    cfg["unlock"]["mount_point"] = "~/GamingCrypt"
+    app.default_pages(cfg)
+    assert seen["path"].endswith("/GamingCrypt") and not seen["path"].startswith("~")
+    cfg["steam"]["auto_library"] = False
+    app.default_pages(cfg)
+    assert seen["path"] == ""

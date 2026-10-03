@@ -1,3 +1,4 @@
+import pytest
 from PySide6.QtCore import QPoint, Qt
 
 from gamingcrypt.steam.models import SteamGame
@@ -100,3 +101,44 @@ def test_keyboard_not_shown_on_programmatic_focus(qtbot):
     tab.show()
     tab.home.search.setFocus()
     assert tab.home.keyboard.isHidden()
+
+
+def test_library_setup_notice(qtbot):
+    from gamingcrypt.steam.library_setup import LibraryResult
+
+    service = FakeService()
+    calls = []
+
+    def ensure(path):
+        calls.append(path)
+        return LibraryResult("added", f"Your encrypted drive ({path}) is now a Steam library")
+
+    service.ensure_library = ensure
+    tab = GamesTab(service, library_path="/home/me/GamingCrypt")
+    qtbot.addWidget(tab)
+    qtbot.waitUntil(lambda: "✓" in tab.home.notice.text())
+    assert calls == ["/home/me/GamingCrypt"]
+    assert tab.home.notice.isVisibleTo(tab.home)
+
+
+def test_library_setup_failure_and_quiet_cases(qtbot):
+    from gamingcrypt.steam.library_setup import LibraryResult
+
+    service = FakeService()
+    service.ensure_library = lambda path: LibraryResult("failed", "Close Steam so GamingCrypt can add it")
+    tab = GamesTab(service, library_path="/x")
+    qtbot.addWidget(tab)
+    qtbot.waitUntil(lambda: "Close Steam" in tab.home.notice.text())
+    assert tab.home.notice.property("error") is True
+    service.ensure_library = lambda path: LibraryResult("already")
+    tab2 = GamesTab(service, library_path="/x")
+    qtbot.addWidget(tab2)
+    qtbot.waitUntil(lambda: not tab2.home.notice.isVisibleTo(tab2.home))
+
+
+def test_no_library_path_means_no_setup(qtbot):
+    service = FakeService()
+    service.ensure_library = lambda path: pytest.fail("must not run")
+    tab = GamesTab(service)
+    qtbot.addWidget(tab)
+    assert tab.home.notice.isHidden()

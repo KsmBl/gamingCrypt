@@ -488,9 +488,8 @@ class AuthSetupWizard(QWidget):
             self.hint.setText("Your encrypted container is ready ✓")
             where = self.mount_point or "the mount point"
             self.done_label.setText(
-                f"After unlocking, the container is mounted at {where}.\n"
-                "In Steam open Settings → Storage → Add drive and choose that folder,\n"
-                "then install games onto it."
+                f"After unlocking, the container is mounted at {where}\n"
+                "and GamingCrypt adds it to Steam as a library automatically."
             )
             self.stack.setCurrentWidget(self.done_page)
             self.cancel_button.hide()  # finished: the only way on is Continue

@@ -9,7 +9,14 @@ from gamingcrypt.steam.models import SteamGame
 from gamingcrypt.steam.sorting import filter_games, sort_games
 from gamingcrypt.ui.game_widgets import GameCard, SourceCard
 from gamingcrypt.ui.tasks import run_async
-from gamingcrypt.ui.widgets import FlowLayout, KeyboardFocusFilter, OnScreenKeyboard, big_button, enable_touch_scroll
+from gamingcrypt.ui.widgets import (
+    FlowLayout,
+    KeyboardFocusFilter,
+    OnScreenKeyboard,
+    big_button,
+    enable_touch_scroll,
+    set_status,
+)
 
 
 def heading(text: str) -> QLabel:
@@ -31,6 +38,11 @@ class GamesHome(QWidget):
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.refresh_results)
         layout.addWidget(self.search)
+        self.notice = QLabel("")
+        self.notice.setObjectName("status")
+        self.notice.setWordWrap(True)
+        self.notice.hide()
+        layout.addWidget(self.notice)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -70,6 +82,10 @@ class GamesHome(QWidget):
         self._focus_filter.watch(self.search)
         layout.addWidget(self.keyboard)
 
+    def show_notice(self, text: str, error: bool = False) -> None:
+        set_status(self.notice, text, error=error)
+        self.notice.setVisible(bool(text))
+
     def set_installed(self, games: list[SteamGame]) -> None:
         self.installed = sort_games(games, "name")
         self.refresh_results()
@@ -98,13 +114,27 @@ class GamesHome(QWidget):
 class GamesTab(QStackedWidget):
     """Navigation stack: home -> Steam library -> game details / store."""
 
-    def __init__(self, service, parent: QWidget | None = None):
+    def __init__(self, service, library_path: str = "", parent: QWidget | None = None):
         super().__init__(parent)
         self.service = service
         self.games: dict[int, SteamGame] = {}
         self.home = GamesHome(self)
         self.addWidget(self.home)
         self.reload_installed()
+        if library_path:
+            self.home.show_notice("Setting up your encrypted drive as Steam library…")
+            run_async(lambda: self.service.ensure_library(library_path), self._library_checked,
+                      lambda exc: self.home.show_notice(f"Could not set up the Steam library: {exc}", error=True),
+                      owner=self)
+
+    def _library_checked(self, result) -> None:
+        if result.status == "added":
+            self.home.show_notice("✓ " + result.message)
+            self.reload_installed()
+        elif result.status in ("failed", "no_steam"):
+            self.home.show_notice(result.message, error=True)
+        else:
+            self.home.show_notice("")
 
     # navigation -------------------------------------------------------------
     def push(self, page: QWidget) -> None:

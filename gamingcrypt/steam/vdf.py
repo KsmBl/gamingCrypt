@@ -93,3 +93,24 @@ def iget(mapping: Any, *keys: str, default: Any = None) -> Any:
         else:
             return default
     return current
+
+
+def _quote(text: str) -> str:
+    return '"' + str(text).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def dumps(data: dict[str, Any], indent: int = 0) -> str:
+    """Serialise nested dicts back into Valve's text format (tab indented like Steam)."""
+    tabs = "\t" * indent
+    lines = []
+    for key, value in data.items():
+        if isinstance(value, dict):
+            lines.append(f"{tabs}{_quote(key)}")
+            lines.append(f"{tabs}{{")
+            body = dumps(value, indent + 1)
+            if body:
+                lines.append(body.rstrip("\n"))
+            lines.append(f"{tabs}}}")
+        else:
+            lines.append(f"{tabs}{_quote(key)}\t\t{_quote(value)}")
+    return "\n".join(lines) + "\n"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import Callable
@@ -96,7 +97,8 @@ def default_pages(config: dict) -> dict[str, QWidget]:
     from gamingcrypt.ui.games_tab import GamesTab
 
     service = SteamService(config["steam"], config_mod.cache_dir())
-    return {"Games": GamesTab(service)}
+    library_path = config["unlock"].get("mount_point", "") if config["steam"].get("auto_library", True) else ""
+    return {"Games": GamesTab(service, library_path=os.path.expanduser(library_path) if library_path else "")}
 
 
 SECRET_FORMAT_HINT = {

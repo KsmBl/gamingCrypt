@@ -39,6 +39,8 @@ DEFAULTS: dict[str, Any] = {
         "language": "english",
         # Command used to talk to the Steam client. Empty = auto-detect.
         "command": "",
+        # Register the mounted container as Steam library folder after unlocking.
+        "auto_library": True,
     },
 }
 

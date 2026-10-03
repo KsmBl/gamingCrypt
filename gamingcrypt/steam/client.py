@@ -52,5 +52,16 @@ class SteamClient:
     def uninstall(self, appid: int) -> bool:
         return self.open_uri(f"steam://uninstall/{int(appid)}")
 
+    def shutdown(self) -> bool:
+        """Ask a running Steam client to exit."""
+        if self.command == ["xdg-open"]:
+            return False  # no Steam command to talk to
+        try:
+            self.launcher([*self.command, "-shutdown"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL, start_new_session=True)
+        except OSError:
+            return False
+        return True
+
     def open_store(self, appid: int) -> bool:
         return self.open_uri(f"steam://store/{int(appid)}")
