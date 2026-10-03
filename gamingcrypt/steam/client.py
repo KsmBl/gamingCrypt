@@ -63,5 +63,16 @@ class SteamClient:
             return False
         return True
 
+    def start_silent(self) -> bool:
+        """Start Steam minimised to the tray (no window)."""
+        if self.command == ["xdg-open"]:
+            return False
+        try:
+            self.launcher([*self.command, "-silent"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL, start_new_session=True)
+        except OSError:
+            return False
+        return True
+
     def open_store(self, appid: int) -> bool:
         return self.open_uri(f"steam://store/{int(appid)}")

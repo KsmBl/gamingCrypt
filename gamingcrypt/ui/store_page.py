@@ -105,12 +105,23 @@ class StorePage(QWidget):
         owned = self.tab.games.get(item.appid)
         if owned is not None and owned.installed:
             return "play", "▶  Play", "primary"
-        if owned is not None or item.price_cents == 0:
-            return "install", "⬇  Install", "primary"
+        if owned is not None:
+            # Owned: GamingCrypt can download it in the background, no Steam dialog.
+            silent = getattr(self.service, "silent_install", False)
+            return ("download" if silent else "install"), "⬇  Install", "primary"
+        if item.price_cents == 0:
+            # Free but not in the account yet: Steam's dialog adds the license.
+            return "install", "⬇  Install (Steam)", "primary"
         return "buy", "Buy in Steam", ""
 
     def run_action(self, item: StoreItem, action: str) -> None:
         client = self.service.client
+        if action == "download":
+            set_status(self.status, f"Preparing {item.name} - Steam restarts in the background…")
+            run_async(lambda: self.service.install_game(item.appid, item.name),
+                      lambda r: set_status(self.status, f"{item.name}: {r.message}", error=not r.ok),
+                      lambda exc: set_status(self.status, str(exc), error=True), owner=self)
+            return
         if action == "play":
             ok, message = client.play(item.appid), f"Starting {item.name}…"
         elif action == "install":

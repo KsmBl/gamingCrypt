@@ -5,10 +5,14 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
+from gamingcrypt.steam.installer import InstallResult
 from gamingcrypt.steam.models import SteamGame
 from gamingcrypt.steam.webapi import format_price
 from gamingcrypt.ui.game_widgets import format_date, format_playtime, format_size, load_cover, placeholder_cover
+from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import big_button, set_status
+
+PROGRESS_INTERVAL_MS = 2000
 
 DETAIL_W, DETAIL_H = 300, 450
 
@@ -84,7 +88,12 @@ class GameDetailPage(QWidget):
         self._disarm_timer = QTimer(self)
         self._disarm_timer.setSingleShot(True)
         self._disarm_timer.timeout.connect(self._disarm_uninstall)
+        self.downloading = False
+        self._progress_timer = QTimer(self)
+        self._progress_timer.timeout.connect(self.poll_progress)
         self.refresh()
+        if not game.installed and self._silent and self.service.install_progress(game.appid).state != "missing":
+            self._start_watching()  # a download queued earlier is still running
 
     def refresh(self) -> None:
         g = self.game
@@ -100,19 +109,67 @@ class GameDetailPage(QWidget):
             f"Latest update: {format_date(g.last_updated)}",
         ]
         self.facts.setText("\n".join(line for line in lines if line))
-        self.main_button.setText("▶  Play" if g.installed else "⬇  Download")
+        self.main_button.setText("▶  Play" if g.installed else ("Downloading…" if self.downloading else "⬇  Download"))
+        self.main_button.setEnabled(g.installed or not self.downloading)
         self.uninstall_button.setVisible(g.installed)
         self.no_options.setVisible(not g.installed)
+
+    @property
+    def _silent(self) -> bool:
+        return getattr(self.service, "silent_install", False)
 
     def main_action(self) -> None:
         client = self.service.client
         if self.game.installed:
             ok = client.play(self.game.appid)
-            message = f"Starting {self.game.name}…"
-        else:
+            set_status(self.status, f"Starting {self.game.name}…" if ok else "Could not reach Steam - is it installed?",
+                       error=not ok)
+            return
+        if not self._silent:
             ok = client.install(self.game.appid)
-            message = "Download started in Steam"
-        set_status(self.status, message if ok else "Could not reach Steam - is it installed?", error=not ok)
+            set_status(self.status, "Download started in Steam" if ok else "Could not reach Steam - is it installed?",
+                       error=not ok)
+            return
+        self.downloading = True
+        self.refresh()
+        set_status(self.status, "Preparing the download - Steam restarts in the background…")
+        appid, name = self.game.appid, self.game.name
+        run_async(lambda: self.service.install_game(appid, name), self._install_started,
+                  lambda exc: self._install_started(InstallResult(False, str(exc))), owner=self)
+
+    def _install_started(self, result) -> None:
+        if not result.ok:
+            self.downloading = False
+            self.refresh()
+            set_status(self.status, result.message, error=True)
+            return
+        set_status(self.status, result.message)
+        self._start_watching()
+
+    def _start_watching(self) -> None:
+        self.downloading = True
+        self.refresh()
+        self._progress_timer.start(PROGRESS_INTERVAL_MS)
+        self.poll_progress()
+
+    def poll_progress(self) -> None:
+        p = self.service.install_progress(self.game.appid)
+        if p.state == "installed":
+            self._progress_timer.stop()
+            self.downloading = False
+            self.game.installed = True
+            self.game.update_pending = False
+            self.refresh()
+            set_status(self.status, f"{self.game.name} is installed ✓")
+        elif p.state == "downloading":
+            set_status(self.status, f"Downloading {p.percent:.0f}% · {format_size(p.downloaded)} of {format_size(p.total)}")
+        elif p.state == "queued":
+            set_status(self.status, "Waiting for Steam to start the download…")
+        else:
+            self._progress_timer.stop()
+            self.downloading = False
+            self.refresh()
+            set_status(self.status, "The download was cancelled in Steam", error=True)
 
     def toggle_options(self, visible: bool) -> None:
         self.options_panel.setVisible(visible)

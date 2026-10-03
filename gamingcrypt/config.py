@@ -41,6 +41,8 @@ DEFAULTS: dict[str, Any] = {
         "command": "",
         # Register the mounted container as Steam library folder after unlocking.
         "auto_library": True,
+        # Download owned games in the background (no Steam install dialog).
+        "silent_install": True,
     },
 }
 

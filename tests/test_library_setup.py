@@ -95,7 +95,7 @@ def test_steam_that_wont_close(steam_root, tmp_path):
     drive.mkdir()
     result = library_setup.ensure_library(steam_root, str(drive), FakeClient(), is_running=lambda: True,
                                           is_mounted=MOUNTED, sleep=lambda s: None, timeout=2)
-    assert result.status == "failed" and "close" in result.message
+    assert result.status == "failed" and "close" in result.message.lower()
     assert not library_setup.is_registered(steam_root, drive)
     result = library_setup.ensure_library(steam_root, str(drive), FakeClient(ok=False), is_running=lambda: True,
                                           is_mounted=MOUNTED)

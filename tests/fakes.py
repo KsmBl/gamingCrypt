@@ -114,3 +114,27 @@ class FakeService:
     def search_store(self, term):
         self.store_queries.append(term)
         return [i for i in self.store_items if term.lower() in i.name.lower()]
+
+
+class SilentInstallService(FakeService):
+    """FakeService that downloads without the Steam dialog, with scripted progress."""
+
+    silent_install = True
+
+    def __init__(self, progress_steps=None, install_result=None, **kw):
+        super().__init__(**kw)
+        from gamingcrypt.steam.installer import InstallProgress, InstallResult
+
+        self.installs = []
+        self.install_result = install_result or InstallResult(True, "Download started in the background")
+        self.progress_steps = list(progress_steps or [InstallProgress("installed", 10, 10)])
+        self.missing = InstallProgress("missing")
+
+    def install_game(self, appid, name):
+        self.installs.append(appid)
+        return self.install_result
+
+    def install_progress(self, appid):
+        if appid not in self.installs:
+            return self.missing
+        return self.progress_steps.pop(0) if len(self.progress_steps) > 1 else self.progress_steps[0]

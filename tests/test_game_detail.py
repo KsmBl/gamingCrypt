@@ -108,3 +108,63 @@ def test_home_card_opens_detail(qtbot):
     card = tab.home.grid.itemAt(0).widget()
     card.tapped.emit()
     assert isinstance(tab.currentWidget(), GameDetailPage)
+
+
+# --- background download (no Steam dialog) ---------------------------------------
+
+from gamingcrypt.steam.installer import InstallProgress, InstallResult  # noqa: E402
+from gamingcrypt.ui import game_detail  # noqa: E402
+from tests.fakes import SilentInstallService  # noqa: E402
+
+
+def silent_tab(qtbot, **kw):
+    game_detail.PROGRESS_INTERVAL_MS = 10
+    tab = GamesTab(SilentInstallService(**kw))
+    qtbot.addWidget(tab)
+    qtbot.waitUntil(lambda: tab.home.installed != [])
+    tab.games.update({g.appid: g for g in tab.service.games})
+    return tab
+
+
+def test_download_without_dialog_shows_progress_until_installed(qtbot):
+    steps = [InstallProgress("queued"), InstallProgress("downloading", 512 * 1024**2, 2 * 1024**3),
+             InstallProgress("installed", 2 * 1024**3, 2 * 1024**3)]
+    tab = silent_tab(qtbot, progress_steps=steps)
+    tab.open_game(292030)
+    page = tab.currentWidget()
+    seen = []
+    page.main_button.click()
+    assert not page.main_button.isEnabled() and page.main_button.text() == "Downloading…"
+    qtbot.waitUntil(lambda: (seen.append(page.status.text()) or "installed ✓" in page.status.text()), timeout=3000)
+    assert tab.service.installs == [292030]
+    assert tab.service.client.actions == []  # Steam's install dialog was never opened
+    assert any("Downloading 25%" in text for text in seen)
+    assert "Play" in page.main_button.text() and page.main_button.isEnabled()
+    assert page.game.installed
+
+
+def test_download_failure_is_shown(qtbot):
+    tab = silent_tab(qtbot, install_result=InstallResult(False, "Steam didn't close - close it and try again"))
+    tab.open_game(292030)
+    page = tab.currentWidget()
+    page.main_button.click()
+    qtbot.waitUntil(lambda: "didn't close" in page.status.text())
+    assert "Download" in page.main_button.text() and page.main_button.isEnabled()
+
+
+def test_download_cancelled_in_steam(qtbot):
+    tab = silent_tab(qtbot, progress_steps=[InstallProgress("queued"), InstallProgress("missing")])
+    tab.open_game(292030)
+    page = tab.currentWidget()
+    page.main_button.click()
+    qtbot.waitUntil(lambda: "cancelled in Steam" in page.status.text(), timeout=3000)
+    assert page.main_button.isEnabled()
+
+
+def test_reopening_page_resumes_watching(qtbot):
+    tab = silent_tab(qtbot, progress_steps=[InstallProgress("downloading", 1, 4)])
+    tab.service.installs.append(292030)  # queued earlier
+    tab.open_game(292030)
+    page = tab.currentWidget()
+    assert page.downloading
+    qtbot.waitUntil(lambda: "Downloading 25%" in page.status.text())

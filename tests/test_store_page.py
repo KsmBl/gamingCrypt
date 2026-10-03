@@ -83,3 +83,19 @@ def test_store_unreachable(qtbot):
     tab, page = open_store(qtbot, service)
     search(qtbot, page, "x")
     assert "not reachable" in page.status.text()
+
+
+def test_owned_game_installs_without_steam_dialog(qtbot):
+    from tests.fakes import SilentInstallService
+
+    service = SilentInstallService(store_items=ITEMS)
+    tab, page = open_store(qtbot, service)
+    search(qtbot, page, "a")
+    rows = {row.item.appid: row for row in page.rows}
+    assert rows[400].action == "download"            # owned, not installed
+    assert rows[570].action == "install"             # free, not owned yet -> Steam dialog
+    assert rows[570].button.text() == "⬇  Install (Steam)"
+    rows[400].button.click()
+    assert "Preparing" in page.status.text()
+    qtbot.waitUntil(lambda: "Download started" in page.status.text())
+    assert service.installs == [400] and service.client.actions == []

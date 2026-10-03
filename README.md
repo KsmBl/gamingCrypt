@@ -30,6 +30,7 @@ your Steam library.
   - **Steam** card with your whole library (installed, plus every owned game when a Web API key is set)
   - Sort by **name, release date, playtime, price or latest update**, ascending or descending
   - Game page: **Play** or **Download**, plus **Options → Uninstall** (tap twice to confirm)
+  - **Downloads without opening Steam**: owned games are queued straight onto the encrypted drive while Steam runs minimised, with progress shown in GamingCrypt
   - **Store**: search the Steam store, install free or owned games, or open a paid game's purchase page in Steam
 - Built for touch: big targets, kinetic flick scrolling, an on-screen keyboard and double-tap confirmation for destructive actions
 
@@ -116,9 +117,20 @@ If it isn't, it creates `steamapps` inside the container and adds the folder to 
   on the unencrypted disk.
 - Turn it off with `"steam": {"auto_library": false}`.
 
-When you install a game, pick *GamingCrypt* in Steam's install dialog. To make it the
-default, use *Steam → Settings → Storage → ⋯ → Make default* once. I found no reliable
-documentation of where Steam stores the default, so GamingCrypt doesn't change it.
+### Installing without opening Steam
+
+**Download** (game page) and **Install** (store, for games you own) don't open Steam's install dialog:
+1. GamingCrypt writes an install manifest (`appmanifest_<id>.acf`, *update required*) into the
+   encrypted library, or into Steam's own folder if the drive isn't mounted.
+2. It restarts Steam minimised (`steam -silent`); Steam picks up the manifest and downloads in the background.
+3. The game page shows the progress and switches to **Play** when it's done.
+
+Notes:
+- Steam is restarted for this, so don't start a download while a game is running.
+- Steam itself must be logged in.
+- Free games that aren't in your account yet still go through Steam's dialog once,
+  because that's what adds them to your account.
+- Turn it off with `"steam": {"silent_install": false}` to always use Steam's dialog.
 
 Prices, release dates and latest-update dates come from the public store API.
 They load in the background, stay within Steam's rate limits, and are cached in
@@ -143,6 +155,7 @@ the Steam client (`steam://` URIs).
 | `steam.steam_id` | optional, overrides the detected SteamID64 |
 | `steam.command` | command used for `steam://` URIs (empty = auto-detect) |
 | `steam.auto_library` | add the unlocked container as Steam library (default `true`) |
+| `steam.silent_install` | download owned games without Steam's dialog (default `true`) |
 
 ## Security notes
 

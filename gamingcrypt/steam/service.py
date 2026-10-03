@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from gamingcrypt.steam import library, library_setup
+from gamingcrypt.steam import installer, library, library_setup
 from gamingcrypt.steam.client import SteamClient
 from gamingcrypt.steam.models import SteamGame
 from gamingcrypt.steam.webapi import SteamAPIError, SteamWebAPI, StoreItem
@@ -32,6 +32,8 @@ class SteamService:
         self._client = client
         self.home = home
         self.now = now
+        # Preferred library for new installs (the encrypted drive), set by the app.
+        self.install_library = ""
         self._lock = threading.Lock()
         self._metadata: dict[str, dict] = self._read_json("steam_metadata.json", {})
 
@@ -220,6 +222,32 @@ class SteamService:
             lines.append(f"Volume: {unlock_cfg.get('volume') or '-'}")
             lines.append(f"Mount point: {mp or '-'} ({'mounted' if mp and os.path.ismount(mp) else 'NOT mounted'})")
         return lines
+
+    # installing without Steam's dialog ----------------------------------------
+    def target_library(self) -> Path | None:
+        """The encrypted drive if it's mounted and a Steam library, else Steam's own folder."""
+        import os
+
+        root = self.root
+        if root is None:
+            return None
+        path = self.install_library
+        if path and os.path.ismount(path) and library_setup.is_registered(root, Path(path)):
+            return Path(path)
+        return root
+
+    @property
+    def silent_install(self) -> bool:
+        return bool(self.cfg.get("silent_install", True))
+
+    def install_game(self, appid: int, name: str) -> installer.InstallResult:
+        self._sync_account()
+        target = self.target_library()
+        return installer.install(self.root, target or Path("/nonexistent"), appid, name, self.client,
+                                 owner=self.api.steam_id or "")
+
+    def install_progress(self, appid: int) -> installer.InstallProgress:
+        return installer.progress(self.root, appid)
 
     # library folder on the encrypted drive -----------------------------------
     def ensure_library(self, path: str) -> library_setup.LibraryResult:

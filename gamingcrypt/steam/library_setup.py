@@ -48,6 +48,22 @@ def _same(a: Path, b: Path) -> bool:
         return str(a) == str(b)
 
 
+def close_steam(client, is_running: Callable[[], bool] = steam_running,
+                sleep: Callable[[float], None] = time.sleep, timeout: float = 30.0) -> bool:
+    """Ask Steam to exit and wait for it. True when Steam is not running (any more)."""
+    if not is_running():
+        return True
+    if client is None or not client.shutdown():
+        return False
+    waited = 0.0
+    while is_running():
+        if waited >= timeout:
+            return False
+        sleep(0.5)
+        waited += 0.5
+    return True
+
+
 def is_registered(root: Path, path: Path) -> bool:
     return any(_same(folder, path) for folder in library.library_folders(root))
 
@@ -124,15 +140,8 @@ def ensure_library(
         if not (target / "steamapps").is_dir():
             prepare_folder(target, "0")
         return LibraryResult("already")
-    if is_running():
-        if client is None or not client.shutdown():
-            return LibraryResult("failed", "Close Steam so GamingCrypt can add your encrypted drive as library")
-        waited = 0.0
-        while is_running():
-            if waited >= timeout:
-                return LibraryResult("failed", "Steam didn't close - close it and unlock again")
-            sleep(0.5)
-            waited += 0.5
+    if is_running() and not close_steam(client, is_running, sleep, timeout):
+        return LibraryResult("failed", "Close Steam so GamingCrypt can add your encrypted drive as library")
     try:
         register_library(root, target)
     except OSError as exc:
