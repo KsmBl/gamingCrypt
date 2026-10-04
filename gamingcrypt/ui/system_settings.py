@@ -76,8 +76,15 @@ class DisplaySection(Section):
 
         outputs = self.backend.outputs() if self.backend else []
         if not outputs:
-            self.unavailable("Resolution and refresh rate: not supported on this desktop "
-                             "(needs KDE, a wlroots compositor or X11).")
+            from gamingcrypt.session.mode import in_gaming_session
+
+            if in_gaming_session():
+                self.unavailable("Resolution and refresh rate: managed by gamescope in gaming mode. "
+                                 "Own options (e.g. \"-f -W 1280 -H 800 -r 60\") go into "
+                                 "~/.config/gamingcrypt/gamescope-args.")
+            else:
+                self.unavailable("Resolution and refresh rate: not supported on this desktop "
+                                 "(needs KDE, a wlroots compositor or X11).")
         else:
             self.output = outputs[0]
             self.resolution = QComboBox()

@@ -1,0 +1,54 @@
+#!/bin/sh
+# GamingCrypt gaming session (installed by install.sh --session).
+#
+# gamescope runs GamingCrypt as the only thing on screen. "Desktop mode" in
+# GamingCrypt writes $STATE/next-mode and closes it -> the desktop session
+# (tileWin) starts; logging out of the desktop comes back to gaming mode - all
+# within this one login. If gaming mode keeps failing to start, fall back to the
+# desktop so nobody is stuck on a black screen.
+
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/gamingcrypt"
+LAUNCHER="${GC_LAUNCHER:-@LAUNCHER@}"
+GAMESCOPE="${GC_GAMESCOPE:-gamescope}"
+DESKTOP_EXEC="${GC_DESKTOP_EXEC:-@DESKTOP_EXEC@}"
+GAMESCOPE_ARGS="${GC_GAMESCOPE_ARGS:--f --xwayland-count 2 --default-touch-mode 4 --hide-cursor-delay 3000}"
+# own gamescope options (e.g. "-W 1280 -H 800 -r 60") replace the defaults
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/gamingcrypt/gamescope-args"
+if [ -z "$GC_GAMESCOPE_ARGS" ] && [ -s "$CONF" ]; then
+	GAMESCOPE_ARGS=$(cat "$CONF")
+fi
+QUICK_EXIT_S="${GC_QUICK_EXIT_S:-15}"
+MAX_QUICK_FAILS=3
+
+mkdir -p "$STATE"
+log="$STATE/session.log"
+fails=0
+
+while :; do
+	mode=$(cat "$STATE/next-mode" 2>/dev/null)
+	rm -f "$STATE/next-mode"
+	if [ "$mode" = desktop ] || [ "$fails" -ge "$MAX_QUICK_FAILS" ]; then
+		[ "$fails" -ge "$MAX_QUICK_FAILS" ] && echo "$(date) gaming mode failed $fails times - desktop" >>"$log"
+		fails=0
+		echo "$(date) desktop mode" >>"$log"
+		sh -c "$DESKTOP_EXEC"
+		continue  # desktop closed -> back to gaming mode
+	fi
+	echo "$(date) gaming mode" >>"$log"
+	start=$(date +%s)
+	# shellcheck disable=SC2086 - the args are meant to split
+	GAMINGCRYPT_SESSION=1 QT_QPA_PLATFORM=xcb XDG_CURRENT_DESKTOP=gamescope \
+		"$GAMESCOPE" $GAMESCOPE_ARGS -- "$LAUNCHER" >>"$log" 2>&1
+	code=$?
+	[ -f "$STATE/next-mode" ] && continue  # e.g. Desktop mode was chosen
+	if [ "$code" -eq 0 ]; then
+		exit 0  # closed on purpose -> end the session (log out / shutdown)
+	fi
+	if [ $(($(date +%s) - start)) -lt "$QUICK_EXIT_S" ]; then
+		fails=$((fails + 1))
+	else
+		fails=0
+	fi
+	echo "$(date) gaming mode exited with $code (quick failures: $fails)" >>"$log"
+	sleep 1  # crashed -> start again
+done

@@ -178,6 +178,8 @@ def detect(env: dict | None = None, which: Callable[[str], str | None] = shutil.
            runner: Runner = subprocess.run) -> DisplayBackend | None:
     env = os.environ if env is None else env
     desktop = env.get("XDG_CURRENT_DESKTOP", "").upper()
+    if "GAMESCOPE" in desktop or env.get("GAMESCOPE_WAYLAND_DISPLAY"):
+        return None  # gamescope decides the output mode itself
     if "KDE" in desktop and which("kscreen-doctor"):
         return KScreen(runner)
     if env.get("WAYLAND_DISPLAY") and which("wlr-randr"):

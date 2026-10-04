@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=GamingCrypt
+Comment=Gaming mode: GamingCrypt on gamescope (Desktop mode switches to the desktop)
+Exec=/usr/local/bin/gamingcrypt-session
+Type=Application
+DesktopNames=gamescope

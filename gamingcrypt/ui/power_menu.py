@@ -36,7 +36,11 @@ class PowerMenu(QWidget):
                                (self.desktop_button, self.desktop)):
             button.clicked.connect(signal.emit)
             box.addWidget(button)
-        hint = QLabel("Desktop mode closes GamingCrypt. Your games drive stays unlocked.")
+        from gamingcrypt.session.mode import in_gaming_session
+
+        hint = QLabel("Desktop mode switches to the desktop; log out there to come back. "
+                      "Your games drive stays unlocked." if in_gaming_session()
+                      else "Desktop mode closes GamingCrypt. Your games drive stays unlocked.")
         hint.setObjectName("cardMeta")
         hint.setWordWrap(True)
         box.addWidget(hint)

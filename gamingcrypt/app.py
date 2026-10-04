@@ -149,6 +149,15 @@ class MainWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
 
+    def desktop_mode(self) -> None:
+        """In the gaming session: switch to the desktop (tileWin); otherwise just quit."""
+        from gamingcrypt.session import mode
+
+        if mode.in_gaming_session():
+            mode.request_desktop_mode()
+            log.info("switching to desktop mode")
+        self.close()
+
     def power_action(self, kind: str) -> None:
         log.info("power action: %s", kind)
         if self.input_service is not None:
@@ -224,7 +233,7 @@ class MainWindow(QMainWindow):
             service.on_steam_ui = self.minimize_for_steam
             service.on_game_launch = self.game_launched
         self.shell = Shell(pages)
-        self.shell.exit_requested.connect(self.close)  # desktop mode
+        self.shell.exit_requested.connect(self.desktop_mode)
         self.shell.power_requested.connect(self.power_action)
         self._replace(self.shell)
         self.screen_name = "shell"
@@ -345,6 +354,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="gamingcrypt", description=__doc__)
     parser.add_argument("--windowed", action="store_true", help="don't start in fullscreen")
     parser.add_argument("--config", type=Path, help="path to config.json")
+    parser.add_argument("--gaming-mode", action="store_true",
+                        help="from the desktop: go back to gaming mode (ends the desktop session)")
     parser.add_argument("--diagnose", action="store_true",
                         help="print what GamingCrypt sees of Steam, your library and the volume")
     parser.add_argument("--volume-password", action="store_true",
@@ -355,6 +366,13 @@ def main(argv: list[str] | None = None) -> int:
     cfg = config_mod.load_config(cfg_path)
     if args.volume_password:
         return print_volume_password(cfg)
+    if args.gaming_mode:
+        from gamingcrypt.session import mode
+
+        if mode.leave_desktop():
+            return 0
+        print("Could not end the desktop session - log out to return to gaming mode")
+        return 1
     if args.diagnose:
         from gamingcrypt.steam.service import SteamService
 

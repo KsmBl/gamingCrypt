@@ -3,6 +3,9 @@
 #
 #   ./install.sh               install / update
 #   ./install.sh --autostart   also start GamingCrypt automatically after login
+#   ./install.sh --session     also install the gaming session: boot straight into
+#                              GamingCrypt on gamescope; "Desktop mode" switches to
+#                              your desktop (e.g. tileWin), logging out returns
 #   ./install.sh --no-sudo     skip the VeraCrypt sudo helper (you can't mount then
 #                              unless VeraCrypt works without root for you)
 #   ./install.sh --uninstall   remove everything except your config and cache
@@ -20,9 +23,14 @@ AUTOSTART_FILE="$CONFIG_HOME/autostart/gamingcrypt.desktop"
 HELPER="/usr/local/lib/gamingcrypt/veracrypt-helper"
 SUDOERS="/etc/sudoers.d/gamingcrypt"
 UDEV_RULE="/etc/udev/rules.d/71-gamingcrypt-uinput.rules"
+SESSION_BIN="/usr/local/bin/gamingcrypt-session"
+SESSION_FILE="/usr/share/wayland-sessions/gamingcrypt.desktop"
+LIGHTDM_CONF="/etc/lightdm/lightdm.conf.d/50-gamingcrypt.conf"
+GAMING_MODE_ENTRY="$DATA_HOME/applications/gamingcrypt-gaming-mode.desktop"
 MODULES_CONF="/etc/modules-load.d/gamingcrypt-uinput.conf"
 
 AUTOSTART=0
+SESSION=0
 WITH_SUDO=1
 UNINSTALL=0
 
@@ -30,11 +38,12 @@ info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
-usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; }
 
 for arg in "$@"; do
     case "$arg" in
         --autostart) AUTOSTART=1 ;;
+        --session) SESSION=1 ;;
         --no-sudo) WITH_SUDO=0 ;;
         --uninstall) UNINSTALL=1 ;;
         -h|--help) usage; exit 0 ;;
@@ -48,7 +57,11 @@ uninstall() {
     info "Removing GamingCrypt"
     rm -rf "$VENV"
     rmdir "$APP_DIR" 2>/dev/null || true
-    rm -f "$LAUNCHER" "$DESKTOP_FILE" "$AUTOSTART_FILE"
+    rm -f "$LAUNCHER" "$DESKTOP_FILE" "$AUTOSTART_FILE" "$GAMING_MODE_ENTRY"
+    if [[ -e $SESSION_BIN || -e $SESSION_FILE || -e $LIGHTDM_CONF ]]; then
+        info "Removing the gaming session (needs sudo)"
+        sudo rm -f "$SESSION_BIN" "$SESSION_FILE" "$LIGHTDM_CONF"
+    fi
     if [[ -e $HELPER || -e $SUDOERS || -e $UDEV_RULE ]]; then
         info "Removing the sudo helper and controller rules (needs sudo)"
         sudo rm -f "$SUDOERS" "$HELPER" "$UDEV_RULE" "$MODULES_CONF"
@@ -165,11 +178,60 @@ install_input_rules() {
     sudo udevadm trigger --name-match=uinput 2>/dev/null || true
 }
 
+desktop_session_exec() {
+    # the desktop to switch to: tileWin if installed, otherwise the first other session
+    local file
+    for file in /usr/share/wayland-sessions/tilewin.desktop /usr/share/wayland-sessions/*.desktop \
+                /usr/share/xsessions/*.desktop; do
+        [[ -f $file && $file != "$SESSION_FILE" ]] || continue
+        sed -n 's/^Exec=//p' "$file" | head -1
+        return
+    done
+}
+
+install_session() {
+    command -v gamescope >/dev/null || warn "gamescope is not installed (Arch: sudo pacman -S gamescope) - the session falls back to the desktop until it is"
+    [[ -e /usr/lib/libxcb-cursor.so.0 || -e /usr/lib64/libxcb-cursor.so.0 ]] \
+        || warn "libxcb-cursor is missing (Arch: sudo pacman -S xcb-util-cursor) - Qt needs it inside gamescope"
+    local desktop tmp
+    desktop="$(desktop_session_exec)"
+    [[ -n $desktop ]] || die "no desktop session found in /usr/share/wayland-sessions for Desktop mode"
+    info "Installing the gaming session (needs sudo) - Desktop mode runs: $desktop"
+    tmp="$(mktemp)"
+    sed -e "s|@LAUNCHER@|$LAUNCHER|" -e "s|@DESKTOP_EXEC@|$desktop|" \
+        "$SRC_DIR/gamingcrypt/session/gamingcrypt-session" > "$tmp"
+    sudo install -o root -g root -m 0755 "$tmp" "$SESSION_BIN"
+    sudo install -o root -g root -m 0644 "$SRC_DIR/gamingcrypt/session/gamingcrypt.desktop" "$SESSION_FILE"
+    rm -f "$tmp"
+    if [[ -d /etc/lightdm ]]; then
+        info "LightDM: log in automatically into the gaming session"
+        getent group autologin >/dev/null || sudo groupadd -r autologin
+        id -nG "$USER" | grep -qw autologin || sudo gpasswd -a "$USER" autologin >/dev/null
+        sudo install -d -m 0755 "$(dirname "$LIGHTDM_CONF")"
+        printf '[Seat:*]\nautologin-user=%s\nautologin-session=gamingcrypt\n' "$USER" \
+            | sudo tee "$LIGHTDM_CONF" >/dev/null
+    else
+        warn "LightDM not found - choose the \"GamingCrypt\" session at your login screen"
+    fi
+    mkdir -p "$(dirname "$GAMING_MODE_ENTRY")"
+    cat > "$GAMING_MODE_ENTRY" <<ENTRY
+[Desktop Entry]
+Type=Application
+Name=Gaming Mode
+Comment=Back to GamingCrypt
+Exec=$LAUNCHER --gaming-mode
+Icon=applications-games
+Categories=Game;
+ENTRY
+}
+
 if [[ $WITH_SUDO -eq 1 ]]; then
     install_helper
     install_input_rules
+    [[ $SESSION -eq 1 ]] && install_session
 else
     info "Skipping the sudo helper (--no-sudo)"
+    [[ $SESSION -eq 1 ]] && warn "--session needs sudo - not installed"
 fi
 
 case ":$PATH:" in

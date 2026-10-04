@@ -66,6 +66,22 @@ Uninstall with `./install.sh --uninstall` (your config and cache are kept).
 
 Run `gamingcrypt --windowed` to try it in a window instead of fullscreen.
 
+## Gaming mode and desktop mode
+
+`./install.sh --session` turns the device into a console, similar to SteamOS:
+- **Boot:** it goes straight into **gaming mode**, GamingCrypt on
+  [gamescope](https://github.com/ValveSoftware/gamescope) (LightDM autologin). Games run
+  inside gamescope, fullscreen and focused.
+- **⏻ → Desktop mode:** switches to your desktop (tileWin if installed, otherwise your
+  other session). Log out there, or pick *Gaming Mode* in the start menu, to come back.
+- **If gaming mode keeps crashing on start** (e.g. gamescope not installed), the session
+  falls back to the desktop instead of leaving a black screen.
+- **Resolution and refresh rate** in gaming mode are gamescope's job. Own options go into
+  `~/.config/gamingcrypt/gamescope-args`, e.g. `-f -W 1280 -H 800 -r 60`.
+
+Needs `gamescope` and `xcb-util-cursor` (Arch: `sudo pacman -S gamescope xcb-util-cursor`).
+`./install.sh --uninstall` removes the session and the autologin setting again.
+
 ## Unlock methods and key derivation
 
 What you enter is first turned into a canonical secret:
