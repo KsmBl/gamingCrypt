@@ -39,9 +39,9 @@ def test_write_manifest(tmp_path):
     state = vdf.load(path)["AppState"]
     assert state["appid"] == "413150" and state["StateFlags"] == "1026"
     assert state["installdir"] == "Stardew Valley" and state["LastOwner"] == "7656"
-    # GamingCrypt's own scanner treats it as "installed, update pending" -> not playable yet
+    # queued, not downloaded: must not count as installed
     game = library.read_manifest(path, tmp_path / "GamingCrypt")
-    assert game.update_pending
+    assert not game.installed and not game.update_pending
     path.write_text("custom")
     installer.write_manifest(tmp_path / "GamingCrypt", 413150, "x")
     assert path.read_text() == "custom"  # never overwritten

@@ -84,19 +84,23 @@ def read_manifest(path: Path, library: Path) -> SteamGame | None:
     if not appid or not is_game(appid, name):
         return None
     flags = _int(vdf.iget(state, "StateFlags"), STATE_FULLY_INSTALLED)
+    # A manifest alone doesn't mean installed: queued / paused / cancelled downloads have
+    # one too. Only Steam's "fully installed" bit counts (an update may be pending on top).
+    installed = bool(flags & STATE_FULLY_INSTALLED)
     return SteamGame(
         appid=appid,
         name=name,
-        installed=True,
+        installed=installed,
         install_dir=str(library / "steamapps" / "common" / (vdf.iget(state, "installdir", default="") or "")),
         library_path=str(library),
         size_on_disk=_int(vdf.iget(state, "SizeOnDisk")),
         last_updated=_int(vdf.iget(state, "LastUpdated")) or None,
-        update_pending=flags != STATE_FULLY_INSTALLED,
+        update_pending=installed and flags != STATE_FULLY_INSTALLED,
     )
 
 
-def installed_games(root: Path) -> list[SteamGame]:
+def installed_games(root: Path, include_pending: bool = False) -> list[SteamGame]:
+    """Games with a manifest; only fully installed ones unless ``include_pending``."""
     games: dict[int, SteamGame] = {}
     for folder in library_folders(root):
         steamapps = folder / "steamapps"
@@ -104,7 +108,7 @@ def installed_games(root: Path) -> list[SteamGame]:
             continue  # e.g. the encrypted drive isn't mounted
         for manifest in sorted(steamapps.glob("appmanifest_*.acf")):
             game = read_manifest(manifest, folder)
-            if game is not None:
+            if game is not None and (game.installed or include_pending):
                 games.setdefault(game.appid, game)
     return list(games.values())
 

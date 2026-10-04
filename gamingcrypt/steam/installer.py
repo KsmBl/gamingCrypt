@@ -110,11 +110,9 @@ def downloads(root: Path | None) -> list[Download]:
                 continue
             kind = classify(flags, done, total)
             if kind in ("downloading", "paused", "queued"):
-                try:
-                    size = int(vdf.iget(state, "SizeOnDisk", default=0) or 0)
-                except ValueError:
-                    size = 0
-                is_update = bool(flags & STATE_FULLY_INSTALLED) or size > 0
+                # SizeOnDisk already grows during a *first* download - only Steam's
+                # "fully installed" bit means there's an installed version to keep.
+                is_update = bool(flags & STATE_FULLY_INSTALLED)
                 found.setdefault(appid, Download(appid, name, kind, done, total, is_update, str(folder)))
     order = {"downloading": 0, "paused": 1, "queued": 2}
     return sorted(found.values(), key=lambda d: (order[d.state], d.name.casefold()))
