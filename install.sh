@@ -191,8 +191,13 @@ desktop_session_exec() {
 
 install_session() {
     command -v gamescope >/dev/null || warn "gamescope is not installed (Arch: sudo pacman -S gamescope) - the session falls back to the desktop until it is"
-    [[ -e /usr/lib/libxcb-cursor.so.0 || -e /usr/lib64/libxcb-cursor.so.0 ]] \
-        || warn "libxcb-cursor is missing (Arch: sudo pacman -S xcb-util-cursor) - Qt needs it inside gamescope"
+    # Inside gamescope Qt runs on X11 (xcb): ask its plugin what's missing
+    local plugin missing
+    plugin="$("$VENV/bin/python" -c 'import PySide6, os; print(os.path.join(os.path.dirname(PySide6.__file__), "Qt/plugins/platforms/libqxcb.so"))' 2>/dev/null)"
+    if [[ -f $plugin ]]; then
+        missing="$(ldd "$plugin" 2>/dev/null | awk '/not found/ {print $1}' | sort -u | tr '\n' ' ')"
+        [[ -z $missing ]] || warn "Qt can't run inside gamescope, missing: $missing(Arch: sudo pacman -S xcb-util-cursor xcb-util-image xcb-util-keysyms xcb-util-renderutil xcb-util-wm)"
+    fi
     local desktop tmp
     desktop="$(desktop_session_exec)"
     [[ -n $desktop ]] || die "no desktop session found in /usr/share/wayland-sessions for Desktop mode"

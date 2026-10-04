@@ -79,7 +79,7 @@ Run `gamingcrypt --windowed` to try it in a window instead of fullscreen.
 - **Resolution and refresh rate** in gaming mode are gamescope's job. Own options go into
   `~/.config/gamingcrypt/gamescope-args`, e.g. `-f -W 1280 -H 800 -r 60`.
 
-Needs `gamescope` and `xcb-util-cursor` (Arch: `sudo pacman -S gamescope xcb-util-cursor`).
+Needs `gamescope` and the X11 libraries Qt uses inside it (Arch: `sudo pacman -S gamescope xcb-util-cursor xcb-util-image`); `install.sh --session` lists anything missing.
 `./install.sh --uninstall` removes the session and the autologin setting again.
 
 ## Unlock methods and key derivation
