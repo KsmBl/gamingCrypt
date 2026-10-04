@@ -87,6 +87,7 @@ QComboBox:focus {{ border-color: {ACCENT}; }}
 QSlider:focus {{ background: {SURFACE_HI}; border-radius: 10px; }}
 QFrame#card:hover {{ background: {SURFACE_HI}; }}
 QFrame#topBar {{ background: {SURFACE}; }}
+QWidget#menuRow {{ background: transparent; }}
 QLabel#battery {{ font-size: 22px; padding: 0 14px; color: {TEXT_DIM}; }}
 QLabel#battery[charging="true"] {{ color: {SUCCESS}; }}
 QLabel#battery[low="true"] {{ color: {DANGER}; font-weight: 700; }}

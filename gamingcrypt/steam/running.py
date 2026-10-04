@@ -130,3 +130,36 @@ def launch_phase(appid: int, root: Path | None = None, name: str = "the game",
     if names & RUNTIME_NAMES:
         return "Starting the Steam Linux Runtime…"
     return f"Starting {name}…"
+
+
+def force_quit(appid: int, proc: Path = Path("/proc"), kill=None, sleep=None, grace_s: float = 3.0) -> int:
+    """End a running game: SIGTERM its whole process tree, SIGKILL whatever is left.
+
+    Returns how many processes were signalled.
+    """
+    import signal
+    import time
+
+    kill = kill or os.kill
+    sleep = sleep or time.sleep
+    pids = game_processes(appid, proc)
+    for pid in pids:
+        try:
+            kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    # Remember the processes from the start: once Steam's launcher has exited, its
+    # children can no longer be found through it - a hung game would survive.
+    def alive() -> set[int]:
+        return {pid for pid in pids if (proc / str(pid)).exists()}
+
+    waited = 0.0
+    while waited < grace_s and alive():
+        sleep(0.25)
+        waited += 0.25
+    for pid in alive() | game_processes(appid, proc):
+        try:
+            kill(pid, signal.SIGKILL)  # didn't listen - e.g. a frozen game
+        except OSError:
+            pass
+    return len(pids)

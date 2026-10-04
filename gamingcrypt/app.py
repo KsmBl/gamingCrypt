@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QThreadPool
+from PySide6.QtCore import QObject, QThreadPool, Signal
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QWidget
 
 import logging
@@ -24,6 +24,10 @@ from gamingcrypt.unlock.veracrypt import VeraCryptUnlocker
 
 
 log = logging.getLogger("gamingcrypt.app")
+
+
+class _KeyBridge(QObject):
+    key = Signal(int)
 
 
 class MainWindow(QMainWindow):
@@ -114,13 +118,53 @@ class MainWindow(QMainWindow):
             return None
         self.volume_osd = VolumeOsd(self)
         self.volume = VolumeController(audio, self.volume_osd, self)
-        keys = VolumeKeys(self.volume.bridge.key.emit)
+        # volume -> VolumeController, Windows button -> quick menu; keys arrive from a thread
+        self.key_bridge = _KeyBridge(self)
+        self.key_bridge.key.connect(self.hardware_key)
+        keys = VolumeKeys(self.key_bridge.key.emit)
         if not keys.start():
             log.warning("volume buttons not readable: %s - run install.sh --session",
                         "; ".join(keys.errors) or "none found")
             return None
         log.info("volume buttons: %d device(s)", len(keys.devices))
         return keys
+
+    def hardware_key(self, code: int) -> None:
+        from gamingcrypt.input import evdev as e
+
+        if code in e.MENU_KEYS:
+            self.toggle_quick_menu()
+        else:
+            self.volume.handle(code)
+
+    # quick menu (Windows button) ------------------------------------------------------
+    def toggle_quick_menu(self) -> None:
+        menu = getattr(self, "quick_menu", None)
+        if menu is not None and menu.isVisible():
+            menu.close_menu()
+            return
+        if menu is None:
+            from gamingcrypt.session.mode import in_gaming_session
+            from gamingcrypt.ui.quick_menu import QuickMenu
+
+            menu = self.quick_menu = QuickMenu(self, self.system, refresh_available=in_gaming_session())
+            menu.closed.connect(self._quick_menu_closed)
+            menu.force_quit.connect(self._force_quit)
+        watcher = self.game_watcher
+        appid = watcher.appid if watcher.active and watcher.phase in ("starting", "playing") else None
+        if not self.isVisible() or self.isMinimized():
+            self.bring_to_front()  # the game keeps running behind
+        menu.open_menu(appid, self.game_name(appid) if appid else "")
+
+    def _quick_menu_closed(self) -> None:
+        if self.game_watcher.active and self.game_watcher.phase == "playing":
+            self.step_aside()  # back to the game
+
+    def _force_quit(self, appid: int) -> None:
+        from gamingcrypt.steam.running import force_quit
+
+        log.info("force quitting app %s", appid)
+        run_async(lambda: force_quit(appid))  # the game watcher notices the exit and cleans up
 
     def big_picture_opened(self) -> None:
         """Make room for Steam's Big Picture and come back when it's closed."""
@@ -150,6 +194,9 @@ class MainWindow(QMainWindow):
         return game.name if game is not None else "your game"
 
     def game_over(self, appid: int | None = None, failed: bool = False) -> None:
+        menu = getattr(self, "quick_menu", None)
+        if menu is not None and menu.isVisible():
+            menu.hide()  # the game is gone - nothing to go back to
         # Pages showing "Starting <game>…" must not keep saying so after the game.
         if self.shell is not None and appid is not None:
             for page in self.shell.findChildren(QWidget):
@@ -273,6 +320,9 @@ class MainWindow(QMainWindow):
         confirm = getattr(self, "display_confirm", None)
         if confirm is not None and confirm.isVisible():
             return confirm
+        menu = getattr(self, "quick_menu", None)
+        if menu is not None and menu.isVisible():
+            return menu
         if self.launch_overlay.isVisible():
             return self.launch_overlay
         menu = getattr(self.shell, "power_menu", None) if self.shell is not None else None

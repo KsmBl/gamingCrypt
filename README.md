@@ -86,6 +86,14 @@ Run `gamingcrypt --windowed` to try it in a window instead of fullscreen.
   - The options are stored in `~/.config/gamingcrypt/gamescope-args`; you can also edit it by hand.
 - **Desktop mode** closes Steam first: gamescope only ends when every program started in
   it has ended.
+- **Windows button → quick menu**, also in the middle of a game:
+  - Output and input device, volume, brightness, refresh rate.
+  - **Force quit** (tap twice): ends the game's whole process tree, and what doesn't stop
+    within 3 s is killed.
+  - The refresh rate changes at runtime through gamescope's dynamic refresh, so the game
+    keeps running. It reverts after 15 s unless you keep it.
+  - gamescope shows one app at a time: while the menu is open the game runs on behind
+    GamingCrypt, and *Back to the game*, B or the Windows button returns to it.
 - **Volume buttons:** gamescope doesn't handle them, so GamingCrypt does in gaming mode.
   - It reads them straight from the device, so they also work during games: 5 % steps up to
     100 %, mute toggles, and a small indicator appears while GamingCrypt is on screen.
