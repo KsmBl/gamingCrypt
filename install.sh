@@ -6,6 +6,7 @@
 #   ./install.sh --session     also install the gaming session: boot straight into
 #                              GamingCrypt on gamescope; "Desktop mode" switches to
 #                              your desktop (e.g. tileWin), logging out returns
+#                              (once installed, plain ./install.sh keeps it updated)
 #   ./install.sh --no-sudo     skip the VeraCrypt sudo helper (you can't mount then
 #                              unless VeraCrypt works without root for you)
 #   ./install.sh --uninstall   remove everything except your config and cache
@@ -39,7 +40,7 @@ info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
-usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; }
 
 for arg in "$@"; do
     case "$arg" in
@@ -53,6 +54,13 @@ for arg in "$@"; do
 done
 
 [[ $EUID -eq 0 ]] && die "run this as your normal user, not as root (sudo is used only where needed)"
+
+# Once the gaming session is installed, every update must update it too (session
+# script, volume/Windows button access) - a plain ./install.sh must not skip it.
+if [[ $UNINSTALL -eq 0 && $SESSION -eq 0 && -e $SESSION_BIN ]]; then
+    SESSION=1
+    info "Gaming session found - updating it as well"
+fi
 
 uninstall() {
     info "Removing GamingCrypt"
