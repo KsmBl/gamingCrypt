@@ -303,6 +303,18 @@ class KeyboardFocusFilter(QObject):
         return False
 
 
+def focus_and_reveal(widget: QWidget) -> None:
+    """Give ``widget`` the (controller) highlight and scroll it into view."""
+    widget.setFocus(Qt.FocusReason.OtherFocusReason)
+    parent = widget.parentWidget()
+    from PySide6.QtWidgets import QScrollArea
+
+    while parent is not None:
+        if isinstance(parent, QScrollArea):
+            parent.ensureWidgetVisible(widget, 40, 40)
+        parent = parent.parentWidget()
+
+
 def set_status(label: QLabel, text: str, error: bool = False) -> None:
     """Set a status label's text and switch its error styling."""
     label.setText(text)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shiboken6
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
 
@@ -16,6 +17,7 @@ from gamingcrypt.ui.widgets import (
     OnScreenKeyboard,
     big_button,
     enable_touch_scroll,
+    focus_and_reveal,
     set_status,
 )
 
@@ -32,6 +34,8 @@ class GamesHome(QWidget):
         self.tab = tab
         self.installed: list[SteamGame] = []
         self.cards: dict[int, GameCard] = {}
+        self.selected_appid: int | None = None
+        self.result_appids: list[int] = []
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 20, 30, 10)
 
@@ -93,6 +97,9 @@ class GamesHome(QWidget):
         self._focus_filter.watch(self.search)
         layout.addWidget(self.keyboard)
 
+    def remember_selection(self, appid: int) -> None:
+        self.selected_appid = appid
+
     def show_notice(self, text: str, error: bool = False) -> None:
         set_status(self.notice, text, error=error)
         self.notice.setVisible(bool(text))
@@ -108,6 +115,9 @@ class GamesHome(QWidget):
         self.sources_heading.setVisible(not searching)
         self.results_heading.setText(f'Results for "{query.strip()}"' if searching else "Installed games")
         matches = filter_games(self.installed, query, installed_only=True)
+        focused = self.window().focusWidget() if self.window() else None
+        if isinstance(focused, GameCard):
+            self.selected_appid = focused.game.appid
         # cards are made once and only re-ordered: typing must stay fast
         for card in self.grid.take_all():
             card.hide()
@@ -123,6 +133,9 @@ class GamesHome(QWidget):
             card.show()
         self.grid.invalidate()
         self.result_appids = [g.appid for g in matches]
+        card = self.cards.get(self.selected_appid) if self.selected_appid is not None else None
+        if card is not None and card.isVisible() and isinstance(focused, GameCard):
+            focus_and_reveal(card)  # hiding/re-adding cards must not lose the selection
         if matches:
             self.empty_label.setText("")
         elif searching:
@@ -138,6 +151,7 @@ class GamesTab(QStackedWidget):
         super().__init__(parent)
         self.service = service
         self.games: dict[int, SteamGame] = {}
+        self._came_from: list = []
         self.home = GamesHome(self)
         self.addWidget(self.home)
         self.reload_installed()
@@ -158,6 +172,8 @@ class GamesTab(QStackedWidget):
 
     # navigation -------------------------------------------------------------
     def push(self, page: QWidget) -> None:
+        # remember what was selected, so "back" can select it again
+        self._came_from.append(self.window().focusWidget() if self.window() else None)
         self.addWidget(page)
         self.setCurrentWidget(page)
 
@@ -169,6 +185,12 @@ class GamesTab(QStackedWidget):
         page.deleteLater()
         self.setCurrentIndex(self.count() - 1)
         current = self.currentWidget()
+        previous = self._came_from.pop() if self._came_from else None
+        if previous is not None and shiboken6.isValid(previous) and current.isAncestorOf(previous):
+            if isinstance(previous, GameCard) and current is self.home:
+                self.home.remember_selection(previous.game.appid)
+            if previous.isVisible():
+                focus_and_reveal(previous)
         if hasattr(current, "on_return"):
             current.on_return()
         if current is self.home:
@@ -205,7 +227,9 @@ class GamesTab(QStackedWidget):
 
         game = self.games.get(appid)
         if game is not None:
-            self.push(GameDetailPage(self, game))
+            page = GameDetailPage(self, game)
+            self.push(page)
+            page.main_button.setFocus()  # Play / Download is the obvious next step
 
     def open_recent(self) -> None:
         from gamingcrypt.ui.recent_page import RecentPage
