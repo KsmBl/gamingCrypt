@@ -53,6 +53,9 @@ class SteamLibraryPage(QWidget):
         self.count_label.setObjectName("subtitle")
         top.addWidget(self.count_label)
         top.addStretch()
+        self.big_picture_button = big_button("🎮 Big Picture")
+        self.big_picture_button.clicked.connect(self.open_big_picture)
+        top.addWidget(self.big_picture_button)
         self.store_button = big_button("🛒 Store", "primary")
         self.store_button.clicked.connect(tab.open_store)
         top.addWidget(self.store_button)
@@ -102,6 +105,11 @@ class SteamLibraryPage(QWidget):
 
         self._update_sort_buttons()
         run_async(self.service.load_library, self._loaded, self._load_failed, owner=self)
+
+    def open_big_picture(self) -> None:
+        """Steam's own console UI, e.g. to subscribe to Workshop mods."""
+        if not self.service.client.open_big_picture():
+            self.status.setText("Could not reach Steam - is it installed?")
 
     # loading ----------------------------------------------------------------
     def _loaded(self, games: list[SteamGame]) -> None:

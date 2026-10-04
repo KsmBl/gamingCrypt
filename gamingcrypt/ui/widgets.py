@@ -305,12 +305,16 @@ class KeyboardFocusFilter(QObject):
 
 def focus_and_reveal(widget: QWidget) -> None:
     """Give ``widget`` the (controller) highlight and scroll it into view."""
-    widget.setFocus(Qt.FocusReason.OtherFocusReason)
-    parent = widget.parentWidget()
+    from PySide6.QtCore import QPropertyAnimation
     from PySide6.QtWidgets import QScrollArea
 
+    widget.setFocus(Qt.FocusReason.OtherFocusReason)
+    parent = widget.parentWidget()
     while parent is not None:
         if isinstance(parent, QScrollArea):
+            # a glide still running from earlier would move the list away again
+            for anim in parent.verticalScrollBar().findChildren(QPropertyAnimation):
+                anim.stop()
             parent.ensureWidgetVisible(widget, 40, 40)
         parent = parent.parentWidget()
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import shiboken6
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
 
 from gamingcrypt.steam.models import SteamGame
@@ -191,6 +191,9 @@ class GamesTab(QStackedWidget):
                 self.home.remember_selection(previous.game.appid)
             if previous.isVisible():
                 focus_and_reveal(previous)
+                # once more after the page's layout settled (it was hidden meanwhile)
+                QTimer.singleShot(0, lambda w=previous: shiboken6.isValid(w) and w.isVisible()
+                                  and focus_and_reveal(w))
         if hasattr(current, "on_return"):
             current.on_return()
         if current is self.home:

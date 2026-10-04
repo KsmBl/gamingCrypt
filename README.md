@@ -37,6 +37,7 @@ your Steam library.
   - **Steam** card with your whole library (installed, plus every owned game when a Web API key is set)
   - Sort by **name, release date, playtime, price or latest update**, ascending or descending
   - Search the whole Steam library (installed or not)
+  - **🎮 Big Picture** opens Steam's console UI (e.g. for Workshop mods); GamingCrypt steps aside and comes back when you close it
   - The title and sort bar fold away while you scroll down and come back when you scroll up (also on Games, Store and Downloads)
   - Game page: **Play** or **Download**, plus **Options → Uninstall** (tap twice to confirm, no Steam popup)
   - Game size: size on disk for installed games, the store's storage requirement for the others

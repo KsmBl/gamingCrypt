@@ -103,6 +103,16 @@ class MainWindow(QMainWindow):
     # Steam windows (store, Steam's own dialogs) would open behind the launcher.
     minimize_for_steam = step_aside
 
+    def big_picture_opened(self) -> None:
+        """Make room for Steam's Big Picture and come back when it's closed."""
+        from gamingcrypt.ui.big_picture import BigPictureWatcher
+
+        if getattr(self, "big_picture", None) is None:
+            self.big_picture = BigPictureWatcher(parent=self)
+            self.big_picture.closed.connect(self.bring_to_front)
+        self.step_aside()
+        self.big_picture.watch()
+
     def game_launched(self, appid: int) -> None:
         """Stay visible ("Starting …") until the game draws, then step aside."""
         games = self.shell.pages.get("Games") if self.shell else None
@@ -301,6 +311,7 @@ class MainWindow(QMainWindow):
             # Steam windows (store, Steam's own dialogs) would open *behind* the fullscreen launcher.
             service.on_steam_ui = self.minimize_for_steam
             service.on_game_launch = self.game_launched
+            service.on_big_picture = self.big_picture_opened
         self.shell = Shell(pages)
         self.shell.exit_requested.connect(self.desktop_mode)
         self.shell.power_requested.connect(self.power_action)

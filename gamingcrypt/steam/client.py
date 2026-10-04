@@ -34,6 +34,7 @@ class SteamClient:
         self.on_ui: Callable[[], None] | None = None
         # Called after a game was launched (the launcher should step aside).
         self.on_play: Callable[[int], None] | None = None
+        self.on_big_picture: Callable[[], None] | None = None
 
     def _ui(self, ok: bool) -> bool:
         if ok and self.on_ui is not None:
@@ -86,6 +87,13 @@ class SteamClient:
         except OSError:
             return False
         return True
+
+    def open_big_picture(self) -> bool:
+        """Steam's console UI - e.g. for Workshop mods. The launcher steps aside for it."""
+        ok = self.open_uri("steam://open/bigpicture")
+        if ok and self.on_big_picture is not None:
+            self.on_big_picture()
+        return ok
 
     def open_store(self, appid: int) -> bool:
         return self._ui(self.open_uri(f"steam://store/{int(appid)}"))

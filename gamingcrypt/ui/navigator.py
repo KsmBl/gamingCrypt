@@ -170,7 +170,7 @@ class GamepadNavigator(QObject):
         self._scroll_targets[id(bar)] = target
         anim = self._scroll_anims.get(id(bar))
         if anim is None:
-            anim = QPropertyAnimation(bar, b"value", self)
+            anim = QPropertyAnimation(bar, b"value", bar)  # owned by the bar: others can stop it
             anim.setEasingCurve(QEasingCurve.Type.OutCubic)
             anim.finished.connect(lambda b=id(bar): self._scroll_targets.pop(b, None))
             anim.finished.connect(self._scroll_done)

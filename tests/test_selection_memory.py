@@ -47,6 +47,7 @@ def test_steam_library_play_is_selected_and_back_returns_to_the_game(qtbot):
     press(nav, e.BTN_EAST)  # B
     assert tab.currentWidget() is library
     assert tab.focusWidget() is card  # the same game again
+    qtbot.wait(20)
     viewport = library.scroll.viewport()
     top = card.mapTo(viewport, card.rect().topLeft()).y()
     assert 0 <= top and top + card.height() <= viewport.height()  # and scrolled into view

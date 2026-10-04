@@ -37,6 +37,7 @@ class SteamService:
         # Set by the app: called when a Steam window opens (see SteamClient.on_ui).
         self.on_steam_ui = None
         self.on_game_launch = None  # set by the app: a game was started
+        self.on_big_picture = None  # set by the app: Steam's Big Picture was opened
         self._lock = threading.Lock()
         self._metadata: dict[str, dict] = self._read_json("steam_metadata.json", {})
 
@@ -49,6 +50,8 @@ class SteamService:
             self._client.on_ui = self.on_steam_ui
         if getattr(self._client, "on_play", None) is None and self.on_game_launch is not None:
             self._client.on_play = self.on_game_launch
+        if getattr(self._client, "on_big_picture", None) is None and self.on_big_picture is not None:
+            self._client.on_big_picture = self.on_big_picture
         return self._client
 
     def _sync_account(self) -> None:
