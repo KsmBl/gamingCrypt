@@ -26,12 +26,14 @@ your Steam library.
 - **Settings → Reset authentication method**: switch between PIN, password, swipe pattern and 5×5 pattern at any time
 - **Tabs**: Games, Downloads, Movies, Shows, Music, Pictures, Settings (the media tabs show *coming soon*)
 - **Power menu** (⏻): shut down, restart, or desktop mode (quit GamingCrypt)
+- **Battery** next to ⏻: level, ⚡ when on external power, red when low
 - **Downloads tab**: every queued, running and paused Steam download with progress and a count in the tab bar; reorder with ▲/▼ (the top one downloads), cancel with ✕ (deletes what was downloaded)
 - **Device settings**: resolution, refresh rate, brightness, max power consumption (TDP), audio output and input device and their volume
 - **Controller**: calibrate the analog sticks and triggers and map every button; games get a virtual Xbox controller with your setup
 - **Browse with the controller**: the whole UI works with D-pad / stick, A, B, LB/RB, as well as with touch
 - **Games**
-  - All your games below the libraries, filterable (**All / Installed / Not installed**) and searchable
+  - Installed games below the libraries, searchable
+  - **Recently played** library: your last 10 played games
   - **Steam** card with your whole library (installed, plus every owned game when a Web API key is set)
   - Sort by **name, release date, playtime, price or latest update**, ascending or descending
   - Search the whole Steam library (installed or not)

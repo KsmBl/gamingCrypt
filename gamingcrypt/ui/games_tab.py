@@ -26,17 +26,12 @@ def heading(text: str) -> QLabel:
     return label
 
 
-FILTERS = {"all": "All games", "installed": "Installed", "not_installed": "Not installed"}
-
-
 class GamesHome(QWidget):
     def __init__(self, tab: "GamesTab"):
         super().__init__()
         self.tab = tab
         self.installed: list[SteamGame] = []
-        self.all_games: dict[int, SteamGame] = {}
         self.cards: dict[int, GameCard] = {}
-        self.filter = "all"
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 20, 30, 10)
 
@@ -45,7 +40,7 @@ class GamesHome(QWidget):
         header.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.header)
         self.search = QLineEdit()
-        self.search.setPlaceholderText("🔍  Search your games")
+        self.search.setPlaceholderText("🔍  Search installed games")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.refresh_results)
         header.addWidget(self.search)
@@ -69,22 +64,16 @@ class GamesHome(QWidget):
         self.steam_card = SourceCard("Steam", "Your Steam library")
         self.steam_card.tapped.connect(tab.open_steam)
         sources.addWidget(self.steam_card)
+        self.recent_card = SourceCard("Recently played", "Your last 10 games")
+        self.recent_card.tapped.connect(tab.open_recent)
+        sources.addWidget(self.recent_card)
         sources.addStretch()
         self.sources = QWidget()
         self.sources.setLayout(sources)
         self.content_layout.addWidget(self.sources)
 
-        self.results_heading = heading("All games")
+        self.results_heading = heading("Installed games")
         self.content_layout.addWidget(self.results_heading)
-        filters = QHBoxLayout()
-        self.filter_buttons = {}
-        for key, label in FILTERS.items():
-            button = big_button(label, checkable=True)
-            button.clicked.connect(lambda _=False, k=key: self.set_filter(k))
-            self.filter_buttons[key] = button
-            filters.addWidget(button)
-        filters.addStretch()
-        self.content_layout.addLayout(filters)
         self.grid_widget = QWidget()
         self.grid = FlowLayout(self.grid_widget)
         self.content_layout.addWidget(self.grid_widget)
@@ -109,43 +98,17 @@ class GamesHome(QWidget):
         self.notice.setVisible(bool(text))
 
     def set_installed(self, games: list[SteamGame]) -> None:
-        """Installed games are known right away (local files)."""
-        self.installed = sort_games(games, "name")
-        for game in games:
-            self.all_games[game.appid] = game
+        self.installed = sort_games([g for g in games if g.installed], "name")
         self.refresh_results()
-
-    def set_library(self, games: list[SteamGame]) -> None:
-        """The whole library (owned games too) - arrives later, may need the network."""
-        for game in games:
-            known = self.all_games.get(game.appid)
-            if known is not None and known.installed and not game.installed:
-                continue  # never let a slower list "uninstall" a game
-            self.all_games[game.appid] = game
-        self.refresh_results()
-
-    def set_filter(self, key: str) -> None:
-        self.filter = key
-        self.refresh_results()
-
-    def matches(self) -> list[SteamGame]:
-        games = list(self.all_games.values())
-        if self.filter == "installed":
-            games = [g for g in games if g.installed]
-        elif self.filter == "not_installed":
-            games = [g for g in games if not g.installed]
-        return sort_games(filter_games(games, self.search.text()), "name")
 
     def refresh_results(self) -> None:
         query = self.search.text()
         searching = bool(query.strip())
         self.sources.setVisible(not searching)
         self.sources_heading.setVisible(not searching)
-        for key, button in self.filter_buttons.items():
-            button.setChecked(key == self.filter)
-        self.results_heading.setText(f'Results for "{query.strip()}"' if searching else FILTERS[self.filter])
-        matches = self.matches()
-        # cards are made once and only re-ordered: typing must stay fast with big libraries
+        self.results_heading.setText(f'Results for "{query.strip()}"' if searching else "Installed games")
+        matches = filter_games(self.installed, query, installed_only=True)
+        # cards are made once and only re-ordered: typing must stay fast
         for card in self.grid.take_all():
             card.hide()
         for game in matches:
@@ -163,10 +126,9 @@ class GamesHome(QWidget):
         if matches:
             self.empty_label.setText("")
         elif searching:
-            self.empty_label.setText("No game matches your search")
+            self.empty_label.setText("No installed game matches your search")
         else:
-            self.empty_label.setText({"all": "No games found", "installed": "No installed games found",
-                                      "not_installed": "Every game is installed"}[self.filter])
+            self.empty_label.setText("No installed games found")
 
 
 class GamesTab(QStackedWidget):
@@ -231,13 +193,6 @@ class GamesTab(QStackedWidget):
         for game in games:
             self.games[game.appid] = game
         self.home.set_installed(games)
-        # then everything else (owned but not installed) for the "All games" list
-        run_async(self.service.load_library, self._library_loaded, owner=self)
-
-    def _library_loaded(self, games: list[SteamGame]) -> None:
-        for game in games:
-            self.games.setdefault(game.appid, game)
-        self.home.set_library(games)
 
     # entry points -----------------------------------------------------------
     def open_steam(self) -> None:
@@ -251,6 +206,11 @@ class GamesTab(QStackedWidget):
         game = self.games.get(appid)
         if game is not None:
             self.push(GameDetailPage(self, game))
+
+    def open_recent(self) -> None:
+        from gamingcrypt.ui.recent_page import RecentPage
+
+        self.push(RecentPage(self))
 
     def open_store(self) -> None:
         from gamingcrypt.ui.store_page import StorePage

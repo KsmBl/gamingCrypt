@@ -33,57 +33,84 @@ def test_meta_text_follows_sort_key():
     assert meta_text(g, "name") == "Not installed"
 
 
-def test_home_lists_all_games_with_filters(qtbot):
+def test_home_lists_only_installed_games(qtbot):
     tab = make_tab(qtbot)
-    # installed ones come first (local), the rest of the library follows
-    qtbot.waitUntil(lambda: len(tab.home.result_appids) == 4)
-    assert tab.home.result_appids == [1145360, 400, 620, 292030]  # Hades, Portal, Portal 2, Witcher
-    assert tab.home.filter_buttons["all"].isChecked() and tab.home.results_heading.text() == "All games"
-    tab.home.filter_buttons["installed"].click()
-    assert tab.home.result_appids == [1145360, 620]
-    tab.home.filter_buttons["not_installed"].click()
-    assert tab.home.result_appids == [400, 292030]
+    assert tab.home.result_appids == [1145360, 620]  # Hades, Portal 2 - not Portal / Witcher
+    assert tab.home.results_heading.text() == "Installed games"
     assert tab.home.sources.isVisibleTo(tab.home)
+    assert not hasattr(tab.home, "filter_buttons")
 
 
-def test_search_within_filter(qtbot):
+def test_search_installed_only(qtbot):
     tab = make_tab(qtbot)
-    qtbot.waitUntil(lambda: len(tab.home.result_appids) == 4)
     tab.home.search.setText("portal")
-    assert tab.home.result_appids == [400, 620]  # installed or not
+    assert tab.home.result_appids == [620]  # "Portal" isn't installed
     assert not tab.home.sources.isVisibleTo(tab.home)
-    assert "portal" in tab.home.results_heading.text()
-    tab.home.filter_buttons["installed"].click()
-    assert tab.home.result_appids == [620]
     tab.home.search.setText("zzz")
     assert tab.home.result_appids == []
-    assert "No game matches" in tab.home.empty_label.text()
+    assert "No installed game matches" in tab.home.empty_label.text()
 
 
 def test_cards_are_reused_while_typing(qtbot):
     tab = make_tab(qtbot)
-    qtbot.waitUntil(lambda: len(tab.home.result_appids) == 4)
-    portal_card = tab.home.cards[620]
+    card = tab.home.cards[620]
     tab.home.search.setText("por")
     tab.home.search.setText("")
-    assert tab.home.cards[620] is portal_card
+    assert tab.home.cards[620] is card
 
 
-def test_slower_library_never_uninstalls_a_game(qtbot):
+def test_not_installed_never_listed(qtbot):
     from gamingcrypt.steam.models import SteamGame
 
     tab = make_tab(qtbot)
-    tab.home.set_library([SteamGame(620, "Portal 2", installed=False)])  # stale/offline list
-    assert tab.home.all_games[620].installed
+    tab.home.set_installed([SteamGame(1, "Queued", installed=False), SteamGame(2, "Done", installed=True)])
+    assert tab.home.result_appids == [2]
 
 
 def test_no_installed_games(qtbot):
     tab = GamesTab(FakeService(games=[]))
     qtbot.addWidget(tab)
     qtbot.waitUntil(lambda: tab.home.empty_label.text() != "")
-    assert "No games found" in tab.home.empty_label.text()
-    tab.home.filter_buttons["not_installed"].click()
-    assert tab.home.empty_label.text() == "Every game is installed"
+    assert "No installed games" in tab.home.empty_label.text()
+
+
+# --- Recently played ---------------------------------------------------------------
+
+def test_recently_played_library(qtbot):
+    from gamingcrypt.steam.models import SteamGame
+    from gamingcrypt.ui.recent_page import RecentPage
+
+    games = [SteamGame(i, f"Game {i}", installed=i % 2 == 0, last_played=1_700_000_000 + i * 1000)
+             for i in range(1, 15)]
+    games.append(SteamGame(99, "Never played"))
+    service = FakeService(games=games)
+    tab = GamesTab(service)
+    qtbot.addWidget(tab)
+    tab.home.recent_card.tapped.emit()
+    page = tab.currentWidget()
+    assert isinstance(page, RecentPage)
+    qtbot.waitUntil(lambda: not page.loading)
+    assert page.order == [14, 13, 12, 11, 10, 9, 8, 7, 6, 5]  # last 10, newest first
+    assert page.cards[14].meta.text().startswith("● Played ")  # installed marker + date
+    assert not page.cards[13].meta.text().startswith("●")
+    page.cards[13].tapped.emit()  # not installed -> still opens its game page
+    from gamingcrypt.ui.game_detail import GameDetailPage
+
+    assert isinstance(tab.currentWidget(), GameDetailPage) and tab.currentWidget().game.appid == 13
+    tab.back()
+    assert tab.currentWidget() is page
+
+
+def test_recently_played_empty(qtbot):
+    from gamingcrypt.ui.recent_page import RecentPage
+
+    tab = GamesTab(FakeService(games=[]))
+    qtbot.addWidget(tab)
+    tab.open_recent()
+    page = tab.currentWidget()
+    assert isinstance(page, RecentPage)
+    qtbot.waitUntil(lambda: not page.loading)
+    assert "haven't played" in page.status.text()
 
 
 def test_keyboard_appears_on_search_tap(qtbot):

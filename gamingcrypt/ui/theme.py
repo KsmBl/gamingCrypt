@@ -87,6 +87,10 @@ QComboBox:focus {{ border-color: {ACCENT}; }}
 QSlider:focus {{ background: {SURFACE_HI}; border-radius: 10px; }}
 QFrame#card:hover {{ background: {SURFACE_HI}; }}
 QFrame#topBar {{ background: {SURFACE}; }}
+QLabel#battery {{ font-size: 22px; padding: 0 14px; color: {TEXT_DIM}; }}
+QLabel#battery[charging="true"] {{ color: {SUCCESS}; }}
+QLabel#battery[low="true"] {{ color: {DANGER}; font-weight: 700; }}
+QLabel#sourceTitle {{ font-size: 30px; font-weight: 700; }}
 QScrollArea {{ border: none; }}
 QScrollBar:vertical {{ width: 8px; background: transparent; }}
 QScrollBar::handle:vertical {{ background: {SURFACE_HI}; border-radius: 4px; min-height: 40px; }}

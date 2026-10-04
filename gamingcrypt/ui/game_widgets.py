@@ -153,7 +153,8 @@ class SourceCard(Tappable):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
         self.title = QLabel(name)
-        self.title.setObjectName("title")
+        self.title.setObjectName("sourceTitle")
+        self.title.setWordWrap(True)  # "Recently played" must fit
         layout.addWidget(self.title)
         layout.addStretch()
         self.subtitle = QLabel(subtitle)

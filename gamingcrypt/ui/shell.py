@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtCore import QTimer, Signal
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QStackedWidget, QVBoxLayout, QWidget
 
+from gamingcrypt.system.battery import read_battery
 from gamingcrypt.ui.power_menu import PowerMenu
 from gamingcrypt.ui.widgets import ComingSoon, big_button
 
+BATTERY_REFRESH_MS = 30_000
 TABS = ["Games", "Downloads", "Movies", "Shows", "Music", "Pictures", "Settings"]
 
 
@@ -15,8 +17,10 @@ class Shell(QWidget):
     exit_requested = Signal()  # desktop mode
     power_requested = Signal(str)  # "shutdown" / "restart"
 
-    def __init__(self, pages: dict[str, QWidget] | None = None, parent: QWidget | None = None):
+    def __init__(self, pages: dict[str, QWidget] | None = None, parent: QWidget | None = None,
+                 battery_reader=read_battery):
         super().__init__(parent)
+        self.battery_reader = battery_reader
         pages = pages or {}
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -38,6 +42,9 @@ class Shell(QWidget):
             self.pages[name] = page
             self.stack.addWidget(page)
         bar_layout.addStretch()
+        self.battery = QLabel("")
+        self.battery.setObjectName("battery")
+        bar_layout.addWidget(self.battery)
         self.exit_button = big_button("⏻")
         self.exit_button.clicked.connect(self.open_power_menu)
         bar_layout.addWidget(self.exit_button)
@@ -49,10 +56,26 @@ class Shell(QWidget):
             downloads.count_changed.connect(lambda n: self.set_badge("Downloads", n))
         self.show_tab(TABS[0])
 
+        self.update_battery()
+        self.battery_timer = QTimer(self)
+        self.battery_timer.timeout.connect(self.update_battery)
+        self.battery_timer.start(BATTERY_REFRESH_MS)
+
         self.power_menu = PowerMenu(self)
         self.power_menu.desktop.connect(self.exit_requested.emit)
         self.power_menu.shutdown.connect(lambda: self.power_requested.emit("shutdown"))
         self.power_menu.restart.connect(lambda: self.power_requested.emit("restart"))
+
+    def update_battery(self) -> None:
+        state = self.battery_reader() if self.battery_reader else None
+        self.battery.setVisible(state is not None)  # desktops without battery: nothing
+        if state is None:
+            return
+        self.battery.setText(state.label)
+        self.battery.setProperty("low", state.low)
+        self.battery.setProperty("charging", state.plugged)
+        self.battery.style().unpolish(self.battery)
+        self.battery.style().polish(self.battery)
 
     def open_power_menu(self) -> None:
         self.power_menu.open_menu()

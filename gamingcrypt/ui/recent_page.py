@@ -1,0 +1,67 @@
+"""Library "Recently played": the last 10 games you played, newest first."""
+
+from __future__ import annotations
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
+
+from gamingcrypt.steam.models import SteamGame
+from gamingcrypt.ui.game_widgets import GameCard, format_date
+from gamingcrypt.ui.tasks import run_async
+from gamingcrypt.ui.widgets import FlowLayout, enable_touch_scroll
+
+LIMIT = 10
+
+
+def recently_played(games: list[SteamGame], limit: int = LIMIT) -> list[SteamGame]:
+    played = [g for g in games if g.last_played]
+    return sorted(played, key=lambda g: g.last_played, reverse=True)[:limit]
+
+
+class RecentPage(QWidget):
+    def __init__(self, tab, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.tab = tab
+        self.service = tab.service
+        self.loading = True
+        self.order: list[int] = []
+        self.cards: dict[int, GameCard] = {}
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(30, 16, 30, 10)
+        top = QHBoxLayout()
+        top.addWidget(tab.back_button())
+        title = QLabel("Recently played")
+        title.setObjectName("title")
+        top.addWidget(title)
+        top.addStretch()
+        layout.addLayout(top)
+        self.status = QLabel("Loading…")
+        self.status.setObjectName("status")
+        layout.addWidget(self.status)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        enable_touch_scroll(scroll)
+        self.grid_widget = QWidget()
+        self.grid = FlowLayout(self.grid_widget)
+        scroll.setWidget(self.grid_widget)
+        layout.addWidget(scroll, 1)
+        run_async(self.service.load_library, self._loaded,
+                  lambda exc: self._failed(exc), owner=self)
+
+    def _loaded(self, games: list[SteamGame]) -> None:
+        self.loading = False
+        recent = recently_played(games)
+        self.order = [g.appid for g in recent]
+        for game in recent:
+            self.tab.games[game.appid] = game  # so the game page can open
+            card = GameCard(game, self.service)
+            card.meta.setText(("● " if game.installed else "") + f"Played {format_date(game.last_played)}")
+            card.clicked.connect(self.tab.open_game)
+            self.cards[game.appid] = card
+            self.grid.addWidget(card)
+        self.status.setText("" if recent else "You haven't played any game yet")
+
+    def _failed(self, exc: Exception) -> None:
+        self.loading = False
+        self.status.setText(f"Could not load your games: {exc}")
