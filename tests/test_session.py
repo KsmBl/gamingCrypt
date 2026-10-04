@@ -13,7 +13,7 @@ n=$(cat "$FAKE_DIR/count" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "$FAKE_D
 echo "gaming $GAMINGCRYPT_SESSION $QT_QPA_PLATFORM $XDG_CURRENT_DESKTOP | $*" >> "$FAKE_DIR/calls"
 action=$(echo "$FAKE_ACTIONS" | cut -d, -f$n)
 case "$action" in
-  desktop) echo desktop > "$XDG_STATE_HOME/gamingcrypt/next-mode"; exit 0 ;;
+  desktop) echo desktop > "$XDG_RUNTIME_DIR/gamingcrypt/next-mode"; exit 0 ;;
   crash) exit 1 ;;
   *) exit 0 ;;
 esac
@@ -27,6 +27,7 @@ def run_session(tmp_path, actions, extra_env=None, timeout=30):
     gamescope.write_text(FAKE_GAMESCOPE)
     gamescope.chmod(gamescope.stat().st_mode | stat.S_IEXEC)
     env = dict(os.environ, HOME=str(tmp_path), XDG_STATE_HOME=str(tmp_path / "state"),
+               XDG_RUNTIME_DIR=str(tmp_path / "run"),
                XDG_CONFIG_HOME=str(tmp_path / "config"), FAKE_DIR=str(fake), FAKE_ACTIONS=actions,
                GC_GAMESCOPE=str(gamescope), GC_LAUNCHER="/opt/gamingcrypt",
                GC_DESKTOP_EXEC=f'echo desktop >> "{fake}/calls"', GC_QUICK_EXIT_S="15")
@@ -47,7 +48,7 @@ def test_desktop_mode_and_back(tmp_path):
     code, calls = run_session(tmp_path, "desktop,exit0")
     assert code == 0
     assert [c.split(" ")[0] for c in calls] == ["gaming", "desktop", "gaming"]
-    assert not (tmp_path / "state/gamingcrypt/next-mode").exists()  # one-shot
+    assert not (tmp_path / "run/gamingcrypt/next-mode").exists()  # one-shot
 
 
 def test_crashing_gamingcrypt_is_restarted(tmp_path):
@@ -89,11 +90,14 @@ from gamingcrypt.session import mode  # noqa: E402
 
 
 def test_mode_helpers(tmp_path):
-    env = {"XDG_STATE_HOME": str(tmp_path)}
+    env = {"XDG_RUNTIME_DIR": str(tmp_path)}
     assert not mode.in_gaming_session({}) and mode.in_gaming_session({"GAMINGCRYPT_SESSION": "1"})
     path = mode.request_desktop_mode(env)
+    # runtime dir: cleared on reboot, so a stale request can't send the next boot to the desktop
     assert path == tmp_path / "gamingcrypt" / "next-mode" and path.read_text().strip() == "desktop"
+    assert mode.request_restart(env).read_text().strip() == "gaming"
     assert mode.state_dir({"HOME": "/home/x"}) == Path("/home/x/.local/state/gamingcrypt")
+    assert mode.runtime_dir({"HOME": "/home/x"}) == Path("/home/x/.local/state/gamingcrypt/run")
 
 
 def test_leave_desktop():
@@ -114,7 +118,7 @@ def test_desktop_mode_button(qtbot, monkeypatch, tmp_path):
     from gamingcrypt.app import MainWindow
     from gamingcrypt.config import DEFAULTS
 
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
     window = MainWindow(copy.deepcopy(DEFAULTS), lambda c: None)
     qtbot.addWidget(window)
     window.show()
@@ -125,8 +129,10 @@ def test_desktop_mode_button(qtbot, monkeypatch, tmp_path):
     window.shell.power_menu.desktop_button.click()  # normal desktop: just quit
     assert closed == [1] and not (tmp_path / "gamingcrypt/next-mode").exists()
     monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
+    monkeypatch.setattr(mode, "end_gamescope", lambda: False)  # not running inside gamescope here
     window.shell.power_menu.desktop_button.click()  # gaming session: switch to the desktop
-    assert closed == [1, 1] and (tmp_path / "gamingcrypt/next-mode").read_text().strip() == "desktop"
+    assert (tmp_path / "gamingcrypt/next-mode").read_text().strip() == "desktop"
+    qtbot.waitUntil(lambda: closed == [1, 1])
 
 
 def test_display_settings_left_to_gamescope():

@@ -80,6 +80,7 @@ class SettingsTab(QStackedWidget):
         system: SystemControls | None = None,
         steam_service=None,
         input_service: InputService | None = None,
+        restart_gaming=None,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
@@ -128,7 +129,7 @@ class SettingsTab(QStackedWidget):
 
         # Device
         layout = page("Device")
-        self.display_section = DisplaySection(self.system, config, save)
+        self.display_section = DisplaySection(self.system, config, save, restart_gaming)
         self.power_section = PowerSection(self.system, config, save)
         self.audio_section = AudioSection(self.system)
         for section in (self.display_section, self.power_section, self.audio_section):

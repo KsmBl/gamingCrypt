@@ -8,25 +8,37 @@
 # desktop so nobody is stuck on a black screen.
 
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/gamingcrypt"
+# one-shot requests live in the runtime dir: a reboot never inherits them
+if [ -n "$XDG_RUNTIME_DIR" ]; then RUN="$XDG_RUNTIME_DIR/gamingcrypt"; else RUN="$STATE/run"; fi
+CONFDIR="${XDG_CONFIG_HOME:-$HOME/.config}/gamingcrypt"
 LAUNCHER="${GC_LAUNCHER:-@LAUNCHER@}"
 GAMESCOPE="${GC_GAMESCOPE:-gamescope}"
 DESKTOP_EXEC="${GC_DESKTOP_EXEC:-@DESKTOP_EXEC@}"
 GAMESCOPE_ARGS="${GC_GAMESCOPE_ARGS:--f --xwayland-count 2 --default-touch-mode 4 --hide-cursor-delay 3000}"
 # own gamescope options (e.g. "-W 1280 -H 800 -r 60") replace the defaults
-CONF="${XDG_CONFIG_HOME:-$HOME/.config}/gamingcrypt/gamescope-args"
-if [ -z "$GC_GAMESCOPE_ARGS" ] && [ -s "$CONF" ]; then
-	GAMESCOPE_ARGS=$(cat "$CONF")
-fi
+CONF="$CONFDIR/gamescope-args"
 QUICK_EXIT_S="${GC_QUICK_EXIT_S:-15}"
 MAX_QUICK_FAILS=3
 
-mkdir -p "$STATE"
+mkdir -p "$STATE" "$RUN"
+rm -f "$STATE/next-mode"  # old location (before 0.5.2) - could be stale
 log="$STATE/session.log"
 fails=0
 
+revert_display() {
+	# new display options from Settings didn't work: back to the previous ones
+	if [ -s "$CONFDIR/gamescope-args.previous" ]; then
+		mv "$CONFDIR/gamescope-args.previous" "$CONF"
+	else
+		rm -f "$CONF" "$CONFDIR/gamescope-args.previous"
+	fi
+	rm -f "$CONFDIR/gamescope-args.pending"
+	echo "$(date) new display mode failed - reverted" >>"$log"
+}
+
 while :; do
-	mode=$(cat "$STATE/next-mode" 2>/dev/null)
-	rm -f "$STATE/next-mode"
+	mode=$(cat "$RUN/next-mode" 2>/dev/null)
+	rm -f "$RUN/next-mode"
 	if [ "$mode" = desktop ] || [ "$fails" -ge "$MAX_QUICK_FAILS" ]; then
 		[ "$fails" -ge "$MAX_QUICK_FAILS" ] && echo "$(date) gaming mode failed $fails times - desktop" >>"$log"
 		fails=0
@@ -34,15 +46,23 @@ while :; do
 		sh -c "$DESKTOP_EXEC"
 		continue  # desktop closed -> back to gaming mode
 	fi
-	echo "$(date) gaming mode" >>"$log"
+	args="$GAMESCOPE_ARGS"
+	if [ -z "$GC_GAMESCOPE_ARGS" ] && [ -s "$CONF" ]; then
+		args=$(cat "$CONF")  # own options (Settings, or e.g. "-W 1280 -H 800")
+	fi
+	echo "$(date) gaming mode: gamescope $args" >>"$log"
 	start=$(date +%s)
 	# shellcheck disable=SC2086 - the args are meant to split
 	GAMINGCRYPT_SESSION=1 QT_QPA_PLATFORM=xcb XDG_CURRENT_DESKTOP=gamescope \
-		"$GAMESCOPE" $GAMESCOPE_ARGS -- "$LAUNCHER" >>"$log" 2>&1
+		"$GAMESCOPE" $args -- "$LAUNCHER" >>"$log" 2>&1
 	code=$?
-	[ -f "$STATE/next-mode" ] && continue  # e.g. Desktop mode was chosen
+	[ -f "$RUN/next-mode" ] && continue  # Desktop mode, or a restart for new display settings
 	if [ "$code" -eq 0 ]; then
 		exit 0  # closed on purpose -> end the session (log out / shutdown)
+	fi
+	if [ $(($(date +%s) - start)) -lt "$QUICK_EXIT_S" ] && [ -f "$CONFDIR/gamescope-args.pending" ]; then
+		revert_display
+		continue
 	fi
 	if [ $(($(date +%s) - start)) -lt "$QUICK_EXIT_S" ]; then
 		fails=$((fails + 1))

@@ -29,6 +29,11 @@ def isolated_home(tmp_path, monkeypatch):
     home = tmp_path / "isolated-home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    # never touch the real runtime / state / config / cache folders (e.g. a "next-mode" request)
+    for var, sub in (("XDG_RUNTIME_DIR", "run"), ("XDG_STATE_HOME", "state"),
+                     ("XDG_CONFIG_HOME", "config"), ("XDG_CACHE_HOME", "cache")):
+        monkeypatch.setenv(var, str(tmp_path / "isolated-xdg" / sub))
+    monkeypatch.delenv("GAMINGCRYPT_SESSION", raising=False)
     return home
 
 

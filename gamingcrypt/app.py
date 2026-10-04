@@ -19,6 +19,7 @@ from gamingcrypt.ui.auth_setup import AuthSetupWizard
 from gamingcrypt.ui.lock_screen import LockScreen
 from gamingcrypt.ui.settings_tab import SettingsTab
 from gamingcrypt.ui.shell import Shell
+from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.unlock.veracrypt import VeraCryptUnlocker
 
 
@@ -69,6 +70,8 @@ class MainWindow(QMainWindow):
             self.adopt_existing_container()
         if not unlock.get("method") or not unlock.get("volume"):
             self.show_setup()
+        elif self._resuming():
+            self.show_shell()  # GamingCrypt restarted itself (display settings) while unlocked
         elif not os.path.exists(os.path.expanduser(unlock["volume"])):
             # deleted container / missing drive: set up again instead of a useless lock screen
             log.warning("volume %s not found", unlock["volume"])
@@ -149,14 +152,76 @@ class MainWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
 
+    def _resuming(self) -> bool:
+        from gamingcrypt.session import mode
+
+        if not mode.in_gaming_session() or not mode.consume_resume_token():
+            return False
+        try:
+            return self.unlocker_factory(self.config["unlock"]).is_mounted()
+        except Exception:  # noqa: BLE001 - when in doubt: lock screen
+            return False
+
     def desktop_mode(self) -> None:
         """In the gaming session: switch to the desktop (tileWin); otherwise just quit."""
         from gamingcrypt.session import mode
 
         if mode.in_gaming_session():
+            self.leave_gaming_mode("desktop")
+        else:
+            self.close()
+
+    def restart_gaming_mode(self) -> None:
+        self.leave_gaming_mode("restart")
+
+    def leave_gaming_mode(self, target: str) -> None:
+        """Close Steam, then end gamescope: it waits for every program started inside it.
+
+        ``target``: "desktop" (switch to tileWin) or "restart" (gaming mode again, e.g. to
+        apply display settings - without the lock screen if we're unlocked).
+        """
+        from gamingcrypt.session import mode
+        from gamingcrypt.steam import library_setup
+
+        if target == "desktop":
             mode.request_desktop_mode()
-            log.info("switching to desktop mode")
-        self.close()
+        else:
+            mode.request_restart()
+            if self.screen_name == "shell":
+                mode.write_resume_token()
+        log.info("leaving gaming mode (%s)", target)
+        games = self.shell.pages.get("Games") if self.shell is not None else None
+        service = getattr(games, "service", None)
+
+        def work() -> bool:
+            if service is not None:
+                library_setup.close_steam(service.client, timeout=20)
+            return mode.end_gamescope()
+
+        run_async(work, lambda ended: None if ended else self.close(), lambda _e: self.close())
+
+    def check_display_change(self) -> None:
+        """After a display change: ask, revert by itself after 15 s."""
+        from gamingcrypt.session import mode
+        from gamingcrypt.ui.display_confirm import DisplayConfirm
+
+        if not mode.in_gaming_session() or not mode.display_pending():
+            return
+        self.display_confirm = DisplayConfirm(self)
+        self.display_confirm.kept.connect(mode.confirm_display)
+        self.display_confirm.reverted.connect(self._revert_display)
+        args = mode.parse_display(mode.read_args())
+        render = f"{args['width']}×{args['height']}" if "width" in args else "native"
+        refresh = f"{args['refresh']} Hz" if "refresh" in args else "default"
+        actual = mode.actual_mode()
+        self.display_confirm.ask(f"Resolution {render}, refresh rate {refresh}"
+                                 + (f" (screen: {actual})" if actual else ""))
+
+    def _revert_display(self) -> None:
+        from gamingcrypt.session import mode
+
+        mode.revert_display()
+        self.restart_gaming_mode()
 
     def power_action(self, kind: str) -> None:
         log.info("power action: %s", kind)
@@ -176,6 +241,9 @@ class MainWindow(QMainWindow):
 
     def nav_root(self) -> QWidget:
         """Controller navigation stays inside the loading screen / power menu while shown."""
+        confirm = getattr(self, "display_confirm", None)
+        if confirm is not None and confirm.isVisible():
+            return confirm
         if self.launch_overlay.isVisible():
             return self.launch_overlay
         menu = getattr(self.shell, "power_menu", None) if self.shell is not None else None
@@ -226,7 +294,8 @@ class MainWindow(QMainWindow):
         games = pages.get("Games")
         pages.setdefault("Settings", SettingsTab(self.config, self.save, self.unlocker_factory, self.system,
                                                  steam_service=getattr(games, "service", None),
-                                                 input_service=self.input_service))
+                                                 input_service=self.input_service,
+                                                 restart_gaming=self.restart_gaming_mode))
         service = getattr(games, "service", None)
         if service is not None:
             # Steam windows (store, Steam's own dialogs) would open *behind* the fullscreen launcher.
@@ -412,6 +481,7 @@ def main(argv: list[str] | None = None) -> int:
     nav_source = NavSource(input_service, navigator.bridge.event.emit)
     nav_source.start()
     server = listen_for_activation(window.bring_to_front)  # noqa: F841 - keep alive
+    window.check_display_change()
     if cfg.get("fullscreen", True) and not args.windowed:
         window.showFullScreen()
     else:

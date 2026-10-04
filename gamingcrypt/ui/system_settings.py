@@ -64,9 +64,11 @@ class Section(QFrame):
 
 
 class DisplaySection(Section):
-    def __init__(self, controls: SystemControls, config: dict, save: Callable[[dict], None]):
+    def __init__(self, controls: SystemControls, config: dict, save: Callable[[dict], None],
+                 restart_gaming: Callable[[], None] | None = None):
         super().__init__("Display")
         self.controls, self.config, self.save = controls, config, save
+        self.restart_gaming = restart_gaming
         self.backend = controls.display
         self.output = None
         self.previous = None
@@ -74,17 +76,14 @@ class DisplaySection(Section):
         self._countdown = QTimer(self)
         self._countdown.timeout.connect(self._tick)
 
-        outputs = self.backend.outputs() if self.backend else []
-        if not outputs:
-            from gamingcrypt.session.mode import in_gaming_session
+        from gamingcrypt.session.mode import in_gaming_session
 
-            if in_gaming_session():
-                self.unavailable("Resolution and refresh rate: managed by gamescope in gaming mode. "
-                                 "Own options (e.g. \"-f -W 1280 -H 800 -r 60\") go into "
-                                 "~/.config/gamingcrypt/gamescope-args.")
-            else:
-                self.unavailable("Resolution and refresh rate: not supported on this desktop "
-                                 "(needs KDE, a wlroots compositor or X11).")
+        outputs = self.backend.outputs() if self.backend else []
+        if in_gaming_session():
+            self._build_gamescope()
+        elif not outputs:
+            self.unavailable("Resolution and refresh rate: not supported on this desktop "
+                             "(needs KDE, a wlroots compositor or X11).")
         else:
             self.output = outputs[0]
             self.resolution = QComboBox()
@@ -124,6 +123,47 @@ class DisplaySection(Section):
                        lambda v: self.brightness_value.setText(f"{v}%"))
             self.row("Brightness", self.brightness_slider, self.brightness_value)
         self.body.addWidget(self.status)
+
+    # gaming mode: gamescope options, applied by restarting gaming mode -------------
+    def _build_gamescope(self) -> None:
+        from gamingcrypt.session import mode
+
+        self.gamescope = True
+        native = mode.panel_size() or (1280, 800)
+        current = mode.parse_display(mode.read_args())
+        self.gs_resolution = QComboBox()
+        for w, h in mode.render_sizes(native):
+            label = f"{w}×{h}" + (" (native)" if (w, h) == native else "")
+            self.gs_resolution.addItem(label, f"{w}x{h}")
+        wanted = f"{current.get('width', native[0])}x{current.get('height', native[1])}"
+        self.gs_resolution.setCurrentIndex(max(0, self.gs_resolution.findData(wanted)))
+        self.gs_refresh = QComboBox()
+        self.gs_refresh.addItem("Default (screen)", 0)
+        for hz in mode.REFRESH_RATES:
+            self.gs_refresh.addItem(f"{hz} Hz", hz)
+        self.gs_refresh.setCurrentIndex(max(0, self.gs_refresh.findData(current.get("refresh", 0))))
+        self.row("Resolution", self.gs_resolution)
+        self.row("Refresh rate", self.gs_refresh)
+        actual = mode.actual_mode()
+        self.body.addWidget(_label("Lower resolutions are upscaled to the screen: more FPS, less power."
+                                   + (f" Screen right now: {actual}." if actual else "")))
+        self.gs_apply = big_button("Apply - restarts gaming mode", "primary")
+        self.gs_apply.clicked.connect(self.apply_gamescope)
+        self.body.addWidget(self.gs_apply, alignment=Qt.AlignmentFlag.AlignLeft)
+
+    def apply_gamescope(self) -> None:
+        from gamingcrypt.session import mode
+
+        w, h = (int(v) for v in self.gs_resolution.currentData().split("x"))
+        native = mode.panel_size() or (1280, 800)
+        refresh = self.gs_refresh.currentData() or None
+        size = (None, None) if (w, h) == native else (w, h)
+        mode.apply_display(size[0], size[1], refresh)
+        set_status(self.status, "Closing Steam and restarting gaming mode - you'll be asked to keep the "
+                                "new mode (it reverts after 15 s)")
+        self.gs_apply.setEnabled(False)
+        if self.restart_gaming is not None:
+            self.restart_gaming()
 
     def _select_current(self) -> None:
         cur = self.output.current

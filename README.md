@@ -76,8 +76,15 @@ Run `gamingcrypt --windowed` to try it in a window instead of fullscreen.
   other session). Log out there, or pick *Gaming Mode* in the start menu, to come back.
 - **If gaming mode keeps crashing on start** (e.g. gamescope not installed), the session
   falls back to the desktop instead of leaving a black screen.
-- **Resolution and refresh rate** in gaming mode are gamescope's job. Own options go into
-  `~/.config/gamingcrypt/gamescope-args`, e.g. `-f -W 1280 -H 800 -r 60`.
+- **Resolution and refresh rate** in gaming mode: *Settings → Device*.
+  - The resolution is what games and GamingCrypt render at, upscaled to the screen.
+  - The refresh rate (40–60 Hz) makes gamescope generate a matching screen mode.
+  - *Apply* closes Steam and restarts gaming mode (no unlocking again). Then it asks
+    **"Keep this display mode?"** and reverts by itself after **15 seconds** without an answer.
+  - If gamescope can't start with the new mode at all, the session reverts at once.
+  - The options are stored in `~/.config/gamingcrypt/gamescope-args`; you can also edit it by hand.
+- **Desktop mode** closes Steam first: gamescope only ends when every program started in
+  it has ended.
 
 Needs `gamescope` and the X11 libraries Qt uses inside it (Arch: `sudo pacman -S gamescope xcb-util-cursor xcb-util-image`); `install.sh --session` lists anything missing.
 `./install.sh --uninstall` removes the session and the autologin setting again.
