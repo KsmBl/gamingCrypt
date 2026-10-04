@@ -23,6 +23,7 @@ AUTOSTART_FILE="$CONFIG_HOME/autostart/gamingcrypt.desktop"
 HELPER="/usr/local/lib/gamingcrypt/veracrypt-helper"
 SUDOERS="/etc/sudoers.d/gamingcrypt"
 UDEV_RULE="/etc/udev/rules.d/71-gamingcrypt-uinput.rules"
+VOLUME_RULE="/etc/udev/rules.d/72-gamingcrypt-volume-keys.rules"
 SESSION_BIN="/usr/local/bin/gamingcrypt-session"
 SESSION_FILE="/usr/share/wayland-sessions/gamingcrypt.desktop"
 LIGHTDM_CONF="/etc/lightdm/lightdm.conf.d/50-gamingcrypt.conf"
@@ -60,7 +61,7 @@ uninstall() {
     rm -f "$LAUNCHER" "$DESKTOP_FILE" "$AUTOSTART_FILE" "$GAMING_MODE_ENTRY"
     if [[ -e $SESSION_BIN || -e $SESSION_FILE || -e $LIGHTDM_CONF ]]; then
         info "Removing the gaming session (needs sudo)"
-        sudo rm -f "$SESSION_BIN" "$SESSION_FILE" "$LIGHTDM_CONF"
+        sudo rm -f "$SESSION_BIN" "$SESSION_FILE" "$LIGHTDM_CONF" "$VOLUME_RULE"
     fi
     if [[ -e $HELPER || -e $SUDOERS || -e $UDEV_RULE ]]; then
         info "Removing the sudo helper and controller rules (needs sudo)"
@@ -189,6 +190,25 @@ desktop_session_exec() {
     done
 }
 
+install_volume_keys() {
+    # gamescope doesn't handle the volume buttons - GamingCrypt reads them in gaming mode.
+    # Give the logged-in user read access to exactly the built-in devices that have them.
+    local names rules=""
+    names="$("$VENV/bin/python" -m gamingcrypt --volume-key-devices 2>/dev/null)"
+    if [[ -z $names ]]; then
+        warn "no device with volume buttons found - they won't work in gaming mode"
+        return
+    fi
+    while IFS= read -r name; do
+        rules+="SUBSYSTEM==\"input\", KERNEL==\"event*\", ATTRS{name}==\"${name//\"/\\\"}\", TAG+=\"uaccess\""$'\n'
+        echo "    volume buttons: $name"
+    done <<< "$names"
+    info "Allowing GamingCrypt to read the volume buttons (needs sudo)"
+    printf '%s' "$rules" | sudo tee "$VOLUME_RULE" >/dev/null
+    sudo udevadm control --reload-rules 2>/dev/null || true
+    sudo udevadm trigger --subsystem-match=input --action=change 2>/dev/null || true
+}
+
 install_session() {
     command -v gamescope >/dev/null || warn "gamescope is not installed (Arch: sudo pacman -S gamescope) - the session falls back to the desktop until it is"
     command -v xprop >/dev/null || warn "xprop is missing (Arch: sudo pacman -S xorg-xprop) - needed to come back after Steam's Big Picture"
@@ -219,6 +239,7 @@ install_session() {
     else
         warn "LightDM not found - choose the \"GamingCrypt\" session at your login screen"
     fi
+    install_volume_keys
     mkdir -p "$(dirname "$GAMING_MODE_ENTRY")"
     cat > "$GAMING_MODE_ENTRY" <<ENTRY
 [Desktop Entry]

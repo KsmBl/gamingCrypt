@@ -103,6 +103,25 @@ class MainWindow(QMainWindow):
     # Steam windows (store, Steam's own dialogs) would open behind the launcher.
     minimize_for_steam = step_aside
 
+    def start_volume_keys(self):
+        """Gaming mode only: on a desktop the compositor already handles the volume buttons."""
+        from gamingcrypt.input.volume_keys import VolumeKeys
+        from gamingcrypt.session.mode import in_gaming_session
+        from gamingcrypt.ui.volume_osd import VolumeController, VolumeOsd
+
+        audio = getattr(self.system, "audio", None)
+        if not in_gaming_session() or audio is None:
+            return None
+        self.volume_osd = VolumeOsd(self)
+        self.volume = VolumeController(audio, self.volume_osd, self)
+        keys = VolumeKeys(self.volume.bridge.key.emit)
+        if not keys.start():
+            log.warning("volume buttons not readable: %s - run install.sh --session",
+                        "; ".join(keys.errors) or "none found")
+            return None
+        log.info("volume buttons: %d device(s)", len(keys.devices))
+        return keys
+
     def big_picture_opened(self) -> None:
         """Make room for Steam's Big Picture and come back when it's closed."""
         from gamingcrypt.ui.big_picture import BigPictureWatcher
@@ -436,6 +455,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, help="path to config.json")
     parser.add_argument("--gaming-mode", action="store_true",
                         help="from the desktop: go back to gaming mode (ends the desktop session)")
+    parser.add_argument("--volume-key-devices", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--diagnose", action="store_true",
                         help="print what GamingCrypt sees of Steam, your library and the volume")
     parser.add_argument("--volume-password", action="store_true",
@@ -446,6 +466,12 @@ def main(argv: list[str] | None = None) -> int:
     cfg = config_mod.load_config(cfg_path)
     if args.volume_password:
         return print_volume_password(cfg)
+    if args.volume_key_devices:  # used by install.sh for its udev rule
+        from gamingcrypt.input.evdev import find_volume_key_devices
+
+        for device in find_volume_key_devices():
+            print(device.name)
+        return 0
     if args.gaming_mode:
         from gamingcrypt.session import mode
 
@@ -488,6 +514,7 @@ def main(argv: list[str] | None = None) -> int:
     from gamingcrypt.input.nav_source import NavSource
     from gamingcrypt.ui.navigator import GamepadNavigator
 
+    volume_keys = window.start_volume_keys()
     navigator = GamepadNavigator(window, tab_switch=window.switch_tab)
     nav_source = NavSource(input_service, navigator.bridge.event.emit)
     nav_source.start()
@@ -500,6 +527,8 @@ def main(argv: list[str] | None = None) -> int:
         window.show()
     code = app.exec()
     nav_source.stop()
+    if volume_keys is not None:
+        volume_keys.stop()
     # Let background work finish cleanly, e.g. a cancelled container creation
     # still has to delete its unfinished file.
     QThreadPool.globalInstance().waitForDone(30_000)

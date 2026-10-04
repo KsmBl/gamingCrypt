@@ -25,6 +25,9 @@ BTN_TL, BTN_TR, BTN_TL2, BTN_TR2 = 0x136, 0x137, 0x138, 0x139
 BTN_SELECT, BTN_START, BTN_MODE, BTN_THUMBL, BTN_THUMBR = 0x13A, 0x13B, 0x13C, 0x13D, 0x13E
 BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT = 0x220, 0x221, 0x222, 0x223
 BTN_GAMEPAD = BTN_SOUTH
+KEY_MUTE, KEY_VOLUMEDOWN, KEY_VOLUMEUP = 113, 114, 115
+VOLUME_KEYS = {KEY_MUTE, KEY_VOLUMEDOWN, KEY_VOLUMEUP}
+BUS_BLUETOOTH = 0x05
 
 EVENT_FORMAT = "llHHi"  # struct input_event (timeval, type, code, value)
 EVENT_SIZE = struct.calcsize(EVENT_FORMAT)
@@ -99,6 +102,7 @@ class DeviceInfo:
     product: str = "0000"
     keys: set[int] = field(default_factory=set)
     axes: set[int] = field(default_factory=set)
+    bus: int = 0
 
     @property
     def key(self) -> str:
@@ -128,12 +132,19 @@ def list_devices(sys_root: Path = Path("/sys"), dev_root: Path = Path("/dev/inpu
             product=_read(dev / "id/product") or "0000",
             keys=parse_bitmap(_read(dev / "capabilities/key") or "0"),
             axes=parse_bitmap(_read(dev / "capabilities/abs") or "0"),
+            bus=int(_read(dev / "id/bustype") or "0", 16),
         ))
     return devices
 
 
 def find_gamepads(sys_root: Path = Path("/sys"), dev_root: Path = Path("/dev/input")) -> list[DeviceInfo]:
     return [d for d in list_devices(sys_root, dev_root) if d.is_gamepad]
+
+
+def find_volume_key_devices(sys_root: Path = Path("/sys"), dev_root: Path = Path("/dev/input")) -> list[DeviceInfo]:
+    """Built-in devices with volume buttons (not Bluetooth keyboards, not our virtual pad)."""
+    return [d for d in list_devices(sys_root, dev_root)
+            if d.keys & {KEY_VOLUMEUP, KEY_VOLUMEDOWN} and d.bus != BUS_BLUETOOTH and d.name != VIRTUAL_NAME]
 
 
 def pack_event(ev_type: int, code: int, value: int) -> bytes:
@@ -218,10 +229,11 @@ class UInput:
         self.fd = os.open(path, os.O_WRONLY | os.O_NONBLOCK)
         try:
             fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_KEY)
-            fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_ABS)
-            for key in keys or XBOX_KEYS:
+            if axes is None or axes:
+                fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_ABS)
+            for key in XBOX_KEYS if keys is None else keys:
                 fcntl.ioctl(self.fd, UI_SET_KEYBIT, key)
-            for axis in axes or XBOX_AXES:
+            for axis in XBOX_AXES if axes is None else axes:
                 fcntl.ioctl(self.fd, UI_SET_ABSBIT, axis.code)
                 fcntl.ioctl(self.fd, UI_ABS_SETUP, struct.pack("H2x6i", axis.code, 0, axis.minimum, axis.maximum,
                                                                0, axis.flat, 0))

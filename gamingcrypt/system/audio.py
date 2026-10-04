@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -73,6 +74,35 @@ class PulseAudio:
             if "index" in stream:
                 self._run(move, str(stream["index"]), name)
         return True
+
+    # volume buttons (always the current default output) -------------------------
+    def default_volume(self) -> int | None:
+        result = self._run("get-sink-volume", "@DEFAULT_SINK@")
+        if result is None or result.returncode != 0:
+            return None
+        values = [int(v) for v in re.findall(r"(\d+)%", result.stdout)]
+        return round(sum(values) / len(values)) if values else None
+
+    def step_volume(self, delta: int) -> int | None:
+        """Default output +/- ``delta`` percent, kept within 0-100. Returns the new level."""
+        current = self.default_volume()
+        if current is None:
+            return None
+        new = max(0, min(100, current + delta))
+        result = self._run("set-sink-volume", "@DEFAULT_SINK@", f"{new}%")
+        if result is None or result.returncode != 0:
+            return None
+        if delta > 0:
+            self._run("set-sink-mute", "@DEFAULT_SINK@", "0")  # louder always unmutes
+        return new
+
+    def toggle_mute(self) -> bool | None:
+        """Returns the new mute state."""
+        result = self._run("set-sink-mute", "@DEFAULT_SINK@", "toggle")
+        if result is None or result.returncode != 0:
+            return None
+        state = self._run("get-sink-mute", "@DEFAULT_SINK@")
+        return state is not None and "yes" in (state.stdout or "").lower()
 
     def set_volume(self, kind: str, name: str, percent: int) -> bool:
         percent = max(0, min(150, int(percent)))

@@ -86,6 +86,13 @@ Run `gamingcrypt --windowed` to try it in a window instead of fullscreen.
   - The options are stored in `~/.config/gamingcrypt/gamescope-args`; you can also edit it by hand.
 - **Desktop mode** closes Steam first: gamescope only ends when every program started in
   it has ended.
+- **Volume buttons:** gamescope doesn't handle them, so GamingCrypt does in gaming mode.
+  - It reads them straight from the device, so they also work during games: 5 % steps up to
+    100 %, mute toggles, and a small indicator appears while GamingCrypt is on screen.
+  - `install.sh --session` gives the logged-in user read access to exactly the built-in
+    devices that have volume buttons and lists them.
+  - On many handhelds that's the internal "AT Translated Set 2 keyboard", which programs in
+    your session can then read too. A handheld has no physical keyboard for typing.
 
 Needs `gamescope` and the X11 libraries Qt uses inside it (Arch: `sudo pacman -S gamescope xcb-util-cursor xcb-util-image`); `install.sh --session` lists anything missing.
 `./install.sh --uninstall` removes the session and the autologin setting again.
