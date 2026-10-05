@@ -630,6 +630,7 @@ def main(argv: list[str] | None = None) -> int:
     server = listen_for_activation(window.bring_to_front)  # noqa: F841 - keep alive
     window.check_display_change()
     hide_cursor_in_gaming_mode(app)
+    window_ids = tag_windows_in_gaming_mode(app)  # noqa: F841 - keep alive
     if cfg.get("fullscreen", True) and not args.windowed:
         window.showFullScreen()
     else:
@@ -643,6 +644,16 @@ def main(argv: list[str] | None = None) -> int:
     # still has to delete its unfinished file.
     QThreadPool.globalInstance().waitForDone(30_000)
     return code
+
+
+def tag_windows_in_gaming_mode(app):
+    """Drop-down lists and other popups are windows of their own - see gamescope_windows."""
+    from gamingcrypt.session.mode import in_gaming_session
+    from gamingcrypt.ui.gamescope_windows import WindowAppIds
+
+    if not in_gaming_session():
+        return None
+    return WindowAppIds(parent=app).install(app)
 
 
 def hide_cursor_in_gaming_mode(app) -> bool:
