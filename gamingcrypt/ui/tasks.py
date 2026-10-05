@@ -44,9 +44,11 @@ def run_async(
     on_done: Callable[[Any], None] | None = None,
     on_error: Callable[[Exception], None] | None = None,
     owner: QObject | None = None,
+    pool: QThreadPool | None = None,
 ) -> None:
     """Run ``fn`` in the thread pool, deliver the result on the UI thread.
 
+    ``pool``: e.g. a one-thread pool when the order of the calls matters.
     If ``owner`` is given and got deleted meanwhile (page closed), the callbacks are skipped.
     """
 
@@ -65,4 +67,11 @@ def run_async(
         signals.failed.connect(on_error)
     signals.done.connect(lambda _r: _alive.discard(signals))
     signals.failed.connect(lambda _e: _alive.discard(signals))
-    QThreadPool.globalInstance().start(task)
+    (pool or QThreadPool.globalInstance()).start(task)
+
+
+def serial_pool(parent: QObject | None = None) -> QThreadPool:
+    """Tasks started on it run one after the other, in order."""
+    pool = QThreadPool(parent)
+    pool.setMaxThreadCount(1)
+    return pool

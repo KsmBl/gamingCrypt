@@ -20,6 +20,7 @@ from typing import Callable
 Runner = Callable[..., subprocess.CompletedProcess]
 DYNAMIC_REFRESH = "GAMESCOPE_DYNAMIC_REFRESH"
 FOCUS_ORDER = "GAMESCOPECTRL_BASELAYER_APPID"
+FPS_LIMIT = "GAMESCOPE_FPS_LIMIT"
 WINDOW_APPID = "STEAM_GAME"
 BIG_PICTURE_APPID = 769  # Steam's own UI windows
 LAUNCHER_APPID = 4293000000  # GamingCrypt's window - no real Steam app has this id
@@ -67,5 +68,15 @@ def set_focus_order(appids: list[int], runner: Runner = subprocess.run) -> bool:
         args = ["-f", FOCUS_ORDER, "32c", "-set", FOCUS_ORDER, value]
     else:
         args = ["-remove", FOCUS_ORDER]
+    result = _xprop(args, runner)
+    return result is not None and result.returncode == 0
+
+
+def set_fps_limit(fps: int, runner: Runner = subprocess.run) -> bool:
+    """Frame limit for the game on screen (0 = none)."""
+    if fps:
+        args = ["-f", FPS_LIMIT, "32c", "-set", FPS_LIMIT, str(int(fps))]
+    else:
+        args = ["-remove", FPS_LIMIT]
     result = _xprop(args, runner)
     return result is not None and result.returncode == 0

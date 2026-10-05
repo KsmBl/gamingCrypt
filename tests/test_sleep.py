@@ -190,7 +190,7 @@ def test_lock_after_sleep_asks_for_the_code_again(qtbot, window):
 
 
 def test_per_game_power_limit_wins_after_waking(qtbot, window):
-    window.config["games"] = {"620": {"power_w": 8}}
+    window.game_profiles.set(620, "power_w", 8)
     window.game_watcher.appid = 620
     window.woke_up(30)
     qtbot.waitUntil(lambda: window.system.power.sets == [8])

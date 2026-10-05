@@ -56,6 +56,15 @@ class MainWindow(QMainWindow):
         self.game_watcher.phase_text.connect(self.launch_overlay.set_phase)
         # Steam may wait for a click (license agreement …) in a window behind us.
         self.game_watcher.stalled.connect(lambda _appid: self.step_aside())
+        from gamingcrypt.game_profiles import GameProfiles
+
+        self.game_profiles = GameProfiles()
+        from gamingcrypt.ui.tasks import serial_pool
+
+        self._power_pool = serial_pool(self)  # game start/end in quick succession: keep the order
+        self.game_watcher.started.connect(self.game_started)
+        self.game_watcher.finished.connect(self.game_ended)
+        self.game_watcher.failed.connect(self.game_ended)
         self.game_watcher.finished.connect(lambda appid: self.game_over(appid))
         self.game_watcher.failed.connect(lambda appid: self.game_over(appid, failed=True))
         # Gaming mode: games started elsewhere (Big Picture, a self-restart we missed) must be
@@ -276,10 +285,37 @@ class MainWindow(QMainWindow):
         """The running game's own power limit, otherwise the one from Settings."""
         watcher = self.game_watcher
         if watcher.active:
-            profile = self.config.get("games", {}).get(str(watcher.appid), {})
-            if profile.get("power_w"):
-                return int(profile["power_w"])
-        return self.config.get("system", {}).get("power_limit_w")
+            watts = self.game_profiles.get(watcher.appid).get("power_w")
+            if watts:
+                return int(watts)
+        return self.config.get("system", {}).get("power_limit_w") or getattr(self, "_power_before_game", None)
+
+    # per-game profile (Options on the game page) --------------------------------------------
+    def game_started(self, appid: int) -> None:
+        profile = self.game_profiles.get(appid)
+        power = getattr(self.system, "power", None)
+        if profile.get("power_w") and power is not None and not self.config.get("system", {}).get("power_limit_w"):
+            # no limit chosen in Settings: remember the current one to go back to it
+            limit = power.read()
+            self._power_before_game = limit.current_w if limit else None
+        if profile.get("power_w"):
+            log.info("app %s: own power limit %s W", appid, profile["power_w"])
+            self.apply_power_profile()
+        self.apply_fps_limit(profile.get("fps", 0))
+
+    def game_ended(self, appid: int | None = None) -> None:
+        if appid is not None and self.game_profiles.get(appid).get("power_w"):
+            self.apply_power_profile()  # the watcher is idle again: the Settings value
+        self._power_before_game = None
+        self.apply_fps_limit(0)
+
+    def apply_fps_limit(self, fps: int) -> None:
+        from gamingcrypt.session.mode import in_gaming_session
+        from gamingcrypt.system import gamescope_ctl
+
+        if in_gaming_session() and (fps or getattr(self, "_fps_set", False)):
+            self._fps_set = bool(fps)
+            run_async(lambda: gamescope_ctl.set_fps_limit(fps), owner=self, pool=self._power_pool)
 
     def apply_power_profile(self) -> None:
         watts = self.desired_power_w()
@@ -287,7 +323,7 @@ class MainWindow(QMainWindow):
         if not watts or power is None:
             return
         run_async(lambda: power.set(watts), lambda r: log.info("power limit %s W: %s", watts, r[1]),
-                  lambda _e: None, owner=self)
+                  lambda _e: None, owner=self, pool=self._power_pool)
 
     # quick menu (Windows button) ------------------------------------------------------
     def toggle_quick_menu(self) -> None:

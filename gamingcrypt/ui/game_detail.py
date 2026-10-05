@@ -77,6 +77,19 @@ class GameDetailPage(QWidget):
         self.proton_combo.currentIndexChanged.connect(self.proton_chosen)
         proton_row.addWidget(self.proton_combo, 1)
         options.addLayout(proton_row)
+        # while this game runs: own power limit / frame limit (applied by the main window)
+        power_row = QHBoxLayout()
+        power_row.addWidget(QLabel("Power limit"))
+        self.power_combo = QComboBox()
+        self.power_combo.currentIndexChanged.connect(lambda _i: self._profile_chosen("power_w", self.power_combo))
+        power_row.addWidget(self.power_combo, 1)
+        options.addLayout(power_row)
+        fps_row = QHBoxLayout()
+        fps_row.addWidget(QLabel("FPS limit"))
+        self.fps_combo = QComboBox()
+        self.fps_combo.currentIndexChanged.connect(lambda _i: self._profile_chosen("fps", self.fps_combo))
+        fps_row.addWidget(self.fps_combo, 1)
+        options.addLayout(fps_row)
         self.uninstall_button = big_button("🗑 Uninstall", "danger")
         self.uninstall_button.clicked.connect(self.uninstall_tapped)
         options.addWidget(self.uninstall_button, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -123,6 +136,52 @@ class GameDetailPage(QWidget):
         self.main_button.setEnabled(g.installed or not self.downloading)
         self.uninstall_button.setVisible(g.installed)
 
+
+    # per-game power / FPS limit ------------------------------------------------------------
+    @property
+    def profiles(self):
+        profiles = getattr(self.tab, "profiles", None)
+        if profiles is None:
+            from gamingcrypt.game_profiles import GameProfiles
+
+            profiles = self.tab.profiles = GameProfiles()
+        return profiles
+
+    def fill_profile_choices(self, limit=...) -> None:
+        from gamingcrypt.game_profiles import FPS_CHOICES
+        from gamingcrypt.session.mode import in_gaming_session
+        from gamingcrypt.system.power import read_limit
+
+        if limit is ...:
+            limit = read_limit()
+        profile = self.profiles.get(self.game.appid)
+        self.power_combo.blockSignals(True)
+        self.power_combo.clear()
+        self.power_combo.addItem("Default (Settings)", 0)
+        if limit is not None:
+            for watts in range(limit.min_w, limit.max_w + 1):
+                self.power_combo.addItem(f"{watts} W", watts)
+        self.power_combo.setCurrentIndex(max(0, self.power_combo.findData(profile.get("power_w", 0))))
+        self.power_combo.setEnabled(limit is not None)
+        self.power_combo.blockSignals(False)
+        self.fps_combo.blockSignals(True)
+        self.fps_combo.clear()
+        for fps in FPS_CHOICES:
+            self.fps_combo.addItem(f"{fps} FPS" if fps else "No limit", fps)
+        self.fps_combo.setCurrentIndex(max(0, self.fps_combo.findData(profile.get("fps", 0))))
+        self.fps_combo.setEnabled(in_gaming_session())  # gamescope does the limiting
+        self.fps_combo.setToolTip("" if in_gaming_session() else "Only in gaming mode")
+        self.fps_combo.blockSignals(False)
+
+    def _profile_chosen(self, key: str, combo: QComboBox) -> None:
+        value = combo.currentData() or 0
+        try:
+            self.profiles.set(self.game.appid, key, value)
+        except OSError as exc:
+            set_status(self.status, f"Could not save: {exc}", error=True)
+            return
+        set_status(self.status, f"{combo.currentText()} while {self.game.name} runs" if value
+                   else "Back to the default")
 
     # Proton ---------------------------------------------------------------------------
     def fill_proton_choices(self) -> None:
@@ -269,6 +328,7 @@ class GameDetailPage(QWidget):
     def toggle_options(self, visible: bool) -> None:
         if visible:
             self.fill_proton_choices()
+            self.fill_profile_choices()
         self.options_panel.setVisible(visible)
         if not visible:
             self._disarm_uninstall()
