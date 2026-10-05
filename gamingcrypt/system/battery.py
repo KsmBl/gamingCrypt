@@ -11,10 +11,15 @@ class BatteryState:
     percent: int
     charging: bool  # actively charging
     plugged: bool  # on external power (charging, full or "not charging")
+    minutes: int | None = None  # time left on battery, or until full while charging
 
     @property
     def label(self) -> str:
-        return f"{'⚡' if self.plugged else '🔋'} {self.percent}%"
+        text = f"{'⚡' if self.plugged else '🔋'} {self.percent}%"
+        if self.minutes is not None and (self.charging or not self.plugged):
+            hours, minutes = divmod(self.minutes, 60)
+            text += f" · {hours}:{minutes:02d}" + (" to full" if self.charging else "")
+        return text
 
     @property
     def status(self) -> str:
@@ -45,6 +50,21 @@ def _percent(supply: Path) -> int | None:
     return None
 
 
+def _minutes(supply: Path, charging: bool) -> int | None:
+    """From the current draw: energy (µWh / µW) or charge (µAh / µA)."""
+    for now, full, rate in (("energy_now", "energy_full", "power_now"), ("charge_now", "charge_full", "current_now")):
+        a, b, r = _read(supply / now), _read(supply / full), _read(supply / rate)
+        if not (a.isdigit() and r.lstrip("-").isdigit()):
+            continue
+        rate_value = abs(int(r))
+        if rate_value <= 0:
+            return None  # idle / not reported yet
+        amount = (int(b) - int(a)) if charging and b.isdigit() else int(a)
+        minutes = round(60 * amount / rate_value)
+        return minutes if 0 < minutes < 48 * 60 else None
+    return None
+
+
 def read_battery(sys_root: Path = Path("/sys")) -> BatteryState | None:
     """The device's own battery (not a gamepad's / mouse's), or None without one."""
     base = sys_root / "class" / "power_supply"
@@ -57,12 +77,14 @@ def read_battery(sys_root: Path = Path("/sys")) -> BatteryState | None:
             continue  # "Device" scope = battery of a connected controller etc.
         percent = _percent(supply)
         if percent is not None:
-            batteries.append((percent, _read(supply / "status")))
+            status = _read(supply / "status")
+            batteries.append((percent, status, _minutes(supply, status == "Charging")))
     if not batteries:
         return None
-    percent = round(sum(p for p, _ in batteries) / len(batteries))
-    statuses = {s for _, s in batteries}
+    percent = round(sum(p for p, _s, _m in batteries) / len(batteries))
+    statuses = {s for _p, s, _m in batteries}
     charging = "Charging" in statuses
     plugged = charging or mains_online or (bool(statuses & {"Full", "Not charging"})
                                            and "Discharging" not in statuses)
-    return BatteryState(max(0, min(100, percent)), charging, plugged)
+    minutes = batteries[0][2] if len(batteries) == 1 else None
+    return BatteryState(max(0, min(100, percent)), charging, plugged, minutes)

@@ -92,3 +92,11 @@ def steam_root(tmp_path) -> Path:
 }
 ''')
     return root
+
+
+@pytest.fixture(autouse=True)
+def no_real_battery(monkeypatch):
+    """The dev machine's battery must not pop up warnings in UI tests."""
+    from gamingcrypt.app import MainWindow
+
+    monkeypatch.setattr(MainWindow, "battery_reader", staticmethod(lambda: None))

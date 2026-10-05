@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable
 
 import shiboken6
-from PySide6.QtCore import QObject, Qt, QThreadPool, Signal
+from PySide6.QtCore import QObject, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QWidget
 
 import logging
@@ -17,6 +17,7 @@ import logging
 from gamingcrypt import config as config_mod
 from gamingcrypt.ui import theme
 from gamingcrypt.ui.auth_setup import AuthSetupWizard
+from gamingcrypt.system.battery import read_battery
 from gamingcrypt.ui.lock_screen import LockScreen
 from gamingcrypt.ui.settings_tab import SettingsTab
 from gamingcrypt.ui.shell import Shell
@@ -85,6 +86,18 @@ class MainWindow(QMainWindow):
         self.wake_timer.timeout.connect(self.check_wake)
         self.wake_timer.start(2000)
         self.sleep_lock = None
+        # notifications + low battery (everywhere: lock screen, menus, in-game)
+        from gamingcrypt.ui.battery_warning import BatteryMonitor, BatteryWarning
+        from gamingcrypt.ui.toast import Toasts
+
+        self.toasts = Toasts(self)
+        self.battery_warning = BatteryWarning(self)
+        self.battery_warning.sleep_now.connect(self.go_to_sleep)
+        self.battery_warning.dismissed.connect(self._back_to_game)
+        self.battery_monitor = BatteryMonitor(self.battery_reader, self)
+        self.battery_monitor.notice.connect(lambda p: self.toasts.notify(f"Battery at {p} % - time to plug in", "🔋"))
+        self.battery_monitor.warning.connect(self.warn_battery)
+        self.download_notifier = None
         self.adopt_timer = QTimer(self)
         self.adopt_timer.timeout.connect(self.adopt_running_game)
         if in_gaming_session():
@@ -147,6 +160,7 @@ class MainWindow(QMainWindow):
     def showEvent(self, event) -> None:  # noqa: N802 - Qt API
         super().showEvent(event)
         self.gamescope_focus("launcher")
+        QTimer.singleShot(400, self.toasts.flush)  # what came in while a game was in front
 
     def gamescope_focus(self, front: str) -> None:
         """Gaming mode: tell gamescope what belongs on screen (see gamescope_ctl)."""
@@ -263,6 +277,22 @@ class MainWindow(QMainWindow):
         lock.show()
         if not self.isVisible():
             self.bring_to_front()  # in front of the game
+
+    battery_reader = staticmethod(read_battery)
+
+    def warn_battery(self, percent: int) -> None:
+        log.warning("battery at %s %%", percent)
+        self.battery_warning.open(percent)
+        if not self.isVisible():
+            self.bring_to_front()  # in front of the game
+
+    def _back_to_game(self) -> None:
+        if self.game_watcher.active and self.game_watcher.phase == "playing":
+            self.step_aside("game")
+
+    def notify(self, text: str, icon: str = "ℹ") -> None:
+        log.info("notice: %s", text)
+        self.toasts.notify(text, icon)
 
     def _sleep_unlocked(self) -> None:
         lock, self.sleep_lock = self.sleep_lock, None
@@ -553,6 +583,8 @@ class MainWindow(QMainWindow):
         """Controller navigation stays inside the loading screen / power menu while shown."""
         if self.sleep_lock is not None and self.sleep_lock.isVisible():
             return self.sleep_lock
+        if self.battery_warning.isVisible():
+            return self.battery_warning
         confirm = getattr(self, "display_confirm", None)
         if confirm is not None and confirm.isVisible():
             return confirm
@@ -575,6 +607,8 @@ class MainWindow(QMainWindow):
         self.launch_overlay.setGeometry(self.rect())
         if self.sleep_lock is not None:
             self.sleep_lock.setGeometry(self.rect())
+        if self.battery_warning.isVisible():
+            self.battery_warning.setGeometry(self.rect())
 
     def closeEvent(self, event):  # noqa: N802
         current = self.stack.currentWidget()
@@ -622,6 +656,12 @@ class MainWindow(QMainWindow):
             service.on_steam_ui = self.minimize_for_steam
             service.on_game_launch = self.game_launched
             service.on_big_picture = self.big_picture_opened
+            if self.download_notifier is None and hasattr(service, "downloads"):
+                from gamingcrypt.ui.download_notifier import DownloadNotifier
+
+                self.download_notifier = DownloadNotifier(
+                    service.downloads, lambda appid: any(g.appid == appid for g in service.installed_games()), self)
+                self.download_notifier.message.connect(lambda icon, text: self.notify(text, icon))
         self.shell = Shell(pages)
         self.shell.exit_requested.connect(self.desktop_mode)
         self.shell.power_requested.connect(self.power_action)
