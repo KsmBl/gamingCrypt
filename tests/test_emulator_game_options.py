@@ -118,6 +118,9 @@ def test_game_page_options(qtbot, window):
     page = RomGamePage(window._games, window._ff7)
     qtbot.addWidget(page)
     page.show()
+    assert not page.options_panel.isVisible()
+    page.options_button.click()  # as on a Steam game's page
+    assert page.options_panel.isVisible() and not page.screen_combo.isVisible()  # widescreen: PS2 only
     assert page.core_combo.currentText() == "Automatic (SwanStation)" and "3 discs" in page.facts.text()
     assert page.card_combo.isVisible()  # SwanStation has memory card options
     page.card_combo.setCurrentIndex(1)

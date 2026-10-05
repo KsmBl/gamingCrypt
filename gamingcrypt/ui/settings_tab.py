@@ -235,7 +235,7 @@ class SettingsTab(QStackedWidget):
         from gamingcrypt.ui.storage_page import StoragePage
 
         layout = page("Storage")
-        self.storage_page = StoragePage(lambda: self.steam)
+        self.storage_page = StoragePage(lambda: self.steam, emulation_fn=self.emulation_paths)
         layout.addWidget(self.storage_page)
         layout.addStretch()
 
@@ -277,6 +277,17 @@ class SettingsTab(QStackedWidget):
         page.closed.connect(lambda: self.close_page(""))
         self.addWidget(page)
         self.setCurrentWidget(page)
+
+    def emulation_paths(self):
+        """The emulated games' folders on the unlocked drive (None: not there)."""
+        import os
+        from pathlib import Path
+
+        from gamingcrypt.emulation.library import EmulationPaths
+
+        mount = os.path.expanduser(self.config.get("unlock", {}).get("mount_point", "") or "")
+        root = Path(mount) / "Emulation" if mount else None
+        return EmulationPaths(root) if root is not None and (root / "roms").is_dir() else None
 
     def controller_test_options(self) -> dict:
         """Per-system button meanings and layouts (emulated systems)."""

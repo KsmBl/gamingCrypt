@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QProgressBar, QVBoxLayout, QWidget
 
 from gamingcrypt.steam import running, storage
@@ -13,10 +14,13 @@ from gamingcrypt.ui.widgets import big_button, set_status
 
 
 class StoragePage(QWidget):
+    roms_changed = Signal()  # an emulated game was removed: the Games tab rescans
+
     def __init__(self, service_fn: Callable[[], object], games_running: Callable[[], set] = running.running_appids,
-                 parent: QWidget | None = None):
+                 parent: QWidget | None = None, emulation_fn: Callable[[], object] | None = None):
         super().__init__(parent)
         self.service_fn = service_fn
+        self.emulation_fn = emulation_fn or (lambda: None)
         self.games_running = games_running
         self.report: storage.Report | None = None
         self.armed: int | None = None  # uninstall needs a second tap
@@ -50,6 +54,16 @@ class StoragePage(QWidget):
         self.grid.setColumnStretch(0, 1)
         layout.addLayout(self.grid)
         self.rows: dict[int, list[QWidget]] = {}
+        # emulated games (on the encrypted drive), removed after asking
+        self.roms_heading = QLabel("Emulator games")
+        self.roms_heading.setObjectName("section")
+        self.roms_heading.hide()
+        layout.addWidget(self.roms_heading)
+        self.rom_grid = QGridLayout()
+        self.rom_grid.setColumnStretch(0, 1)
+        layout.addLayout(self.rom_grid)
+        self.rom_rows: dict[int, list[QWidget]] = {}
+        self.confirm = None
         self.busy = False
         self.message = ""  # result of the last action, shown after the rescan
 
@@ -57,6 +71,7 @@ class StoragePage(QWidget):
     def refresh(self) -> None:
         if self.busy:
             return
+        self.refresh_roms()
         service = self.service_fn()
         if service is None:
             set_status(self.status, "Steam wasn't found", error=True)
@@ -105,6 +120,66 @@ class StoragePage(QWidget):
             self.grid.addWidget(shaders, row, 1)
             self.grid.addWidget(remove, row, 2)
             self.rows[game.appid] = [text, shaders, remove]
+
+    # emulated games ---------------------------------------------------------------------------
+    def refresh_roms(self) -> None:
+        paths = self.emulation_fn()
+        if paths is None:
+            return
+
+        def work():
+            from gamingcrypt.emulation import removal
+            from gamingcrypt.emulation.library import scan_all
+
+            games = [g for found in scan_all(paths).values() for g in found]
+            return [(g, removal.plan(paths, g)) for g in sorted(games, key=lambda g: -g.size)]
+
+        run_async(work, self.show_roms, lambda _e: None, owner=self)
+
+    def show_roms(self, games: list) -> None:
+        from gamingcrypt.emulation.systems import short_name
+
+        self.close_confirm()
+        while self.rom_grid.count():
+            item = self.rom_grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.rom_rows = {}
+        self.roms_heading.setVisible(bool(games))
+        for row, (game, plan) in enumerate(games):
+            saves = f"  ·  saves {format_size(plan.saves_size)}" if plan.saves else ""
+            text = QLabel(f"{game.name}\n{short_name(game.system.id)}  ·  {format_size(plan.files_size)}{saves}")
+            remove = big_button("🗑 Remove", "danger")
+            remove.clicked.connect(lambda _c=False, g=game, r=row: self.ask_remove(g, r))
+            self.rom_grid.addWidget(text, row * 2, 0)
+            self.rom_grid.addWidget(remove, row * 2, 2)
+            self.rom_rows[game.appid] = [text, remove]
+
+    def ask_remove(self, game, row: int) -> None:
+        """The same question as on the game's page: really? and the saves too?"""
+        from gamingcrypt.ui.remove_rom import RemoveConfirm
+
+        if game.appid in self.games_running():
+            set_status(self.status, "Close the game first", error=True)
+            return
+        self.close_confirm()
+        self.confirm = RemoveConfirm(self.emulation_fn(), game)
+        self.confirm.cancelled.connect(self.close_confirm)
+        self.confirm.removed.connect(self._rom_removed)
+        self.rom_grid.addWidget(self.confirm, row * 2 + 1, 0, 1, 3)  # right below its line
+        self.confirm.show()
+        self.confirm.cancel_button.setFocus()
+
+    def close_confirm(self) -> None:
+        if self.confirm is not None:
+            self.confirm.deleteLater()
+            self.confirm = None
+
+    def _rom_removed(self, message: str) -> None:
+        set_status(self.status, message)
+        self.close_confirm()
+        self.roms_changed.emit()
+        self.refresh_roms()
 
     # freeing space --------------------------------------------------------------------------
     def _game_running(self) -> bool:

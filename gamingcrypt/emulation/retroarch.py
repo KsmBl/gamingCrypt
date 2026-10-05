@@ -146,6 +146,12 @@ MEMORY_CARDS = {
 }
 
 
+# Widescreen: the core reports 16:9 (and patches games that have no own setting) - a 4:3 game
+# would be stretched, so it's per game ("Screen" in the game's options)
+WIDESCREEN = {"pcsx2": {"16:9": {"pcsx2_widescreen_hint": "enabled (16:9)"},
+                        None: {"pcsx2_widescreen_hint": "disabled"}}}
+
+
 def core_options_file(paths: EmulationPaths, game: RomGame) -> Path:
     return paths.config / "core-options" / game.system.id / f"{game.path.stem}.opt"
 
@@ -197,7 +203,8 @@ def command(game: RomGame, core: Path, config: Path, reaper_path: Path) -> list[
 def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, core_name: str | None = None,
            popen=subprocess.Popen, which: Callable[[str], str | None] = shutil.which,
            layout: dict[str, str] | None = None, fast: float = DEFAULT_FAST,
-           slow: float = DEFAULT_SLOW, memory_card: str | None = None) -> tuple[bool, str]:
+           slow: float = DEFAULT_SLOW, memory_card: str | None = None,
+           widescreen: str | None = None) -> tuple[bool, str]:
     if not available(which):
         return False, "RetroArch isn't installed - run ./install.sh"
     core = find_core(paths, game.system, core_name)
@@ -209,10 +216,12 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
     if game.system.video:
         extra["video_driver"] = game.system.video
     short = core.name.removesuffix(".so").removesuffix("_libretro")
-    card = MEMORY_CARDS.get(short, {}).get(memory_card or "")
-    if card:  # the game's own core options file
+    options = dict(MEMORY_CARDS.get(short, {}).get(memory_card or "", {}))
+    if short in WIDESCREEN and (widescreen or core_options_file(paths, game).exists() or options):
+        options.update(WIDESCREEN[short].get(widescreen, WIDESCREEN[short][None]))
+    if options:  # the game's own core options file
         extra["global_core_options"] = "true"
-        extra["core_options_path"] = write_core_options(core_options_file(paths, game), card)
+        extra["core_options_path"] = write_core_options(core_options_file(paths, game), options)
     config = write_config(paths, extra)
     from gamingcrypt.emulation import layouts
 

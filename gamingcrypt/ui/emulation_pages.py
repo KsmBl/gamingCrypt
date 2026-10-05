@@ -172,14 +172,15 @@ class RomGamePage(QWidget):
         self.facts = QLabel(f"{game.system.name}\n{files}\n{format_size(game.size)}\n{played}")
         self.facts.setObjectName("detailMeta")
         info.addWidget(self.facts)
-        if game.system.emulator == "retroarch":
-            info.addLayout(self._options())
         info.addStretch()
         actions = QHBoxLayout()
         self.main_button = big_button("▶  Play", "primary")
         self.main_button.setMinimumWidth(260)
         self.main_button.clicked.connect(self.play)
         actions.addWidget(self.main_button)
+        self.options_button = big_button("⚙ Options", checkable=True)  # as on a Steam game's page
+        self.options_button.toggled.connect(self.toggle_options)
+        actions.addWidget(self.options_button)
         self.favorite_button = big_button("", checkable=True)
         self.favorite_button.setChecked(tab.profiles.is_favorite(game.appid))
         self._favorite_text()
@@ -187,12 +188,72 @@ class RomGamePage(QWidget):
         actions.addWidget(self.favorite_button)
         actions.addStretch()
         info.addLayout(actions)
+        self.options_panel = QFrame()
+        self.options_panel.setObjectName("card")
+        options = QVBoxLayout(self.options_panel)
+        options.setContentsMargins(22, 18, 22, 18)
+        options.setSpacing(12)
+        if game.system.emulator == "retroarch":
+            options.addLayout(self._options())
+        self.remove_button = big_button("🗑 Remove", "danger")
+        self.remove_button.clicked.connect(self.ask_remove)
+        options.addWidget(self.remove_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.options_layout = options
+        self.confirm = None  # the "really remove?" question
+        self.options_panel.hide()
+        info.addWidget(self.options_panel)
         self.status = QLabel("")
         self.status.setObjectName("status")
         self.status.setWordWrap(True)
         info.addWidget(self.status)
         body.addLayout(info, 1)
-        layout.addLayout(body, 1)
+        # scrolls when the options don't fit (800 px high screens)
+        content = QWidget()
+        content.setLayout(body)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll.setWidget(content)
+        enable_touch_scroll(self.scroll)
+        layout.addWidget(self.scroll, 1)
+
+    def toggle_options(self, visible: bool) -> None:
+        self.options_panel.setVisible(visible)
+        if visible:
+            from PySide6.QtCore import QTimer
+
+            QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(self.options_panel, 0, 20))
+        else:
+            self.close_confirm()
+
+    def ask_remove(self) -> None:
+        """Ask again - and whether the save states and memory card go too."""
+        from gamingcrypt.ui.remove_rom import RemoveConfirm
+
+        if self.confirm is not None or self.tab.emulation is None:
+            return
+        self.confirm = RemoveConfirm(self.tab.emulation, self.game)
+        self.confirm.cancelled.connect(self.close_confirm)
+        self.confirm.removed.connect(self.removed)
+        self.options_layout.addWidget(self.confirm)
+        self.confirm.show()
+        self.remove_button.hide()
+        self.confirm.cancel_button.setFocus()  # the safe choice first
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(self.confirm, 0, 20))
+
+    def close_confirm(self) -> None:
+        if self.confirm is not None:
+            self.confirm.deleteLater()
+            self.confirm = None
+            self.remove_button.show()
+            self.remove_button.setFocus()
+
+    def removed(self, message: str) -> None:
+        self.tab.home.show_notice(message)
+        self.tab.reload_roms()
+        self.tab.back()  # the game is gone
 
     def _options(self) -> QGridLayout:
         """Core, memory card, and how slow / fast the quick menu's speeds are (from the next start)."""
@@ -236,8 +297,23 @@ class RomGamePage(QWidget):
             self.card_combo.setVisible(has_cards)
             self.card_caption.setVisible(has_cards)
 
+        self.screen_combo = QComboBox()
+        self.screen_combo.addItem("4:3 (as the console)", None)
+        self.screen_combo.addItem("Widescreen 16:9 - set it in the game too", "16:9")
+        self.screen_combo.setCurrentIndex(1 if profile.get("widescreen") == "16:9" else 0)
+        self.screen_caption = row("Screen", self.screen_combo)
+        self.screen_combo.currentIndexChanged.connect(
+            lambda _i: self.tab.profiles.set(appid, "widescreen", self.screen_combo.currentData()))
+
+        def core_chosen_screen() -> None:
+            wide = (self.core_combo.currentData() or cores[0]) in retroarch.WIDESCREEN
+            self.screen_combo.setVisible(wide)
+            self.screen_caption.setVisible(wide)
+
         self.core_combo.currentIndexChanged.connect(core_chosen)
+        self.core_combo.currentIndexChanged.connect(lambda _i: core_chosen_screen())
         core_chosen()
+        core_chosen_screen()
         self.speed_combos = {}
         speeds = QHBoxLayout()
         for key, label, values, default in (("slow_speed", "Slow", retroarch.SLOW_SPEEDS, retroarch.DEFAULT_SLOW),

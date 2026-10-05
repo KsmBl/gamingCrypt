@@ -686,7 +686,8 @@ class MainWindow(QMainWindow):
         ok, message = retroarch.launch(game, paths, data_dir(), config_mod.cache_dir() / "logs", core,
                                        layout=layouts.load(self.config, game.system.id), **dict(zip(
                                            ("fast", "slow"), self.speed_rates(game))),
-                                       memory_card=profile.get("memory_card"))
+                                       memory_card=profile.get("memory_card"),
+                                       widescreen=profile.get("widescreen"))
         if ok:
             self.speed_mode = "normal"  # RetroArch starts at normal speed
             self.disc_index = retroarch.current_disc(paths, game, retroarch.find_core(paths, game.system, core))
@@ -1089,6 +1090,9 @@ class MainWindow(QMainWindow):
         self.shell.exit_requested.connect(self.desktop_mode)
         self.shell.power_requested.connect(self.power_action)
         settings = pages.get("Settings")
+        storage_page = getattr(settings, "storage_page", None)
+        if storage_page is not None and hasattr(games, "reload_roms"):
+            storage_page.roms_changed.connect(games.reload_roms)  # removed in Settings -> Storage
         if hasattr(settings, "libraries_changed") and hasattr(games, "home"):
             settings.libraries_changed.connect(games.home.apply_libraries)
         if hasattr(settings, "hotkeys_changed"):
