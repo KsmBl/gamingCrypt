@@ -99,10 +99,38 @@ def test_without_a_game_the_power_limit_is_the_settings_one(qtbot, window):
 
 def test_overlay_button(qtbot, window, monkeypatch):
     switched = []
-    monkeypatch.setattr(gs, "set_overlay", lambda on: switched.append(on) or True)
+    monkeypatch.setattr(gs, "set_overlay_wanted", lambda on: switched.append(on) or True)
     window.toggle_quick_menu()
     window.quick_menu.overlay_button.click()
     assert switched == [True]
+
+
+def test_overlay_only_over_games(tmp_path):
+    env = {"XDG_CONFIG_HOME": str(tmp_path)}
+    assert not gs.overlay_wanted(env)
+    gs.set_overlay(True, env)  # from an older version: it was on
+    assert gs.overlay_wanted(env)
+    gs.set_overlay_wanted(True, env)
+    assert gs.apply_overlay(False, env) and not gs.overlay_shown(env)  # GamingCrypt in front: hidden
+    assert gs.apply_overlay(True, env) and gs.overlay_shown(env)  # the game: shown
+    gs.set_overlay_wanted(False, env)
+    assert gs.apply_overlay(True, env) and not gs.overlay_shown(env)
+
+
+def test_app_shows_the_overlay_only_with_the_game_in_front(qtbot, window, monkeypatch):
+    from gamingcrypt.session import mode
+
+    monkeypatch.setattr(mode, "in_gaming_session", lambda: True)
+    monkeypatch.setattr(gs, "set_focus_order", lambda order, runner=None: True)
+    monkeypatch.setattr(gs, "set_window_appid", lambda w, appid=None, runner=None: True)
+    applied = []
+    monkeypatch.setattr(gs, "apply_overlay", lambda in_front, env=None: applied.append(in_front) or True)
+    window.game_watcher.appid, window.game_watcher.phase = 620, "playing"
+    monkeypatch.setattr(type(window.game_watcher), "active", property(lambda self: True))
+    window.gamescope_focus("game")
+    window.gamescope_focus("launcher")
+    window.gamescope_focus("steam")
+    assert applied == [True, False, False]
 
 
 def test_screenshot_of_the_game(qtbot, window, monkeypatch, tmp_path):

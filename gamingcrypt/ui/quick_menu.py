@@ -305,7 +305,8 @@ class QuickMenu(QWidget):
     def _overlay_toggled(self, on: bool) -> None:
         from gamingcrypt.system import gamescope_ctl
 
-        if not gamescope_ctl.set_overlay(on):
+        # remembered; it appears when the game is in front again (not over this menu)
+        if not gamescope_ctl.set_overlay_wanted(on):
             set_status(self.status, "Could not switch the overlay", error=True)
 
     def _screenshot(self) -> None:

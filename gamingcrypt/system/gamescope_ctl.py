@@ -131,3 +131,33 @@ def set_overlay(shown: bool, env: dict | None = None) -> bool:
     except OSError:
         return False
     return True
+
+
+def _wanted_file(env: dict | None = None):
+    return overlay_config(env).with_name("overlay-wanted")
+
+
+def overlay_wanted(env: dict | None = None) -> bool:
+    """The quick menu's switch - shown only while a game is in front (apply_overlay)."""
+    try:
+        return _wanted_file(env).read_text().strip() == "1"
+    except OSError:
+        return overlay_shown(env)  # from before there was a switch: what was on screen
+
+
+def set_overlay_wanted(on: bool, env: dict | None = None) -> bool:
+    try:
+        path = _wanted_file(env)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("1\n" if on else "0\n")
+    except OSError:
+        return False
+    return True
+
+
+def apply_overlay(game_in_front: bool, env: dict | None = None) -> bool:
+    """On screen only over a game - not over GamingCrypt's own pages."""
+    shown = overlay_wanted(env) and game_in_front
+    if shown == overlay_shown(env) and overlay_config(env).exists():
+        return True
+    return set_overlay(shown, env)

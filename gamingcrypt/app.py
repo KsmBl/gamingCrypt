@@ -173,6 +173,7 @@ class MainWindow(QMainWindow):
             return
         watcher = self.game_watcher
         game = watcher.appid if watcher.active else None
+        gs.apply_overlay(front == "game" and game is not None)  # the performance overlay: games only
         # Every list ends with all candidates: in gamescope's Steam mode an order that
         # matches no open window would leave the screen black.
         launcher, steam = gs.LAUNCHER_APPID, gs.BIG_PICTURE_APPID
@@ -540,7 +541,7 @@ class MainWindow(QMainWindow):
             limit = None
         overlay = None
         if in_gaming_session() and gamescope_ctl.overlay_available():
-            overlay = gamescope_ctl.overlay_shown()
+            overlay = gamescope_ctl.overlay_wanted()
         profile = self.game_profiles.get(appid) if appid else {}
         return {"limit": limit, "watts": self.desired_power_w(), "fps": profile.get("fps", 0), "overlay": overlay,
                 "in_game": appid is not None}
