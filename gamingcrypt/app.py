@@ -503,11 +503,15 @@ class MainWindow(QMainWindow):
             menu.power_chosen.connect(self.quick_power)
             menu.fps_chosen.connect(self.quick_fps)
             menu.screenshot.connect(self.take_screenshot)
+            menu.emulator_command.connect(self.emulator_command)
         watcher = self.game_watcher
         appid = watcher.appid if watcher.active and watcher.phase in ("starting", "playing") else None
         if not self.isVisible() or self.isMinimized():
             self.bring_to_front()  # the game keeps running behind
+        from gamingcrypt.emulation.library import EMU_APPID_BASE
+
         menu.set_performance(**self.performance_state(appid))
+        menu.set_emulated(appid is not None and appid >= EMU_APPID_BASE)
         menu.open_menu(appid, self.game_name(appid) if appid else "")
 
     def performance_state(self, appid: int | None) -> dict:
@@ -604,7 +608,15 @@ class MainWindow(QMainWindow):
 
     def game_launched(self, appid: int) -> None:
         """Stay visible ("Starting …") until the game draws, then step aside."""
+        from gamingcrypt.emulation.library import EMU_APPID_BASE
+
         games = self.shell.pages.get("Games") if self.shell else None
+        if appid >= EMU_APPID_BASE:  # an emulated game (RetroArch)
+            self.game_watcher.describe = lambda a: "Starting RetroArch…"
+            self.launch_overlay.show_for(self.game_name(appid), appid, None)
+            self.launch_overlay.set_phase("Starting RetroArch…")
+            self.game_watcher.watch(appid)
+            return
         service = getattr(games, "service", None)
         if service is not None and hasattr(service, "install_progress"):
             from gamingcrypt.steam.running import launch_phase
@@ -630,7 +642,34 @@ class MainWindow(QMainWindow):
     def game_name(self, appid: int) -> str:
         games = getattr(self.shell, "pages", {}).get("Games") if self.shell else None
         game = getattr(games, "games", {}).get(appid) if games is not None else None
+        if game is None and games is not None:
+            game = getattr(games, "rom_games", {}).get(appid)  # emulated
         return game.name if game is not None else "your game"
+
+    def launch_rom(self, game) -> tuple[bool, str]:
+        """Play on an emulated game: RetroArch through the "reaper" script (see emulation/retroarch)."""
+        from gamingcrypt.emulation import retroarch
+        from gamingcrypt.ui.tour import data_dir
+
+        games = self.shell.pages.get("Games") if self.shell else None
+        paths = getattr(games, "emulation", None)
+        if paths is None:
+            return False, "The games drive isn't unlocked"
+        core = self.game_profiles.get(game.appid).get("core")
+        ok, message = retroarch.launch(game, paths, data_dir(), config_mod.cache_dir() / "logs", core)
+        if ok:
+            log.info("starting %s (%s) with RetroArch", game.name, game.system.id)
+            self.game_launched(game.appid)
+        else:
+            log.warning("RetroArch: %s", message)
+        return ok, message
+
+    def emulator_command(self, text: str) -> None:
+        """Quick menu: save / load state of the running emulated game."""
+        from gamingcrypt.emulation import retroarch
+
+        if retroarch.send(text):
+            self.notify("State saved" if text == "SAVE_STATE" else "State loaded", "💾")
 
     def game_over(self, appid: int | None = None, failed: bool = False) -> None:
         menu = getattr(self, "quick_menu", None)
@@ -872,6 +911,8 @@ class MainWindow(QMainWindow):
             service.on_steam_ui = self.minimize_for_steam
             service.on_game_launch = self.game_launched
             service.on_big_picture = self.big_picture_opened
+            if hasattr(games, "rom_launcher"):
+                games.rom_launcher = self.launch_rom
             if self.download_notifier is None and hasattr(service, "downloads"):
                 from gamingcrypt.ui.download_notifier import DownloadNotifier
 

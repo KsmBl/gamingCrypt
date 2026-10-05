@@ -297,6 +297,16 @@ ask_boot_questions() {
     ask_other_os
 }
 
+install_retroarch() {
+    # emulated systems: RetroArch itself lives outside the encrypted drive, cores / games on it
+    command -v retroarch >/dev/null && return 0
+    if command -v pacman >/dev/null; then
+        info "Installing RetroArch (needs sudo)"
+        sudo pacman -S --needed --noconfirm retroarch retroarch-assets-ozone libretro-core-info >/dev/null \
+            || warn "could not install RetroArch"
+    fi
+}
+
 install_sharing() {
     # Settings -> add games over the network: Samba runs only while that page is open
     command -v smbd >/dev/null && return 0
@@ -427,6 +437,7 @@ if [[ $WITH_SUDO -eq 1 ]]; then
     install_bluetooth
     install_overlay
     install_sharing
+    install_retroarch
     ask_boot_questions
     [[ $SESSION -eq 1 ]] && install_session
 else

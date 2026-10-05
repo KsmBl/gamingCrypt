@@ -37,6 +37,7 @@ class QuickMenu(QWidget):
     power_chosen = Signal(int)  # watts: the running game's profile, or Settings without a game
     fps_chosen = Signal(int)
     screenshot = Signal()
+    emulator_command = Signal(str)  # RetroArch: SAVE_STATE / LOAD_STATE
 
     def __init__(self, parent: QWidget, system: SystemControls,
                  refresh_get: Callable[[], int] = gamescope_ctl.dynamic_refresh,
@@ -147,6 +148,21 @@ class QuickMenu(QWidget):
         self.box.addWidget(row)
         self.tools_row = row
 
+        # emulated game: save / load state
+        row = QWidget()
+        row.setObjectName("menuRow")
+        line = QHBoxLayout(row)
+        line.setContentsMargins(0, 0, 0, 0)
+        self.save_state_button = big_button("💾  Save state")
+        self.save_state_button.clicked.connect(lambda: self._emulator("SAVE_STATE"))
+        self.load_state_button = big_button("↺  Load state")
+        self.load_state_button.clicked.connect(lambda: self._emulator("LOAD_STATE"))
+        line.addWidget(self.save_state_button, 1)
+        line.addWidget(self.load_state_button, 1)
+        self.box.addWidget(row)
+        self.state_row = row
+        row.hide()
+
         # running game
         self.quit_button = big_button("✕  Force quit", "danger")
         self.quit_button.clicked.connect(self._quit_tapped)
@@ -201,6 +217,13 @@ class QuickMenu(QWidget):
         self.overlay_button.blockSignals(False)
         self.screenshot_button.setVisible(in_game)
         self.tools_row.setVisible(overlay is not None or in_game)
+
+    def set_emulated(self, emulated: bool) -> None:
+        self.state_row.setVisible(emulated)
+
+    def _emulator(self, command: str) -> None:
+        self.close_menu()  # back into the game; RetroArch saves / loads right away
+        self.emulator_command.emit(command)
 
     def _overlay_toggled(self, on: bool) -> None:
         from gamingcrypt.system import gamescope_ctl
