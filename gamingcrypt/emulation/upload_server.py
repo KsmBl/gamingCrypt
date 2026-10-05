@@ -57,29 +57,55 @@ def safe_name(name: str) -> str | None:
 PAGE = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>GamingCrypt upload</title><style>
 body{{font-family:sans-serif;background:#0f1117;color:#e8eaf0;max-width:720px;margin:2em auto;padding:0 1em}}
-select,input,button{{font-size:1.1em;padding:.5em;margin:.4em 0;width:100%;box-sizing:border-box}}
-button{{background:#4f8cff;color:#fff;border:0;border-radius:8px}} .done{{color:#3fb950}} .err{{color:#e5484d}}
-progress{{width:100%}}</style></head><body>
+select,button,.pick{{font-size:1.1em;padding:.6em;margin:.4em 0;width:100%;box-sizing:border-box;border-radius:8px}}
+button{{background:#4f8cff;color:#fff;border:0}} button:disabled{{background:#3a3f4b;color:#8b93a7}}
+.pick{{display:block;text-align:center;border:2px dashed #4f8cff;color:#e8eaf0;cursor:pointer}}
+.pick.over{{background:#1d2433}} #files{{position:absolute;opacity:0;width:1px;height:1px;overflow:hidden}}
+#chosen{{color:#8b93a7}} .done{{color:#3fb950}} .err{{color:#e5484d}} progress{{width:100%}}</style></head><body>
 <h1>GamingCrypt</h1><p>Files go to the encrypted drive of your handheld.</p>
-<label>Folder</label><select id="folder">{options}</select>
-<input type="file" id="files" multiple><button onclick="send()">Upload</button>
+<label for="folder">Folder</label><select id="folder">{options}</select>
+<input type="file" id="files" multiple>
+<label for="files" class="pick" id="drop">Choose files - or drop them here</label>
+<p id="chosen">No files chosen</p>
+<button id="send" disabled>Upload</button>
 <progress id="bar" value="0" max="1"></progress><ul id="log"></ul>
 <script>
+const input=document.getElementById('files'), drop=document.getElementById('drop'),
+      chosenText=document.getElementById('chosen'), sendButton=document.getElementById('send');
+let chosen=[];
+function size(n){{const u=['B','KB','MB','GB'];let i=0;while(n>=1024&&i<3){{n/=1024;i++}}
+  return (i?n.toFixed(1):n)+' '+u[i]}}
+function choose(list){{
+  chosen=[...list];
+  const total=chosen.reduce((s,f)=>s+f.size,0);
+  chosenText.textContent=chosen.length
+    ? chosen.length+(chosen.length==1?' file':' files')+' chosen ('+size(total)+'): '+chosen.map(f=>f.name).join(', ')
+    : 'No files chosen';
+  sendButton.disabled=!chosen.length;
+}}
+input.addEventListener('change',()=>choose(input.files));
+input.addEventListener('input',()=>choose(input.files));
+['dragenter','dragover'].forEach(t=>drop.addEventListener(t,e=>{{e.preventDefault();drop.classList.add('over')}}));
+['dragleave','drop'].forEach(t=>drop.addEventListener(t,()=>drop.classList.remove('over')));
+drop.addEventListener('drop',e=>{{e.preventDefault();choose(e.dataTransfer.files)}});
+sendButton.addEventListener('click',send);
 async function send(){{
-  const files=[...document.getElementById('files').files], folder=document.getElementById('folder').value;
+  const files=chosen, folder=document.getElementById('folder').value;
   const log=document.getElementById('log'), bar=document.getElementById('bar');
+  sendButton.disabled=true;
   for(const f of files){{
     const li=document.createElement('li'); li.textContent=f.name+' …'; log.prepend(li);
     await new Promise(done=>{{
       const x=new XMLHttpRequest();
       x.open('PUT','upload?folder='+encodeURIComponent(folder)+'&name='+encodeURIComponent(f.name));
-      x.upload.onprogress=e=>{{bar.value=e.loaded/e.total}};
+      x.upload.onprogress=e=>{{bar.value=e.total?e.loaded/e.total:0}};
       x.onload=()=>{{li.textContent=f.name+(x.status==200?' ✓':' - '+x.responseText);
                     li.className=x.status==200?'done':'err';done()}};
       x.onerror=()=>{{li.textContent=f.name+' - connection lost';li.className='err';done()}};
       x.send(f);
     }});
   }}
+  input.value=''; choose([]);
 }}
 </script></body></html>"""
 

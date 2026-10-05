@@ -4,11 +4,17 @@ import http.client
 import subprocess
 
 import pytest
+from PySide6.QtCore import QUrl
 
 from gamingcrypt.emulation.library import EmulationPaths
 from gamingcrypt.emulation.sharing import SmbShare
 from gamingcrypt.emulation.upload_server import UploadServer, safe_name, targets
 from gamingcrypt.helper import veracrypt_helper as helper
+
+try:  # must be imported before the QApplication exists
+    from PySide6.QtWebEngineWidgets import QWebEngineView
+except ImportError:  # pragma: no cover - optional
+    QWebEngineView = None
 
 
 @pytest.fixture
@@ -45,6 +51,40 @@ def test_page_and_upload(server, paths):
     assert (paths.cores / "snes9x_libretro.so").exists()
     assert server._got == [("roms/snes", "Super Mario World.sfc"), ("cores", "snes9x_libretro.so")]
     assert server.url("192.168.1.198") == f"http://192.168.1.198:{server.port}/tok123/"
+
+
+def run_js(qtbot, view, script):
+    results = []
+    view.page().runJavaScript(script, 0, results.append)
+    qtbot.waitUntil(lambda: bool(results), timeout=5000)
+    return results[0]
+
+
+@pytest.mark.skipif(QWebEngineView is None, reason="needs QtWebEngine")
+def test_browser_shows_the_chosen_files_and_uploads_them(qtbot, server, paths):
+    view = QWebEngineView()
+    qtbot.addWidget(view)
+    with qtbot.waitSignal(view.loadFinished, timeout=10000):
+        view.load(QUrl(server.url("127.0.0.1")))
+    assert run_js(qtbot, view, "document.getElementById('chosen').textContent") == "No files chosen"
+    assert run_js(qtbot, view, "document.getElementById('send').disabled") is True
+    run_js(qtbot, view, """(() => {
+        const dt = new DataTransfer();
+        dt.items.add(new File(['ROM!'], 'Chrono Trigger.sfc'));
+        dt.items.add(new File(['x'.repeat(2048)], 'Zelda.sfc'));
+        const input = document.getElementById('files');
+        input.files = dt.files;
+        input.dispatchEvent(new Event('change'));
+        document.getElementById('folder').value = 'roms/snes';
+        return true; })()""")
+    assert run_js(qtbot, view, "document.getElementById('chosen').textContent") == \
+        "2 files chosen (2.0 KB): Chrono Trigger.sfc, Zelda.sfc"
+    run_js(qtbot, view, "document.getElementById('send').click(); true")
+    qtbot.waitUntil(lambda: len(server._got) == 2, timeout=5000)
+    assert (paths.roms / "snes" / "Chrono Trigger.sfc").read_bytes() == b"ROM!"
+    qtbot.waitUntil(lambda: run_js(qtbot, view, "document.getElementById('chosen').textContent")
+                    == "No files chosen", timeout=5000)
+    assert run_js(qtbot, view, "document.querySelectorAll('#log .done').length") == 2
 
 
 def test_refused_requests(server, paths):
