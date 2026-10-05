@@ -10,6 +10,14 @@ COMMANDS = {"shutdown": ["systemctl", "poweroff"], "restart": ["systemctl", "reb
 
 
 def power_action(kind: str, runner: Runner = subprocess.run) -> tuple[bool, str]:
+    """"shutdown", "restart" or "boot:<entry>" (restart into another system once)."""
+    if kind.startswith("boot:"):
+        from gamingcrypt.system import boot
+
+        entry = next((e for e in boot.other_systems(runner) if e.num == kind[5:].upper()), None)
+        if entry is None:
+            return False, "That system is no longer in the boot menu"
+        return boot.reboot_into(entry, runner)
     cmd = COMMANDS[kind]
     try:
         result = runner(cmd, capture_output=True, text=True, timeout=20)

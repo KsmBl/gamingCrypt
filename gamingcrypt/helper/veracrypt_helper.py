@@ -19,6 +19,7 @@ import tempfile
 
 VERACRYPT = "/usr/bin/veracrypt"  # replaced by install.sh
 RYZENADJ = "/usr/bin/ryzenadj"
+EFIBOOTMGR = ["/usr/bin/efibootmgr", "/usr/sbin/efibootmgr"]
 SYS = "/sys"
 MIN_POWER_W = 3
 FS_OPTIONS = "--fs-options=nosuid,nodev"
@@ -240,9 +241,46 @@ def set_power_limit(args: list[str], sys_root: str = SYS, run=subprocess.run,
     return 0
 
 
+def _efibootmgr() -> str | None:
+    return next((p for p in EFIBOOTMGR if os.path.exists(p)), None)
+
+
+def boot_entry_ok(listing: str, num: str) -> bool:
+    """Only an existing, active entry that starts a boot loader from a disk - never USB,
+    network or other firmware entries."""
+    for line in listing.splitlines():
+        match = re.match(r"^Boot([0-9A-Fa-f]{4})(\*?)\s+.*?\t(.*)$", line)
+        if match and match.group(1).upper() == num:
+            path = match.group(3)
+            return bool(match.group(2)) and "HD(" in path and "\\efi\\" in path.lower()
+    return False
+
+
+def set_boot_next(args: list[str], run=subprocess.run, efibootmgr: str | None = None) -> int:
+    """Start that system once on the next boot (UEFI BootNext)."""
+    if len(args) != 1 or not re.fullmatch(r"[0-9A-Fa-f]{4}", args[0]):
+        print("Error: gamingcrypt helper: usage: boot-next <4 hex digits>", file=sys.stderr)
+        return 2
+    num = args[0].upper()
+    tool = efibootmgr or _efibootmgr()
+    if tool is None:
+        print("Error: gamingcrypt helper: efibootmgr is not installed", file=sys.stderr)
+        return 2
+    listing = run([tool], capture_output=True, text=True)
+    if listing.returncode != 0 or not boot_entry_ok(listing.stdout, num):
+        print(f"Error: gamingcrypt helper: Boot{num} is not a system on a disk", file=sys.stderr)
+        return 2
+    result = run([tool, "--bootnext", num], capture_output=True, text=True)
+    if result.returncode != 0:
+        print("Error: gamingcrypt helper: " + (result.stderr or "efibootmgr failed").strip(), file=sys.stderr)
+    return result.returncode
+
+
 def main(argv: list[str]) -> int:
     if argv[:1] == ["power-limit"]:
         return set_power_limit(argv[1:])
+    if argv[:1] == ["boot-next"]:
+        return set_boot_next(argv[1:])
     uid, gid, home = invoking_user()
     error = validate(argv, home, uid)
     if error:

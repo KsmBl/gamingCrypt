@@ -142,7 +142,11 @@ install_helper() {
     info "Installing the restricted VeraCrypt helper (needs sudo)"
     echo "    Allows: sudo -n $HELPER  (mount / list / create / change password of a volume,"
     echo "    always nosuid,nodev, only below /mnt, /media, /run/media or your home;"
-    echo "    and setting the power limit within the range the hardware reports)"
+    echo "    setting the power limit within the range the hardware reports,"
+    echo "    and choosing another installed system (e.g. Windows) for the next start)"
+    if [[ -d /sys/firmware/efi ]] && ! command -v efibootmgr >/dev/null && command -v pacman >/dev/null; then
+        sudo pacman -S --needed --noconfirm efibootmgr || warn "efibootmgr missing - no 'Restart into Windows'"
+    fi
     tmp_helper="$(mktemp)"
     tmp_sudoers="$(mktemp)"
     trap 'rm -f "$tmp_helper" "$tmp_sudoers"' RETURN

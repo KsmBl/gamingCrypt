@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from gamingcrypt.ui.secret_input import METHOD_LABELS, SecretInput
 from gamingcrypt.ui.tasks import run_async
@@ -15,6 +15,7 @@ class LockScreen(QWidget):
     """Emits ``unlocked`` once the volume was mounted successfully."""
 
     unlocked = Signal()
+    power_requested = Signal(str)  # "shutdown" / "restart" / "boot:<UEFI entry>"
 
     def __init__(self, unlocker: VeraCryptUnlocker, method: str, parent: QWidget | None = None):
         super().__init__(parent)
@@ -50,6 +51,38 @@ class LockScreen(QWidget):
             self.skip_button.hide()
         else:
             set_status(self.status, "No VeraCrypt volume configured", error=True)
+
+        # power: without unlocking (e.g. to start Windows instead)
+        power = QHBoxLayout()
+        power.addStretch()
+        self.shutdown_button = big_button("⏻  Shut down")
+        self.restart_button = big_button("↻  Restart")
+        self.windows_button = big_button("⊞  Restart into Windows")
+        self.shutdown_button.clicked.connect(lambda: self.power_requested.emit("shutdown"))
+        self.restart_button.clicked.connect(lambda: self.power_requested.emit("restart"))
+        self.windows_button.clicked.connect(self._boot_other)
+        for button in (self.shutdown_button, self.restart_button, self.windows_button):
+            power.addWidget(button)
+        power.addStretch()
+        layout.addLayout(power)
+        self.other_system = None
+        self.windows_button.hide()  # until another system was found
+
+    def set_systems(self, entries) -> None:
+        """Offer the first other system (Windows preferred) - see system/boot.py."""
+        entries = sorted(entries, key=lambda e: not e.windows)
+        self.other_system = entries[0] if entries else None
+        if self.other_system is not None:
+            self.windows_button.setText(("⊞  " if self.other_system.windows else "↻  ")
+                                        + f"Restart into {self.other_system.name}")
+        self.windows_button.setVisible(self.other_system is not None)
+
+    def _boot_other(self) -> None:
+        if self.other_system is not None:
+            self.power_requested.emit(f"boot:{self.other_system.num}")
+
+    def show_error(self, message: str) -> None:
+        set_status(self.status, message, error=True)
 
     def _attempt(self, secret: str) -> None:
         if self.busy:

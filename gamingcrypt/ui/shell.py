@@ -15,7 +15,7 @@ TABS = ["Games", "Downloads", "Movies", "Shows", "Music", "Pictures", "Settings"
 
 class Shell(QWidget):
     exit_requested = Signal()  # desktop mode
-    power_requested = Signal(str)  # "shutdown" / "restart"
+    power_requested = Signal(str)  # "shutdown" / "restart" / "boot:<UEFI entry>"
 
     def __init__(self, pages: dict[str, QWidget] | None = None, parent: QWidget | None = None,
                  battery_reader=read_battery):
@@ -65,6 +65,7 @@ class Shell(QWidget):
         self.power_menu.desktop.connect(self.exit_requested.emit)
         self.power_menu.shutdown.connect(lambda: self.power_requested.emit("shutdown"))
         self.power_menu.restart.connect(lambda: self.power_requested.emit("restart"))
+        self.power_menu.boot_into.connect(lambda num: self.power_requested.emit(f"boot:{num}"))
 
     def update_battery(self) -> None:
         state = self.battery_reader() if self.battery_reader else None

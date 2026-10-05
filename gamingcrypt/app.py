@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from typing import Callable
 
+import shiboken6
 from PySide6.QtCore import QObject, QThreadPool, Signal
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QWidget
 
@@ -364,9 +365,32 @@ class MainWindow(QMainWindow):
             self.input_service.stop()  # give the real controller back first
         ok, message = self.power_runner(kind)
         if not ok:
-            self.shell.power_menu.show_error(message)
+            log.warning("power action %s failed: %s", kind, message)
+            screen = self.stack.currentWidget()
+            if isinstance(screen, LockScreen):
+                screen.show_error(message)
+            elif self.shell is not None:
+                self.shell.power_menu.show_error(message)
             if self.input_service is not None:
                 self.input_service.start()
+
+    def load_other_systems(self, target) -> None:
+        """Windows & co. for "Restart into …" (efibootmgr, once - the boot menu doesn't change)."""
+        from gamingcrypt.system import boot
+
+        cached = getattr(self, "_other_systems", None)
+        if cached is not None:
+            target.set_systems(cached)
+            return
+
+        def done(entries) -> None:
+            self._other_systems = entries
+            if shiboken6.isValid(target):
+                target.set_systems(entries)
+
+        run_async(self.systems_lister or boot.other_systems, done, lambda _e: None, owner=self)
+
+    systems_lister = None  # tests: a function returning the entries
 
     @staticmethod
     def power_runner(kind: str):
@@ -424,6 +448,8 @@ class MainWindow(QMainWindow):
     def show_lock(self) -> None:
         lock = LockScreen(self.unlocker_factory(self.config["unlock"]), self.config["unlock"]["method"])
         lock.unlocked.connect(self.show_shell)
+        lock.power_requested.connect(self.power_action)
+        self.load_other_systems(lock)
         self._replace(lock)
         self.screen_name = "lock"
 
@@ -443,6 +469,7 @@ class MainWindow(QMainWindow):
         self.shell = Shell(pages)
         self.shell.exit_requested.connect(self.desktop_mode)
         self.shell.power_requested.connect(self.power_action)
+        self.load_other_systems(self.shell.power_menu)
         self._replace(self.shell)
         self.screen_name = "shell"
 

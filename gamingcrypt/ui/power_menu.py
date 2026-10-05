@@ -1,4 +1,4 @@
-"""Power menu behind the ⏻ button: shut down, restart, desktop mode."""
+"""Power menu behind the ⏻ button: shut down, restart, restart into another system, desktop mode."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ class PowerMenu(QWidget):
     shutdown = Signal()
     restart = Signal()
     desktop = Signal()
+    boot_into = Signal(str)  # UEFI entry of another system (e.g. Windows)
 
     def __init__(self, parent: QWidget):
         super().__init__(parent)
@@ -22,7 +23,7 @@ class PowerMenu(QWidget):
         card = QFrame()
         card.setObjectName("card")
         card.setFixedWidth(460)
-        box = QVBoxLayout(card)
+        box = self.box = QVBoxLayout(card)
         box.setContentsMargins(28, 24, 28, 24)
         box.setSpacing(14)
         title = QLabel("Power")
@@ -32,6 +33,7 @@ class PowerMenu(QWidget):
         self.restart_button = big_button("↻  Restart")
         self.desktop_button = big_button("🖥  Desktop mode")
         self.cancel_button = big_button("Cancel")
+        self.system_buttons: dict[str, object] = {}
         for button, signal in ((self.shutdown_button, self.shutdown), (self.restart_button, self.restart),
                                (self.desktop_button, self.desktop)):
             button.clicked.connect(signal.emit)
@@ -53,6 +55,19 @@ class PowerMenu(QWidget):
         outer.addWidget(card, alignment=Qt.AlignmentFlag.AlignCenter)
         outer.addStretch()
         self.hide()
+
+    def set_systems(self, entries) -> None:
+        """One "Restart into …" button per other installed system, below Restart."""
+        for button in self.system_buttons.values():
+            button.deleteLater()
+        self.system_buttons = {}
+        at = self.box.indexOf(self.restart_button) + 1
+        for entry in entries:
+            button = big_button(f"⊞  Restart into {entry.name}" if entry.windows else f"↻  Restart into {entry.name}")
+            button.clicked.connect(lambda _c=False, num=entry.num: self.boot_into.emit(num))
+            self.box.insertWidget(at, button)
+            at += 1
+            self.system_buttons[entry.num] = button
 
     def open_menu(self) -> None:
         set_status(self.status, "")
