@@ -11,6 +11,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from gamingcrypt.system import gamescope_ctl
+from gamingcrypt.system.battery import read_battery
 from gamingcrypt.system.controls import SystemControls
 from gamingcrypt.ui.system_settings import _label, _on_change, _slider
 from gamingcrypt.ui.tasks import run_async
@@ -36,8 +37,9 @@ class QuickMenu(QWidget):
     def __init__(self, parent: QWidget, system: SystemControls,
                  refresh_get: Callable[[], int] = gamescope_ctl.dynamic_refresh,
                  refresh_set: Callable[[int], bool] = gamescope_ctl.set_dynamic_refresh,
-                 refresh_available: bool = True):
+                 refresh_available: bool = True, battery_reader=read_battery):
         super().__init__(parent)
+        self.battery_reader = battery_reader
         self.system = system
         self.refresh_get, self.refresh_set = refresh_get, refresh_set
         self.appid: int | None = None
@@ -68,6 +70,13 @@ class QuickMenu(QWidget):
         self.back_button = big_button("▶  Back", "primary")
         self.back_button.clicked.connect(self.close_menu)
         self.box.addWidget(self.back_button)
+
+        # battery, refreshed every second while the menu is open
+        self.battery = QLabel()
+        self.battery.setObjectName("battery")  # green when plugged in, red when low (theme.py)
+        self.battery_row = self._row("Battery", self.battery, None)
+        self.battery_timer = QTimer(self)
+        self.battery_timer.timeout.connect(self.update_battery)
 
         # audio
         self.output = _combo()
@@ -146,6 +155,8 @@ class QuickMenu(QWidget):
         self._disarm_quit()
         set_status(self.status, "")
         self._load_values()
+        self.update_battery()
+        self.battery_timer.start(1000)
         self.setGeometry(self.parentWidget().rect())
         self.raise_()
         self.show()
@@ -154,6 +165,7 @@ class QuickMenu(QWidget):
     def close_menu(self) -> None:
         if self.countdown.isActive():
             self.revert_refresh()  # leaving with an unconfirmed mode = revert
+        self.battery_timer.stop()
         self.hide()
         self.closed.emit()
 
@@ -170,6 +182,21 @@ class QuickMenu(QWidget):
             self.close_menu()
             return True
         return False
+
+    def hideEvent(self, event) -> None:  # noqa: N802 - Qt API
+        self.battery_timer.stop()  # also when hidden directly (game over)
+        super().hideEvent(event)
+
+    def update_battery(self) -> None:
+        state = self.battery_reader() if self.battery_reader else None
+        self.battery_row.setVisible(state is not None)  # no battery: no row
+        if state is None:
+            return
+        self.battery.setText(f"{state.label}  ·  {state.status}")
+        self.battery.setProperty("low", state.low)
+        self.battery.setProperty("charging", state.plugged)
+        self.battery.style().unpolish(self.battery)
+        self.battery.style().polish(self.battery)
 
     def _load_values(self) -> None:
         audio, brightness = self.system.audio, self.system.brightness

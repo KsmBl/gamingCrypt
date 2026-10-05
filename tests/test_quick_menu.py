@@ -262,3 +262,29 @@ def test_tap_outside_closes_and_long_names_fit(qtbot, menu):
     assert m.isVisible() and closed == []  # inside the panel: stays
     qtbot.mouseClick(m, Qt.MouseButton.LeftButton, pos=QPoint(50, 400))
     assert not m.isVisible() and closed == [1]
+
+
+def test_battery_in_menu_refreshes_while_open(qtbot, menu):
+    from gamingcrypt.system.battery import BatteryState
+
+    m, *_ = menu
+    states = [BatteryState(64, False, False)]
+    m.battery_reader = lambda: states[-1]
+    m.open_menu()
+    assert m.battery_row.isVisible() and m.battery.text() == "🔋 64%  ·  On battery"
+    states.append(BatteryState(65, True, True))
+    qtbot.waitUntil(lambda: m.battery.text() == "⚡ 65%  ·  Charging", timeout=2500)
+    assert m.battery.property("charging") is True
+    m.close_menu()
+    assert not m.battery_timer.isActive()
+    m.battery_reader = lambda: None  # no battery (desktop PC): no row
+    m.open_menu()
+    assert not m.battery_row.isVisible()
+    m.hide()
+    assert not m.battery_timer.isActive()
+
+
+def test_top_bar_battery_refreshes_every_second():
+    from gamingcrypt.ui import shell
+
+    assert shell.BATTERY_REFRESH_MS == 1000

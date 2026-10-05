@@ -17,6 +17,12 @@ class BatteryState:
         return f"{'⚡' if self.plugged else '🔋'} {self.percent}%"
 
     @property
+    def status(self) -> str:
+        if self.charging:
+            return "Charging"
+        return "Plugged in" if self.plugged else "On battery"
+
+    @property
     def low(self) -> bool:
         return self.percent <= 15 and not self.plugged
 

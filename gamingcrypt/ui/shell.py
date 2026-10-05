@@ -9,7 +9,7 @@ from gamingcrypt.system.battery import read_battery
 from gamingcrypt.ui.power_menu import PowerMenu
 from gamingcrypt.ui.widgets import ComingSoon, big_button
 
-BATTERY_REFRESH_MS = 30_000
+BATTERY_REFRESH_MS = 1000  # sysfs read: cheap
 TABS = ["Games", "Downloads", "Movies", "Shows", "Music", "Pictures", "Settings"]
 
 
