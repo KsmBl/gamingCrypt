@@ -113,8 +113,10 @@ class GameDetailPage(QWidget):
         self._estimator = ProgressEstimator()
         self._progress_timer = QTimer(self)
         self._progress_timer.timeout.connect(self.poll_progress)
+        self.protondb_text = ""
         self.refresh()
         self._fetch_size()
+        self._fetch_protondb()
         if not game.installed and self._silent and self.service.install_progress(game.appid).state != "missing":
             self._start_watching()  # a download queued earlier is still running
 
@@ -130,12 +132,34 @@ class GameDetailPage(QWidget):
             f"Released: {format_date(g.release_date)}",
             f"Price: {format_price(g.price_cents, g.currency)}",
             f"Latest update: {format_date(g.last_updated)}",
+            self.protondb_text,
         ]
         self.facts.setText("\n".join(line for line in lines if line))
         self.main_button.setText("▶  Play" if g.installed else ("Downloading…" if self.downloading else "⬇  Download"))
         self.main_button.setEnabled(g.installed or not self.downloading)
         self.uninstall_button.setVisible(g.installed)
 
+
+    def _fetch_protondb(self) -> None:
+        """How well it runs on Linux - from the cache at once, otherwise in the background."""
+        from gamingcrypt.steam.protondb import label
+
+        cached = getattr(self.service, "protondb_cached", None)
+        fetch = getattr(self.service, "protondb_tier", None)
+        if cached is None or fetch is None:
+            return
+        tier = cached(self.game.appid)
+        if tier is not None:
+            self.protondb_text = label(tier)
+            self.refresh()
+            return
+        appid = self.game.appid
+
+        def shown(found: str) -> None:
+            self.protondb_text = label(found)
+            self.refresh()
+
+        run_async(lambda: fetch(appid), shown, lambda _e: None, owner=self)
 
     # per-game power / FPS limit ------------------------------------------------------------
     @property

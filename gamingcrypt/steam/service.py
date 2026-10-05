@@ -331,5 +331,19 @@ class SteamService:
         return library_setup.ensure_library(self.root, path, self.client)
 
     # store ------------------------------------------------------------------
+    @property
+    def protondb(self):
+        if getattr(self, "_protondb", None) is None:
+            from gamingcrypt.steam.protondb import ProtonDB
+
+            self._protondb = ProtonDB(self.cache_dir)
+        return self._protondb
+
+    def protondb_cached(self, appid: int) -> str | None:
+        return self.protondb.cached(appid)
+
+    def protondb_tier(self, appid: int) -> str:
+        return self.protondb.tier(appid)
+
     def search_store(self, term: str) -> list[StoreItem]:
         return self.api.search_store(term)
