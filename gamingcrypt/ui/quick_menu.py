@@ -40,6 +40,7 @@ class QuickMenu(QWidget):
     emulator_command = Signal(str)  # RetroArch: SAVE_STATE / LOAD_STATE
     controls_requested = Signal()  # emulated game: its button layout
     speed_mode_chosen = Signal(str)  # emulated game: slow / normal / fast, right away
+    disc_chosen = Signal(int)  # emulated game on several discs: change to this one (0-based)
 
     def __init__(self, parent: QWidget, system: SystemControls,
                  refresh_get: Callable[[], int] = gamescope_ctl.dynamic_refresh,
@@ -182,6 +183,23 @@ class QuickMenu(QWidget):
         self.box.addWidget(speed)  # no caption: the three buttons need the width
         self.speed_row = speed
         self.speed_row.hide()
+        discs = QWidget()
+        discs.setObjectName("menuRow")
+        line = QHBoxLayout(discs)
+        line.setContentsMargins(0, 0, 0, 0)
+        self.disc_prev = big_button("◀")
+        self.disc_prev.clicked.connect(lambda: self._disc(self.disc - 1))
+        self.disc_label = QLabel("")
+        self.disc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.disc_next = big_button("▶")
+        self.disc_next.clicked.connect(lambda: self._disc(self.disc + 1))
+        line.addWidget(self.disc_prev)
+        line.addWidget(self.disc_label, 1)
+        line.addWidget(self.disc_next)
+        self.box.addWidget(discs)
+        self.disc_row = discs
+        self.disc_row.hide()
+        self.disc, self.disc_count = 0, 0
 
         # running game
         self.quit_button = big_button("✕  Force quit", "danger")
@@ -247,6 +265,23 @@ class QuickMenu(QWidget):
             self.speed_buttons["fast"].setText(f"Fast {fast:g}x")
             self.speed_buttons["slow"].setText(f"Slow {slow:g}x")
             self._show_speed_mode(mode)
+
+    def set_discs(self, count: int, current: int = 0) -> None:
+        """A game on several discs: which one is in (0-based) - hidden for one disc."""
+        self.disc_count = count
+        self.disc_row.setVisible(count > 1)
+        self._show_disc(current)
+
+    def _show_disc(self, index: int) -> None:
+        self.disc = index
+        self.disc_label.setText(f"💿  Disc {index + 1} of {self.disc_count}")
+        self.disc_prev.setEnabled(index > 0)
+        self.disc_next.setEnabled(index < self.disc_count - 1)
+
+    def _disc(self, index: int) -> None:
+        if 0 <= index < self.disc_count and index != self.disc:
+            self._show_disc(index)
+            self.disc_chosen.emit(index)  # right away; the menu stays open
 
     def _show_speed_mode(self, mode: str) -> None:
         for name, button in self.speed_buttons.items():

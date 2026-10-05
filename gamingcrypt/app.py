@@ -514,6 +514,7 @@ class MainWindow(QMainWindow):
             menu.emulator_command.connect(self.emulator_command)
             menu.controls_requested.connect(self.open_running_controls)
             menu.speed_mode_chosen.connect(self.set_speed_mode)
+            menu.disc_chosen.connect(self.set_disc)
         watcher = self.game_watcher
         appid = watcher.appid if watcher.active and watcher.phase in ("starting", "playing") else None
         if not self.isVisible() or self.isMinimized():
@@ -525,6 +526,7 @@ class MainWindow(QMainWindow):
         retroarch_game = rom is not None and rom.system.emulator == "retroarch"
         speed = self.speed_rates(rom) + (getattr(self, "speed_mode", "normal"),) if retroarch_game else None
         menu.set_emulated(retroarch_game, speed)
+        menu.set_discs(len(rom.discs) if retroarch_game else 0, getattr(self, "disc_index", 0))
         menu.open_menu(appid, self.game_name(appid) if appid else "")
 
     def performance_state(self, appid: int | None) -> dict:
@@ -675,15 +677,18 @@ class MainWindow(QMainWindow):
             if ok is None:
                 return True, message  # downloading Eden first
             return self._rom_started(game, games, ok, message, "Eden")
-        core = self.game_profiles.get(game.appid).get("core")
+        profile = self.game_profiles.get(game.appid)
+        core = profile.get("core")
         fetch = getattr(games, "core_fetcher", None)
         if fetch is not None and retroarch.available() and retroarch.find_core(paths, game.system, core) is None:
             return self.download_core_then_launch(game, paths, core, fetch)
         ok, message = retroarch.launch(game, paths, data_dir(), config_mod.cache_dir() / "logs", core,
                                        layout=layouts.load(self.config, game.system.id), **dict(zip(
-                                           ("fast", "slow"), self.speed_rates(game))))
+                                           ("fast", "slow"), self.speed_rates(game))),
+                                       memory_card=profile.get("memory_card"))
         if ok:
             self.speed_mode = "normal"  # RetroArch starts at normal speed
+            self.disc_index = retroarch.current_disc(paths, game, retroarch.find_core(paths, game.system, core))
         return self._rom_started(game, games, ok, message, "RetroArch")
 
     # running speed of RetroArch games ----------------------------------------------------------
@@ -700,6 +705,24 @@ class MainWindow(QMainWindow):
         fast, slow = profile.get("fast_speed"), profile.get("slow_speed")
         return (fast if fast in retroarch.FAST_SPEEDS else retroarch.DEFAULT_FAST,
                 slow if slow in retroarch.SLOW_SPEEDS else retroarch.DEFAULT_SLOW)
+
+    def set_disc(self, index: int) -> None:
+        """Quick menu: change discs - open the tray, step to the disc, close it."""
+        import time
+
+        from gamingcrypt.emulation import retroarch
+
+        commands = retroarch.disc_commands(getattr(self, "disc_index", 0), index)
+        self.disc_index = index
+
+        def work() -> None:
+            for command in commands:
+                retroarch.send(command)
+                time.sleep(0.2)  # RetroArch takes one per frame; the tray needs a moment
+
+        run_async(work, owner=self)
+        if commands:
+            self.notify(f"Disc {index + 1} is in", "💿")
 
     def set_speed_mode(self, mode: str) -> None:
         """Quick menu: slow / normal / fast - RetroArch's toggles, instantly."""

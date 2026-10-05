@@ -137,6 +137,58 @@ def mode_commands(old: str, new: str) -> list[str]:
     return commands
 
 
+# Memory card per game or one for all games - the cores' own options (checked in the core files)
+MEMORY_CARDS = {
+    "swanstation": {"own": {"swanstation_MemoryCards_Card1Type": "Libretro"},
+                    "shared": {"swanstation_MemoryCards_Card1Type": "Shared"}},
+    "pcsx2": {"own": {"pcsx2_shared_memory_cards": "disabled"},
+              "shared": {"pcsx2_shared_memory_cards": "enabled"}},
+}
+
+
+def core_options_file(paths: EmulationPaths, game: RomGame) -> Path:
+    return paths.config / "core-options" / game.system.id / f"{game.path.stem}.opt"
+
+
+def write_core_options(path: Path, values: dict[str, str]) -> Path:
+    """Set options in the game's own core options file; what RetroArch saved there stays."""
+    lines = path.read_text().splitlines() if path.exists() else []
+    lines = [line for line in lines if line.split("=", 1)[0].strip() not in values]
+    lines += [f'{key} = "{value}"' for key, value in values.items()]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+def disc_commands(current: int, target: int) -> list[str]:
+    """Open the tray, step to the disc, close it (RetroArch's disc control)."""
+    if current == target:
+        return []
+    step = "DISK_NEXT" if target > current else "DISK_PREV"
+    return ["DISK_EJECT_TOGGLE", *[step] * abs(target - current), "DISK_EJECT_TOGGLE"]
+
+
+def current_disc(paths: EmulationPaths, game: RomGame, core: Path | None) -> int:
+    """The disc RetroArch starts with (it remembers the last one in an .ldci file) - 0-based."""
+    import json
+
+    from gamingcrypt.emulation import layouts
+
+    if not game.discs:
+        return 0
+    folders = [paths.saves] + ([paths.saves / layouts.core_name(core.name)] if core else [])
+    for folder in folders:
+        try:
+            data = json.loads((folder / f"{game.path.stem}.ldci").read_text())
+        except (OSError, ValueError):
+            continue
+        name = Path(str(data.get("image_path", ""))).name if isinstance(data, dict) else ""
+        for index, disc in enumerate(game.discs):
+            if disc.name == name:
+                return index
+    return 0
+
+
 def command(game: RomGame, core: Path, config: Path, reaper_path: Path) -> list[str]:
     return [str(reaper_path), "SteamLaunch", f"AppId={game.appid}", "--",
             "retroarch", "--appendconfig", str(config), "-L", str(core), str(game.path)]
@@ -145,7 +197,7 @@ def command(game: RomGame, core: Path, config: Path, reaper_path: Path) -> list[
 def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, core_name: str | None = None,
            popen=subprocess.Popen, which: Callable[[str], str | None] = shutil.which,
            layout: dict[str, str] | None = None, fast: float = DEFAULT_FAST,
-           slow: float = DEFAULT_SLOW) -> tuple[bool, str]:
+           slow: float = DEFAULT_SLOW, memory_card: str | None = None) -> tuple[bool, str]:
     if not available(which):
         return False, "RetroArch isn't installed - run ./install.sh"
     core = find_core(paths, game.system, core_name)
@@ -156,6 +208,11 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
     extra = speed_settings(fast, slow)
     if game.system.video:
         extra["video_driver"] = game.system.video
+    short = core.name.removesuffix(".so").removesuffix("_libretro")
+    card = MEMORY_CARDS.get(short, {}).get(memory_card or "")
+    if card:  # the game's own core options file
+        extra["global_core_options"] = "true"
+        extra["core_options_path"] = write_core_options(core_options_file(paths, game), card)
     config = write_config(paths, extra)
     from gamingcrypt.emulation import layouts
 

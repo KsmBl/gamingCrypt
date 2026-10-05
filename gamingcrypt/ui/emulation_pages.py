@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import shiboken6
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QVBoxLayout,
+                               QWidget)
 
 from gamingcrypt.emulation.library import RomGame
 from gamingcrypt.emulation.systems import System
@@ -167,11 +168,12 @@ class RomGamePage(QWidget):
 
         played = (f"Last played {format_date(game.last_played)} · {format_playtime(game.minutes)}"
                   if game.last_played else "Never played")
-        self.facts = QLabel(f"{game.system.name}\n{game.path.name}\n{format_size(game.size)}\n{played}")
+        files = f"{len(game.discs)} discs" if game.discs else game.path.name
+        self.facts = QLabel(f"{game.system.name}\n{files}\n{format_size(game.size)}\n{played}")
         self.facts.setObjectName("detailMeta")
         info.addWidget(self.facts)
         if game.system.emulator == "retroarch":
-            info.addLayout(self._speed_options())
+            info.addLayout(self._options())
         info.addStretch()
         actions = QHBoxLayout()
         self.main_button = big_button("▶  Play", "primary")
@@ -192,18 +194,52 @@ class RomGamePage(QWidget):
         body.addLayout(info, 1)
         layout.addLayout(body, 1)
 
-    def _speed_options(self) -> QHBoxLayout:
-        """How fast "Fast" and how slow "Slow" are in the quick menu (from the next start)."""
+    def _options(self) -> QGridLayout:
+        """Core, memory card, and how slow / fast the quick menu's speeds are (from the next start)."""
         from PySide6.QtWidgets import QComboBox
 
-        from gamingcrypt.emulation import retroarch
+        from gamingcrypt.emulation import layouts, retroarch
 
-        row = QHBoxLayout()
-        caption = QLabel("Quick menu speeds")
-        caption.setObjectName("cardMeta")
-        row.addWidget(caption)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(16)
         profile = self.tab.profiles.get(self.game.appid)
+        appid = self.game.appid
+
+        def row(caption: str, combo: QComboBox) -> QLabel:
+            label = QLabel(caption)
+            label.setObjectName("cardMeta")
+            line = grid.rowCount()
+            grid.addWidget(label, line, 0)
+            grid.addWidget(combo, line, 1, 1, 2)
+            return label
+
+        self.core_combo = QComboBox()
+        cores = self.game.system.cores
+        self.core_combo.addItem(f"Automatic ({layouts.CORE_NAMES.get(cores[0], cores[0])})", None)
+        for core in cores:
+            self.core_combo.addItem(layouts.CORE_NAMES.get(core, core), core)
+        index = self.core_combo.findData(profile.get("core")) if profile.get("core") in cores else 0
+        self.core_combo.setCurrentIndex(max(index, 0))
+        row("Core", self.core_combo)
+        self.card_combo = QComboBox()
+        self.card_combo.addItem("Own card for this game", None)
+        self.card_combo.addItem("One card for all games", "shared")
+        self.card_combo.setCurrentIndex(1 if profile.get("memory_card") == "shared" else 0)
+        self.card_caption = row("Memory card", self.card_combo)
+        self.card_combo.currentIndexChanged.connect(
+            lambda _i: self.tab.profiles.set(appid, "memory_card", self.card_combo.currentData()))
+
+        def core_chosen(_index: int = 0) -> None:
+            chosen = self.core_combo.currentData()
+            self.tab.profiles.set(appid, "core", chosen)
+            has_cards = (chosen or cores[0]) in retroarch.MEMORY_CARDS
+            self.card_combo.setVisible(has_cards)
+            self.card_caption.setVisible(has_cards)
+
+        self.core_combo.currentIndexChanged.connect(core_chosen)
+        core_chosen()
         self.speed_combos = {}
+        speeds = QHBoxLayout()
         for key, label, values, default in (("slow_speed", "Slow", retroarch.SLOW_SPEEDS, retroarch.DEFAULT_SLOW),
                                             ("fast_speed", "Fast", retroarch.FAST_SPEEDS, retroarch.DEFAULT_FAST)):
             combo = QComboBox()
@@ -213,11 +249,16 @@ class RomGamePage(QWidget):
             combo.setCurrentIndex(values.index(current))
             combo.currentIndexChanged.connect(
                 lambda _i, k=key, c=combo, d=default: self.tab.profiles.set(
-                    self.game.appid, k, None if c.currentData() == d else c.currentData()))
-            row.addWidget(combo)
+                    appid, k, None if c.currentData() == d else c.currentData()))
+            speeds.addWidget(combo)
             self.speed_combos[key] = combo
-        row.addStretch()
-        return row
+        caption = QLabel("Quick menu speeds")
+        caption.setObjectName("cardMeta")
+        line = grid.rowCount()
+        grid.addWidget(caption, line, 0)
+        grid.addLayout(speeds, line, 1, 1, 2)
+        grid.setColumnStretch(3, 1)
+        return grid
 
     def _favorite_text(self) -> None:
         self.favorite_button.setText("★ Favorite" if self.favorite_button.isChecked() else "☆ Favorite")
