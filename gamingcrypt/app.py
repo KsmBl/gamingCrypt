@@ -117,7 +117,8 @@ class MainWindow(QMainWindow):
         if not in_gaming_session() or audio is None:
             return None
         self.volume_osd = VolumeOsd(self)
-        self.volume = VolumeController(audio, self.volume_osd, self)
+        self.volume = VolumeController(audio, self.volume_osd, self,
+                                       step=lambda: self.config["system"].get("volume_step", 5))
         # volume -> VolumeController, Windows button -> quick menu; keys arrive from a thread
         self.key_bridge = _KeyBridge(self)
         self.key_bridge.key.connect(self.hardware_key)

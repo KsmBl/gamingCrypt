@@ -198,3 +198,27 @@ def test_real_volume_buttons():
         if keys is not None:
             keys.stop()
         buttons.close()
+
+
+def test_configurable_step_swapped_and_off(qtbot):
+    from PySide6.QtWidgets import QWidget
+
+    from gamingcrypt.ui.volume_osd import VolumeController, VolumeOsd, clamp_step
+
+    host = QWidget()
+    qtbot.addWidget(host)
+    pactl = Pactl(volume=50)
+    step = {"value": 10}
+    controller = VolumeController(PulseAudio(pactl), VolumeOsd(host), step=lambda: step["value"])
+    controller.bridge.key.emit(e.KEY_VOLUMEUP)
+    qtbot.waitUntil(lambda: pactl.volume == 60)
+    step["value"] = -2  # negative: + turns it down
+    controller.bridge.key.emit(e.KEY_VOLUMEUP)
+    qtbot.waitUntil(lambda: pactl.volume == 58)
+    controller.bridge.key.emit(e.KEY_VOLUMEDOWN)
+    qtbot.waitUntil(lambda: pactl.volume == 60)
+    step["value"] = 0  # off
+    controller.handle(e.KEY_VOLUMEUP)
+    qtbot.wait(50)
+    assert pactl.volume == 60
+    assert clamp_step(99) == 10 and clamp_step(-99) == -10 and clamp_step("x") == 5

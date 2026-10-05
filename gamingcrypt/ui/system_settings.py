@@ -284,9 +284,17 @@ class PowerSection(Section):
             self.save(self.config)
 
 
+def step_text(step: int) -> str:
+    if step == 0:
+        return "Off"
+    return f"{step:+d}%" + (" (swapped)" if step < 0 else "")
+
+
 class AudioSection(Section):
-    def __init__(self, controls: SystemControls):
+    def __init__(self, controls: SystemControls, config: dict | None = None,
+                 save: Callable[[dict], None] = lambda c: None):
         super().__init__("Audio")
+        self.config, self.save = config if config is not None else {"system": {}}, save
         self.audio = controls.audio
         self.combos: dict[str, QComboBox] = {}
         self.sliders: dict[str, QSlider] = {}
@@ -295,7 +303,27 @@ class AudioSection(Section):
         else:
             for kind, caption in (("output", "Output"), ("input", "Input")):
                 self._build(kind, caption)
+            self._build_step()
         self.body.addWidget(self.status)
+
+    def _build_step(self) -> None:
+        from gamingcrypt.ui.volume_osd import MAX_STEP, clamp_step
+
+        step = clamp_step(self.config.setdefault("system", {}).get("volume_step", 5))
+        self.step_value = QLabel(step_text(step))
+        self.step_slider = _slider(-MAX_STEP, MAX_STEP, step)
+        self.step_slider.setPageStep(1)
+        _on_change(self.step_slider, self.set_step, lambda v: self.step_value.setText(step_text(v)))
+        self.row("Volume buttons", self.step_slider, self.step_value)
+        self.step_value.setFixedWidth(150)
+        self.body.addWidget(_label("How much one press of + / - changes the volume in gaming mode. "
+                                   "Below 0 the buttons are swapped, 0 turns them off."))
+
+    def set_step(self, step: int) -> None:
+        if self.config["system"].get("volume_step") == step:
+            return
+        self.config["system"]["volume_step"] = step
+        self.save(self.config)
 
     def _build(self, kind: str, caption: str) -> None:
         devices = self.audio.devices(kind)

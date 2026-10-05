@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Callable
+
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QWidget
 
@@ -9,6 +11,15 @@ from gamingcrypt.input import evdev as e
 from gamingcrypt.ui.tasks import run_async
 
 STEP = 5
+MAX_STEP = 10
+
+
+def clamp_step(value) -> int:
+    """Volume step from the config: -10..10 (negative = buttons swapped, 0 = off)."""
+    try:
+        return max(-MAX_STEP, min(MAX_STEP, int(value)))
+    except (TypeError, ValueError):
+        return STEP
 SHOW_MS = 1500
 
 
@@ -55,9 +66,11 @@ class _Bridge(QObject):
 class VolumeController(QObject):
     """Volume buttons -> default output volume (+ the indicator when GamingCrypt is visible)."""
 
-    def __init__(self, audio, osd: VolumeOsd | None = None, parent: QObject | None = None):
+    def __init__(self, audio, osd: VolumeOsd | None = None, parent: QObject | None = None,
+                 step: Callable[[], int] = lambda: STEP):
         super().__init__(parent)
         self.audio = audio
+        self.step = step  # read on every press: the settings slider applies at once
         self.osd = osd
         self.bridge = _Bridge(self)
         self.bridge.key.connect(self.handle)  # key presses arrive from the reader thread
@@ -67,7 +80,10 @@ class VolumeController(QObject):
         if code == e.KEY_MUTE:
             run_async(lambda: (audio.default_volume(), audio.toggle_mute()), self._show_mute, owner=self)
         else:
-            delta = STEP if code == e.KEY_VOLUMEUP else -STEP
+            step = clamp_step(self.step())
+            if step == 0:
+                return  # buttons turned off in the settings
+            delta = step if code == e.KEY_VOLUMEUP else -step
             run_async(lambda: audio.step_volume(delta), self._show, owner=self)
 
     def _show(self, percent) -> None:

@@ -201,3 +201,15 @@ def test_settings_sub_tabs(qtbot):
     assert tab.reset_button.isVisibleTo(page) and tab.sub_buttons["Security"].isChecked()
     tab.sub_buttons["Steam"].click()
     assert tab.api_key_button.isVisibleTo(tab.sub_pages["Steam"].widget())
+
+
+def test_volume_button_step_setting(qtbot):
+    tab, cfg, saved = make(qtbot, audio=FakeAudio())
+    s = tab.audio_section
+    assert s.step_slider.minimum() == -10 and s.step_slider.maximum() == 10
+    assert s.step_slider.value() == 5 and s.step_value.text() == "+5%"
+    s.step_slider.setValue(-3)
+    assert cfg["system"]["volume_step"] == -3 and saved[-1]["system"]["volume_step"] == -3
+    assert s.step_value.text() == "-3% (swapped)"
+    s.step_slider.setValue(0)
+    assert s.step_value.text() == "Off" and saved[-1]["system"]["volume_step"] == 0

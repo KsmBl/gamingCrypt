@@ -131,7 +131,7 @@ class SettingsTab(QStackedWidget):
         layout = page("Device")
         self.display_section = DisplaySection(self.system, config, save, restart_gaming)
         self.power_section = PowerSection(self.system, config, save)
-        self.audio_section = AudioSection(self.system)
+        self.audio_section = AudioSection(self.system, config, save)
         for section in (self.display_section, self.power_section, self.audio_section):
             layout.addWidget(section)
         layout.addStretch()
