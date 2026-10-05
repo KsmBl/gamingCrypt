@@ -21,7 +21,7 @@ from gamingcrypt.ui.system_settings import AudioSection, DisplaySection, PowerSe
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button, enable_touch_scroll, set_status
 
-SUB_TABS = ["Device", "Controller", "Steam", "Security"]
+SUB_TABS = ["Device", "Controller", "Steam", "Security", "Health"]
 LOCK_AFTER_SLEEP = [("Never", None), ("Right away", 0), ("After 5 minutes", 5), ("After 15 minutes", 15),
                     ("After 1 hour", 60)]
 API_KEY_RE = re.compile(r"^[0-9A-Fa-f]{32}$")
@@ -85,6 +85,7 @@ class SettingsTab(QStackedWidget):
         input_service: InputService | None = None,
         restart_gaming=None,
         parent: QWidget | None = None,
+        health=None,
     ):
         super().__init__(parent)
         self.config = config
@@ -195,6 +196,14 @@ class SettingsTab(QStackedWidget):
         hint.setWordWrap(True)
         layout.addWidget(hint)
         layout.addStretch()
+
+        # Health
+        from gamingcrypt.ui.health_page import HealthPage
+
+        layout = page("Health")
+        self.health_page = HealthPage(health)
+        layout.addWidget(self.health_page)
+        layout.addStretch()
         self.show_sub_tab(SUB_TABS[0])
         self.addWidget(self.overview)
         self.refresh()
@@ -256,6 +265,8 @@ class SettingsTab(QStackedWidget):
         self.sub_stack.setCurrentWidget(self.sub_pages[name])
         for tab, button in self.sub_buttons.items():
             button.setChecked(tab == name)
+        if name == "Health" and not self.health_page.checks:
+            self.health_page.refresh()  # first visit: check now
 
     @property
     def steam(self):
