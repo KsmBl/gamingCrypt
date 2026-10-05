@@ -296,6 +296,18 @@ ask_boot_questions() {
     ask_other_os
 }
 
+install_bluetooth() {
+    # Settings -> Network pairs controllers / headphones through bluetoothctl.
+    compgen -G "/sys/class/bluetooth/hci*" >/dev/null || return 0
+    if ! command -v bluetoothctl >/dev/null && command -v pacman >/dev/null; then
+        info "Installing Bluetooth tools (needs sudo)"
+        sudo pacman -S --needed --noconfirm bluez bluez-utils || { warn "could not install bluez-utils"; return 0; }
+    fi
+    if command -v systemctl >/dev/null && ! systemctl is-enabled --quiet bluetooth 2>/dev/null; then
+        sudo systemctl enable --now bluetooth >/dev/null 2>&1 || warn "could not start the Bluetooth service"
+    fi
+}
+
 install_input_rules() {
     # The virtual controller (calibration + button mapping) is created through /dev/uinput.
     if [[ -w /dev/uinput && -e $UDEV_RULE ]]; then
@@ -395,6 +407,7 @@ if [[ $WITH_SUDO -eq 1 ]]; then
     install_helper
     install_input_rules
     install_fonts
+    install_bluetooth
     ask_boot_questions
     [[ $SESSION -eq 1 ]] && install_session
 else

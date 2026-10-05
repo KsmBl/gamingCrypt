@@ -88,6 +88,7 @@ class SettingsTab(QStackedWidget):
         health=None,
         updater=None,
         wifi=None,
+        bluetooth=None,
     ):
         super().__init__(parent)
         self.config = config
@@ -143,11 +144,13 @@ class SettingsTab(QStackedWidget):
         layout.addStretch()
 
         # Network (Wi-Fi, Bluetooth)
-        from gamingcrypt.ui.network_page import WifiSection
+        from gamingcrypt.ui.network_page import BluetoothSection, WifiSection
 
         layout = page("Network")
         self.wifi_section = WifiSection(self, wifi)
         layout.addWidget(self.wifi_section)
+        self.bluetooth_section = BluetoothSection(bluetooth)
+        layout.addWidget(self.bluetooth_section)
         layout.addStretch()
 
         # Controller
@@ -290,6 +293,7 @@ class SettingsTab(QStackedWidget):
             self.health_page.refresh()  # first visit: check now
         if name == "Network":
             self.wifi_section.refresh()
+            self.bluetooth_section.refresh()
         if name == "Updates" and self.updates_page.info is None:
             self.updates_page.check()
 

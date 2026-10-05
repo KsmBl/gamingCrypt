@@ -187,3 +187,120 @@ class WifiSection(QFrame):
     def _failed(self, message: str) -> None:
         self.busy = False
         set_status(self.status, message, error=True)
+
+
+class BluetoothSection(QFrame):
+    """Controllers and headphones: search, pair, connect - and their battery."""
+
+    def __init__(self, bluetooth=None):
+        super().__init__()
+        from gamingcrypt.system.bluetooth import Bluetooth
+
+        self.bt = bluetooth or Bluetooth()
+        self.setObjectName("card")
+        self.body = QVBoxLayout(self)
+        self.body.setContentsMargins(24, 18, 24, 18)
+        top = QHBoxLayout()
+        heading = QLabel("Bluetooth")
+        heading.setObjectName("section")
+        top.addWidget(heading)
+        top.addStretch()
+        self.toggle = big_button("On", checkable=True)
+        self.toggle.toggled.connect(self.set_powered)
+        top.addWidget(self.toggle)
+        self.search_button = big_button("🔍  Search")
+        self.search_button.clicked.connect(self.search)
+        top.addWidget(self.search_button)
+        self.body.addLayout(top)
+        self.list = QVBoxLayout()
+        self.body.addLayout(self.list)
+        self.status = QLabel("")
+        self.status.setObjectName("status")
+        self.status.setWordWrap(True)
+        self.body.addWidget(self.status)
+        self.rows: dict[str, QWidget] = {}
+        self.busy = False
+        if not self.bt.available:
+            self.toggle.hide()
+            self.search_button.hide()
+            set_status(self.status, "Bluetooth tools (bluez-utils) not installed - run ./install.sh", error=True)
+
+    def refresh(self) -> None:
+        if not self.bt.available or self.busy:
+            return
+        self.busy = True
+        bt = self.bt
+        run_async(lambda: (bt.powered(), bt.devices()), self._listed, lambda exc: self._failed(str(exc)), owner=self)
+
+    def search(self) -> None:
+        if self.busy:
+            return
+        self.busy = True
+        set_status(self.status, "Searching - put your controller or headphones in pairing mode…")
+        bt = self.bt
+        run_async(lambda: (bt.scan(), (bt.powered(), bt.devices()))[1], self._listed,
+                  lambda exc: self._failed(str(exc)), owner=self)
+
+    def _listed(self, result) -> None:
+        self.busy = False
+        powered, devices = result
+        self.toggle.blockSignals(True)
+        self.toggle.setChecked(powered)
+        self.toggle.setText("On" if powered else "Off")
+        self.toggle.blockSignals(False)
+        self.search_button.setEnabled(powered)
+        self.show_devices(devices if powered else [])
+        if not powered:
+            set_status(self.status, "Bluetooth is off")
+        elif self.status.text().startswith("Searching"):
+            set_status(self.status, "" if devices else "Nothing found")
+
+    def show_devices(self, devices) -> None:
+        while self.list.count():
+            item = self.list.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.rows = {}
+        for device in devices:
+            row = QWidget()
+            row.setObjectName("menuRow")
+            line = QHBoxLayout(row)
+            line.setContentsMargins(0, 0, 0, 0)
+            state = "Connected" if device.connected else ("Paired" if device.paired else "Tap to pair")
+            battery = f"  ·  🔋 {device.battery}%" if device.battery is not None else ""
+            button = big_button(f"{device.symbol}  {device.name}   ·  {state}{battery}",
+                                "primary" if device.connected else "")
+            button.clicked.connect(lambda _c=False, d=device: self.choose(d))
+            line.addWidget(button, 1)
+            if device.paired:
+                remove = big_button("Remove")
+                remove.clicked.connect(lambda _c=False, d=device: self._run(lambda: self.bt.remove(d.mac)))
+                line.addWidget(remove)
+            self.list.addWidget(row)
+            self.rows[device.mac] = row
+
+    def choose(self, device) -> None:
+        if device.connected:
+            self._run(lambda: self.bt.disconnect(device.mac), f"Disconnecting {device.name}…")
+        elif device.paired:
+            self._run(lambda: self.bt.connect(device.mac), f"Connecting {device.name}…")
+        else:
+            self._run(lambda: self.bt.pair(device.mac), f"Pairing {device.name}…")
+
+    def set_powered(self, on: bool) -> None:
+        self.toggle.setText("On" if on else "Off")
+        self._run(lambda: self.bt.set_powered(on))
+
+    def _run(self, action, text: str = "") -> None:
+        if text:
+            set_status(self.status, text)
+        run_async(action, self._done, lambda exc: self._failed(str(exc)), owner=self)
+
+    def _done(self, result) -> None:
+        ok, message = result
+        set_status(self.status, message, error=not ok)
+        self.refresh()
+
+    def _failed(self, message: str) -> None:
+        self.busy = False
+        set_status(self.status, message, error=True)
