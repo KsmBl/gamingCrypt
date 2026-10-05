@@ -279,6 +279,9 @@ class GamesTab(QStackedWidget):
         from gamingcrypt.emulation.library import EmulationPaths
 
         self.emulation = EmulationPaths(emulation_root) if emulation_root else None
+        from gamingcrypt.emulation.covers import Covers
+
+        self.covers = Covers(self.emulation) if self.emulation is not None else None  # box art
         self.roms: dict = {}  # system id -> games
         self.rom_launcher = None  # set by the app: RomGame -> (ok, message)
         self.upload_page_factory = None  # tests: a stand-in upload page

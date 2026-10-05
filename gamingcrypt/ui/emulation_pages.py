@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shiboken6
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QVBoxLayout, QWidget
 
@@ -13,10 +14,36 @@ from gamingcrypt.ui.widgets import FlowLayout, big_button, enable_touch_scroll, 
 COVER_W, COVER_H = 150, 200
 
 
+def load_rom_cover(label: QLabel, game: RomGame, covers, w: int, h: int) -> None:
+    """Placeholder first; the box art from the drive's cache or libretro-thumbnails when it comes."""
+    from PySide6.QtCore import Qt as _Qt
+    from PySide6.QtGui import QPixmap
+
+    from gamingcrypt.ui.tasks import run_async
+
+    label.setPixmap(placeholder_cover(game.name, w, h))
+    if covers is None:
+        return
+
+    def show(path) -> None:
+        if path is None or not shiboken6.isValid(label):
+            return
+        pixmap = QPixmap(str(path))
+        if not pixmap.isNull():
+            label.setPixmap(pixmap.scaled(w, h, _Qt.AspectRatioMode.KeepAspectRatio,
+                                          _Qt.TransformationMode.SmoothTransformation))
+
+    cached = covers.cached(game)
+    if cached is not None:
+        show(cached)
+    else:
+        run_async(lambda: covers.fetch(game), show, lambda _e: None)
+
+
 class RomCard(QFrame):
     clicked = Signal(object)
 
-    def __init__(self, game: RomGame, parent: QWidget | None = None):
+    def __init__(self, game: RomGame, parent: QWidget | None = None, covers=None):
         super().__init__(parent)
         self.game = game
         self.setObjectName("card")
@@ -24,9 +51,11 @@ class RomCard(QFrame):
         self.setFixedWidth(COVER_W + 24)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
-        cover = QLabel()
-        cover.setPixmap(placeholder_cover(game.name, COVER_W, COVER_H))
-        layout.addWidget(cover)
+        self.cover = QLabel()
+        self.cover.setFixedSize(COVER_W, COVER_H)
+        self.cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        load_rom_cover(self.cover, game, covers, COVER_W, COVER_H)
+        layout.addWidget(self.cover)
         title = QLabel(game.name)
         title.setObjectName("cardTitle")
         title.setWordWrap(True)
@@ -75,7 +104,7 @@ class SystemPage(QWidget):
         layout.addWidget(scroll, 1)
         self.cards: dict[int, RomCard] = {}
         for game in games:
-            card = RomCard(game)
+            card = RomCard(game, covers=getattr(tab, "covers", None))
             card.clicked.connect(tab.open_rom)
             self.cards[game.appid] = card
             self.grid.addWidget(card)
@@ -106,9 +135,11 @@ class RomGamePage(QWidget):
         layout.addLayout(top)
         body = QHBoxLayout()
         body.setSpacing(36)
-        cover = QLabel()
-        cover.setPixmap(placeholder_cover(game.name, 300, 400))
-        body.addWidget(cover, alignment=Qt.AlignmentFlag.AlignTop)
+        self.cover = QLabel()
+        self.cover.setFixedSize(300, 400)
+        self.cover.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+        load_rom_cover(self.cover, game, getattr(tab, "covers", None), 300, 400)
+        body.addWidget(self.cover, alignment=Qt.AlignmentFlag.AlignTop)
         info = QVBoxLayout()
         self.title = QLabel(game.name)
         self.title.setObjectName("detailTitle")
