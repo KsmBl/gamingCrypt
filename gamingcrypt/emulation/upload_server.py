@@ -41,7 +41,12 @@ def local_ip() -> str:
 def targets(paths: EmulationPaths) -> dict[str, tuple[str, Path]]:
     """Upload folder id -> (label, folder)."""
     found = {f"roms/{s.folder}": (f"Games: {s.name}", paths.roms_for(s)) for s in SYSTEMS}
-    found["bios"] = ("BIOS files", paths.bios)
+    from gamingcrypt.emulation.bios import UPLOAD_KINDS
+
+    # BIOS by kind: named and put where its emulator looks (emulation/bios.place)
+    incoming = paths.bios / ".incoming"
+    found.update({f"bios:{kind}": (f"BIOS: {label}", incoming) for kind, label in UPLOAD_KINDS.items()})
+    found["bios"] = ("BIOS: other file (bios folder as it is)", paths.bios)
     found["cores"] = ("RetroArch cores (*_libretro.so)", paths.cores)
     return found
 
@@ -98,7 +103,8 @@ async function send(){{
       const x=new XMLHttpRequest();
       x.open('PUT','upload?folder='+encodeURIComponent(folder)+'&name='+encodeURIComponent(f.name));
       x.upload.onprogress=e=>{{bar.value=e.total?e.loaded/e.total:0}};
-      x.onload=()=>{{li.textContent=f.name+(x.status==200?' ✓':' - '+x.responseText);
+      x.onload=()=>{{const note=x.responseText!='ok'?' - '+x.responseText:'';
+                    li.textContent=f.name+(x.status==200?' ✓'+note:' - '+x.responseText);
                     li.className=x.status==200?'done':'err';done()}};
       x.onerror=()=>{{li.textContent=f.name+' - connection lost';li.className='err';done()}};
       x.send(f);
@@ -225,7 +231,18 @@ class UploadServer:
                     part.unlink(missing_ok=True)
                     self._reply(500, str(exc))
                     return
-                owner.on_received(folder_id, final)
-                self._reply(200, "ok")
+                message = "ok"
+                if folder_id.startswith("bios:"):
+                    from gamingcrypt.emulation import bios
+
+                    ok, message, written = bios.place(owner.paths, folder_id[5:], final)
+                    if not ok:
+                        self._reply(422, message)
+                        return
+                    for path in written:
+                        owner.on_received("bios", path)
+                else:
+                    owner.on_received(folder_id, final)
+                self._reply(200, message)
 
         return Handler

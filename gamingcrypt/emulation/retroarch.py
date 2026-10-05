@@ -86,7 +86,8 @@ def write_config(paths: EmulationPaths, extra: dict[str, str] | None = None) -> 
         "savefile_directory": paths.saves, "savestate_directory": paths.states,
         "screenshot_directory": paths.screenshots, "libretro_info_path": "/usr/share/libretro/info",
         "video_fullscreen": "true", "pause_nonactive": "false", "config_save_on_exit": "false",
-        "network_cmd_enable": "true", "quit_press_twice": "false", "state_slot": "0", "network_cmd_port": str(COMMAND_PORT),
+        "network_cmd_enable": "true", "quit_press_twice": "false",
+        "state_slot": "0", "network_cmd_port": str(COMMAND_PORT),
         "input_autodetect_enable": "true", "input_menu_toggle_gamepad_combo": "2",  # L3 + R3: RetroArch menu
         "savestate_auto_index": "false", "menu_driver": "ozone", "auto_remaps_enable": "true",
         "input_remapping_directory": paths.config / "remaps",

@@ -95,8 +95,8 @@ class UploadPage(QWidget):
         row.addWidget(smb, 1)
         layout.addLayout(row)
         folders = QLabel("Where things go:  roms/<system> - games (e.g. roms/snes, roms/psx)  ·  bios - BIOS "
-                         "files  ·  cores - RetroArch cores (*_libretro.so - missing ones are "
-                         "downloaded automatically)")
+                         "files (in the browser: choose which one - it's named and placed for you)  ·  cores - "
+                         "RetroArch cores (*_libretro.so - missing ones are downloaded automatically)")
         folders.setObjectName("cardMeta")
         folders.setWordWrap(True)
         layout.addWidget(folders)

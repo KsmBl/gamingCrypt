@@ -334,3 +334,82 @@ def test_passwords_and_addresses_are_two_words(paths):
     assert len({phrase() for _ in range(30)}) > 20  # random
     server = UploadServer(paths)
     assert re.fullmatch(r"([A-Z][a-z]+){2}", server.token)
+
+
+# --- BIOS by kind ------------------------------------------------------------------------------
+
+def _zip(files):
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, data in files.items():
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+def test_bios_kinds_are_offered(server):
+    _status, page = request(server, "GET", "/tok123/")
+    assert "BIOS: PlayStation (PS1) BIOS" in page and "BIOS: Switch firmware" in page
+    assert "BIOS: PlayStation 2 BIOS" in page and "bios:switch-keys" in page
+
+
+def test_ps1_bios_is_named_by_its_checksum(server, paths, monkeypatch):
+    import hashlib
+
+    from gamingcrypt.emulation import bios
+
+    data = b"ps1 bios"
+    monkeypatch.setitem(bios.REQUIREMENTS, "psx", bios.Requirement(
+        {"scph5501.bin": hashlib.md5(data).hexdigest(), "scph1001.bin": "0" * 32}))
+    status, text = request(server, "PUT", "/tok123/upload?folder=bios:psx&name=PSX%20BIOS%20(USA).bin", data)
+    assert status == 200 and text == "saved as scph5501.bin (known good)"
+    assert (paths.bios / "scph5501.bin").read_bytes() == data and not list((paths.bios / ".incoming").iterdir())
+    assert ("bios", "scph5501.bin") in server._got
+    status, text = request(server, "PUT", "/tok123/upload?folder=bios:psx&name=mine.bin", b"other")
+    assert status == 422 and "already have a known good" in text  # the good one stays
+    assert (paths.bios / "scph5501.bin").read_bytes() == data
+    (paths.bios / "scph5501.bin").unlink()
+    status, text = request(server, "PUT", "/tok123/upload?folder=bios:psx&name=mine.bin", b"other")
+    assert status == 200 and "unknown version" in text and (paths.bios / "scph5501.bin").read_bytes() == b"other"
+
+
+def test_bios_zip_and_dreamcast_subfolder(server, paths):
+    status, text = request(server, "PUT", "/tok123/upload?folder=bios:dreamcast&name=dc.zip",
+                           _zip({"bios/dc_boot.bin": b"boot", "readme.txt": b"hi"}))
+    assert status == 200 and (paths.bios / "dc" / "dc_boot.bin").read_bytes() == b"boot"
+    assert not (paths.bios / "readme.txt").exists()
+
+
+def test_ps2_bios_goes_to_its_folder(server, paths):
+    status, _ = request(server, "PUT", "/tok123/upload?folder=bios:ps2&name=SCPH-70004.bin", b"ps2")
+    assert status == 200 and (paths.bios / "pcsx2" / "bios" / "SCPH-70004.bin").read_bytes() == b"ps2"
+
+
+def test_switch_keys_are_recognised_by_content(server, paths):
+    status, text = request(server, "PUT", "/tok123/upload?folder=bios:switch-keys&name=keys.txt",
+                           b"header_key = 0123\nmaster_key_00 = 4567\n")
+    assert status == 200 and text == "saved as prod.keys" and (paths.bios / "switch" / "prod.keys").exists()
+    title = b"0" * 32 + b" = " + b"1" * 32 + b"\n"
+    status, text = request(server, "PUT", "/tok123/upload?folder=bios:switch-keys&name=t.txt", title)
+    assert text == "saved as title.keys"
+    status, text = request(server, "PUT", "/tok123/upload?folder=bios:switch-keys&name=x.txt", b"hello")
+    assert status == 422 and "no Switch keys" in text
+
+
+def test_switch_firmware_zip_is_unpacked(server, paths):
+    status, text = request(server, "PUT", "/tok123/upload?folder=bios:switch-firmware&name=Firmware%2019.zip",
+                           _zip({"Firmware 19/a.nca": b"a", "Firmware 19/b.nca": b"b", "note.txt": b"x"}))
+    firmware = paths.bios / "switch" / "firmware"
+    assert status == 200 and text == "2 firmware files" and sorted(f.name for f in firmware.iterdir()) == ["a.nca", "b.nca"]
+    status, text = request(server, "PUT", "/tok123/upload?folder=bios:switch-firmware&name=x.zip", _zip({"a.txt": b""}))
+    assert status == 422 and "no firmware" in text
+
+
+def test_place_rejects_unknown_kinds(paths, tmp_path):
+    from gamingcrypt.emulation import bios
+
+    upload = tmp_path / "x.bin"
+    upload.write_bytes(b"x")
+    assert bios.place(paths, "snes", upload)[0] is False and not upload.exists()

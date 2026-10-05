@@ -120,3 +120,114 @@ def check(paths: EmulationPaths, system_id: str) -> BiosStatus | None:
 
 def check_all(paths: EmulationPaths, system_ids) -> list[BiosStatus]:
     return [status for sid in system_ids if (status := check(paths, sid)) is not None]
+
+
+# --- uploads: "this is my PS1 BIOS" - name and place are worked out here --------------------------
+
+UPLOAD_KINDS: dict[str, str] = {
+    "psx": "PlayStation (PS1) BIOS",
+    "ps2": "PlayStation 2 BIOS",
+    "switch-keys": "Switch keys (prod.keys / title.keys)",
+    "switch-firmware": "Switch firmware (.zip or .nca files)",
+    "segacd": "Sega CD BIOS",
+    "saturn": "Sega Saturn BIOS",
+    "dreamcast": "Dreamcast BIOS",
+    "gba": "Game Boy Advance BIOS",
+    "pce": "PC Engine CD BIOS (System Card)",
+}
+PS2_BIOS_DIR = "pcsx2/bios"
+SWITCH_DIR = "switch"
+
+
+def _members(upload: Path):
+    """(name, bytes) of the upload - or of each file in it, when it's a zip."""
+    import zipfile
+
+    if zipfile.is_zipfile(upload):
+        with zipfile.ZipFile(upload) as archive:
+            for info in archive.infolist():
+                name = Path(info.filename).name
+                if not info.is_dir() and name and not name.startswith("."):
+                    yield name, archive.read(info)
+    else:
+        yield upload.name, upload.read_bytes()
+
+
+def _write(target: Path, data: bytes) -> Path:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    part = target.with_name(f".{target.name}.part")
+    part.write_bytes(data)
+    part.replace(target)
+    return target
+
+
+def _keys_name(name: str, data: bytes) -> str | None:
+    text = data[:200_000].decode(errors="replace").lower()
+    if "header_key" in text or "master_key" in text or name.lower() == "prod.keys":
+        return "prod.keys"
+    if name.lower() == "title.keys" or (text.strip() and all(
+            len(line.split("=")[0].strip()) == 32 for line in text.splitlines() if line.strip())):
+        return "title.keys"
+    return None
+
+
+def place(paths: EmulationPaths, kind: str, upload: Path) -> tuple[bool, str, list[Path]]:
+    """Put an uploaded BIOS (or zip of them) where its emulator looks, under the right name.
+
+    (ok, what happened - for the person uploading, the files written). The upload is removed.
+    """
+    import zipfile
+
+    written: list[Path] = []
+    notes: list[str] = []
+    try:
+        members = list(_members(upload))
+    except (OSError, zipfile.BadZipFile) as exc:
+        upload.unlink(missing_ok=True)
+        return False, f"could not read it: {exc}", []
+    upload.unlink(missing_ok=True)
+    bios = paths.bios
+    if kind == "ps2":
+        for name, data in members:
+            written.append(_write(bios / PS2_BIOS_DIR / name, data))
+        notes.append(f"{len(written)} file(s) in bios/{PS2_BIOS_DIR}")
+    elif kind == "switch-keys":
+        for name, data in members:
+            target = _keys_name(name, data)
+            if target:
+                written.append(_write(bios / SWITCH_DIR / target, data))
+                notes.append(f"saved as {target}")
+        if not written:
+            return False, "no Switch keys in it (prod.keys / title.keys)", []
+    elif kind == "switch-firmware":
+        for name, data in members:
+            if name.lower().endswith(".nca"):
+                written.append(_write(bios / SWITCH_DIR / "firmware" / name, data))
+        if not written:
+            return False, "no firmware (.nca) files in it", []
+        notes.append(f"{len(written)} firmware files")
+    elif kind in REQUIREMENTS and REQUIREMENTS[kind].files:
+        req = REQUIREMENTS[kind]
+        by_md5 = {md5: name for name, md5 in req.files.items() if md5}
+        accepted = {Path(name).name.lower(): name for name in req.files}
+        loose = len(members) == 1  # a single file is surely meant as this BIOS
+        for name, data in members:
+            known = by_md5.get(hashlib.md5(data, usedforsecurity=False).hexdigest())
+            if known:
+                written.append(_write(bios / known, data))
+                notes.append(f"saved as {known} (known good)")
+            elif name.lower() in accepted:
+                written.append(_write(bios / accepted[name.lower()], data))
+                notes.append(f"saved as {accepted[name.lower()]} (unknown version - may still work)")
+            elif loose:
+                first = next(iter(req.files))
+                existing = bios / first
+                if existing.is_file() and by_md5.get(_md5(existing)):
+                    return False, f"not saved: you already have a known good {first}", []
+                written.append(_write(existing, data))
+                notes.append(f"saved as {first} (unknown version - may still work)")
+        if not written:
+            return False, f"no {UPLOAD_KINDS.get(kind, kind)} in it", []
+    else:
+        return False, "unknown kind of BIOS", []
+    return True, "; ".join(notes), written
