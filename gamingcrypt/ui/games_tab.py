@@ -144,6 +144,10 @@ class GamesHome(QWidget):
         self.recent_card = SourceCard("Recently played", "Your last 10 games")
         self.recent_card.tapped.connect(tab.open_recent)
         sources.addWidget(self.recent_card)
+        self.add_card = SourceCard("⬆ Add games", "Games, cores and BIOS over Wi-Fi")
+        self.add_card.tapped.connect(tab.open_upload)
+        self.add_card.setVisible(tab.emulation is not None)
+        sources.addWidget(self.add_card)
         sources.addStretch()
         self.sources_row = sources
         self.system_cards: dict[str, SourceCard] = {}  # emulated systems with games
@@ -189,7 +193,7 @@ class GamesHome(QWidget):
             if card is None:
                 card = SourceCard(BY_ID[sid].name, "")
                 card.tapped.connect(lambda s=sid: self.tab.open_system(s))
-                self.sources_row.insertWidget(self.sources_row.count() - 1, card)
+                self.sources_row.insertWidget(self.sources_row.indexOf(self.add_card), card)
                 self.system_cards[sid] = card
             card.subtitle.setText(f"{len(games)} game{'s' if len(games) != 1 else ''}")
         self.apply_libraries()
@@ -199,7 +203,7 @@ class GamesHome(QWidget):
         hidden = set(self.tab.library_settings.get("hidden", []))
         for key, card in self.library_cards().items():
             card.setVisible(key not in hidden)
-        any_shown = any(key not in hidden for key in self.library_cards())
+        any_shown = any(key not in hidden for key in self.library_cards()) or self.add_card.isVisibleTo(self)
         searching = bool(self.search.text().strip())
         self.sources.setVisible(any_shown and not searching)
         self.sources_heading.setVisible(any_shown and not searching)
@@ -272,6 +276,7 @@ class GamesTab(QStackedWidget):
         self.emulation = EmulationPaths(emulation_root) if emulation_root else None
         self.roms: dict = {}  # system id -> games
         self.rom_launcher = None  # set by the app: RomGame -> (ok, message)
+        self.upload_page_factory = None  # tests: a stand-in upload page
         self.games: dict[int, SteamGame] = {}
         self._came_from: list = []
         from gamingcrypt.game_profiles import GameProfiles
@@ -374,6 +379,19 @@ class GamesTab(QStackedWidget):
         from gamingcrypt.ui.emulation_pages import SystemPage
 
         self.push(SystemPage(self, BY_ID[system_id], self.roms.get(system_id, [])))
+
+    def open_upload(self) -> None:
+        from gamingcrypt.ui.upload_page import UploadPage
+
+        if self.emulation is None:
+            return
+        page = (self.upload_page_factory or UploadPage)(self.emulation)
+        page.closed.connect(self._upload_closed)
+        self.push(page)
+
+    def _upload_closed(self) -> None:
+        self.back()
+        self.reload_roms()  # new games show up right away
 
     def open_rom(self, game) -> None:
         from gamingcrypt.ui.emulation_pages import RomGamePage

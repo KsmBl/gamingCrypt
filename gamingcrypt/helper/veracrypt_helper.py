@@ -417,11 +417,104 @@ def set_boot_next(args: list[str], run=subprocess.run, efibootmgr: str | None = 
     return result.returncode
 
 
+# --- SMB share of the Emulation folder, only while the upload page is open ---------------
+SMB_RUN = "/run/gamingcrypt-smb"
+SMB_SHARE = "GamingCrypt"
+SMB_TOOLS = {"smbd": ["/usr/bin/smbd", "/usr/sbin/smbd"], "smbpasswd": ["/usr/bin/smbpasswd", "/usr/sbin/smbpasswd"]}
+
+
+def _tool(name: str) -> str | None:
+    return next((p for p in SMB_TOOLS[name] if os.path.exists(p)), None)
+
+
+def smb_config(path: str, user: str, run_dir: str = SMB_RUN) -> str:
+    return f"""[global]
+server string = GamingCrypt
+workgroup = WORKGROUP
+security = user
+map to guest = never
+passdb backend = tdbsam:{run_dir}/passdb.tdb
+private dir = {run_dir}/private
+lock directory = {run_dir}/lock
+state directory = {run_dir}/state
+cache directory = {run_dir}/cache
+pid directory = {run_dir}
+ncalrpc dir = {run_dir}/ncalrpc
+log file = {run_dir}/log
+disable netbios = yes
+load printers = no
+printing = bsd
+printcap name = /dev/null
+[{SMB_SHARE}]
+path = {path}
+valid users = {user}
+force user = {user}
+read only = no
+create mask = 0644
+directory mask = 0755
+"""
+
+
+def smb_stop(run_dir: str = SMB_RUN, kill=os.kill) -> int:
+    try:
+        with open(os.path.join(run_dir, "smbd.pid")) as fh:
+            kill(int(fh.read().strip()), signal.SIGTERM)
+    except (OSError, ValueError):
+        pass
+    import shutil
+
+    shutil.rmtree(run_dir, ignore_errors=True)
+    return 0
+
+
+def smb_start(args: list[str], password: str, user_home: str | None, user_name: str | None,
+              run=subprocess.run, run_dir: str = SMB_RUN) -> int:
+    if len(args) != 1 or not user_home or not user_name:
+        print("Error: gamingcrypt helper: usage: smb-start <folder in your home>", file=sys.stderr)
+        return 2
+    folder = os.path.realpath(args[0])
+    home = os.path.realpath(user_home)
+    if not folder.startswith(home.rstrip("/") + "/") or not os.path.isdir(folder):
+        print("Error: gamingcrypt helper: only a folder inside your home can be shared", file=sys.stderr)
+        return 2
+    if not 8 <= len(password) <= 64 or "\n" in password:
+        print("Error: gamingcrypt helper: bad password", file=sys.stderr)
+        return 2
+    smbd, smbpasswd = _tool("smbd"), _tool("smbpasswd")
+    if smbd is None or smbpasswd is None:
+        print("Error: gamingcrypt helper: Samba is not installed (run ./install.sh)", file=sys.stderr)
+        return 2
+    smb_stop(run_dir)
+    for sub in ("private", "lock", "state", "cache", "ncalrpc"):
+        os.makedirs(os.path.join(run_dir, sub), mode=0o700, exist_ok=True)
+    conf = os.path.join(run_dir, "smb.conf")
+    with open(conf, "w") as fh:
+        fh.write(smb_config(folder, user_name, run_dir))
+    added = run([smbpasswd, "-c", conf, "-s", "-a", user_name], input=f"{password}\n{password}\n",
+                capture_output=True, text=True)
+    if added.returncode != 0:
+        print("Error: gamingcrypt helper: could not set the share password", file=sys.stderr)
+        smb_stop(run_dir)
+        return 2
+    started = run([smbd, "-s", conf, "-D"], capture_output=True, text=True)
+    if started.returncode != 0:
+        print("Error: gamingcrypt helper: Samba didn't start (is another Samba running?)", file=sys.stderr)
+        smb_stop(run_dir)
+        return 2
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if argv[:1] == ["power-limit"]:
         return set_power_limit(argv[1:])
     if argv[:1] == ["boot-next"]:
         return set_boot_next(argv[1:])
+    if argv[:1] == ["smb-stop"]:
+        return smb_stop()
+    if argv[:1] == ["smb-start"]:
+        uid, _gid, home = invoking_user()
+        name = pwd.getpwuid(uid).pw_name if uid is not None else None
+        return smb_start(argv[1:], sys.stdin.readline().rstrip("\n"), home, name)
     uid, gid, home = invoking_user()
     error = validate(argv, home, uid)
     if error:

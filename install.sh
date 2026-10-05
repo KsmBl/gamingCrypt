@@ -160,7 +160,8 @@ install_helper() {
     echo "    Allows: sudo -n $HELPER  (mount / list / create / change password of a volume,"
     echo "    always nosuid,nodev, only below /mnt, /media, /run/media or your home;"
     echo "    setting the power limit within the range the hardware reports,"
-    echo "    and choosing another installed system (e.g. Windows) for the next start)"
+    echo "    choosing another installed system (e.g. Windows) for the next start,"
+    echo "    and sharing the Emulation folder over SMB while the upload page is open)"
     if [[ -d /sys/firmware/efi ]] && ! command -v efibootmgr >/dev/null && command -v pacman >/dev/null; then
         sudo pacman -S --needed --noconfirm efibootmgr || warn "efibootmgr missing - no 'Restart into Windows'"
     fi
@@ -296,6 +297,14 @@ ask_boot_questions() {
     ask_other_os
 }
 
+install_sharing() {
+    # Settings -> add games over the network: Samba runs only while that page is open
+    command -v smbd >/dev/null && return 0
+    if command -v pacman >/dev/null; then
+        sudo pacman -S --needed --noconfirm samba >/dev/null || warn "could not install samba (network share)"
+    fi
+}
+
 install_overlay() {
     # performance overlay in the quick menu (gamescope --mangoapp)
     command -v mangoapp >/dev/null && return 0
@@ -417,6 +426,7 @@ if [[ $WITH_SUDO -eq 1 ]]; then
     install_fonts
     install_bluetooth
     install_overlay
+    install_sharing
     ask_boot_questions
     [[ $SESSION -eq 1 ]] && install_session
 else
