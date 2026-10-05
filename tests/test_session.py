@@ -22,7 +22,7 @@ esac
 
 def run_session(tmp_path, actions, extra_env=None, timeout=30):
     fake = tmp_path / "fake"
-    fake.mkdir()
+    fake.mkdir(parents=True)
     gamescope = fake / "gamescope"
     gamescope.write_text(FAKE_GAMESCOPE)
     gamescope.chmod(gamescope.stat().st_mode | stat.S_IEXEC)
@@ -30,7 +30,8 @@ def run_session(tmp_path, actions, extra_env=None, timeout=30):
                XDG_RUNTIME_DIR=str(tmp_path / "run"),
                XDG_CONFIG_HOME=str(tmp_path / "config"), FAKE_DIR=str(fake), FAKE_ACTIONS=actions,
                GC_GAMESCOPE=str(gamescope), GC_LAUNCHER="/opt/gamingcrypt",
-               GC_DESKTOP_EXEC=f'echo desktop >> "{fake}/calls"', GC_QUICK_EXIT_S="15")
+               GC_DESKTOP_EXEC=f'echo desktop >> "{fake}/calls"', GC_QUICK_EXIT_S="15",
+               GC_XPROP="no-such-xprop")  # no Steam mode (-e) unless a test asks for it
     env.update(extra_env or {})
     result = subprocess.run(["sh", str(SCRIPT)], env=env, timeout=timeout, capture_output=True, text=True)
     calls = (fake / "calls").read_text().splitlines()
@@ -69,6 +70,19 @@ def test_own_gamescope_options(tmp_path):
     (conf / "gamescope-args").write_text("-f -W 1280 -H 800 -r 60\n")
     code, calls = run_session(tmp_path, "exit0")
     assert "| -f -W 1280 -H 800 -r 60 -- /opt/gamingcrypt" in calls[0]
+
+
+def test_steam_mode_only_with_xprop(tmp_path):
+    """-e makes gamescope follow GamingCrypt's window order - which GamingCrypt sets via xprop."""
+    code, calls = run_session(tmp_path, "exit0", {"GC_XPROP": "sh"})
+    assert "| -e -f " in calls[0]
+    code, calls = run_session(tmp_path / "b", "exit0", {"GC_XPROP": "no-such-xprop"})
+    assert " -e " not in calls[0]
+    conf = tmp_path / "c" / "config" / "gamingcrypt"
+    conf.mkdir(parents=True)
+    (conf / "gamescope-args").write_text("--steam -f\n")
+    code, calls = run_session(tmp_path / "c", "exit0", {"GC_XPROP": "sh"})
+    assert "| --steam -f -- " in calls[0]  # not twice
 
 
 def test_installed_files_are_templated():

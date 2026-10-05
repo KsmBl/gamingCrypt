@@ -243,7 +243,15 @@ install_volume_keys() {
 
 install_session() {
     command -v gamescope >/dev/null || warn "gamescope is not installed (Arch: sudo pacman -S gamescope) - the session falls back to the desktop until it is"
-    command -v xprop >/dev/null || warn "xprop is missing (Arch: sudo pacman -S xorg-xprop) - needed to come back after Steam's Big Picture"
+    # xprop: GamingCrypt tells gamescope which window belongs in front (and sees Big Picture)
+    if ! command -v xprop >/dev/null; then
+        if command -v pacman >/dev/null; then
+            sudo pacman -S --needed --noconfirm xorg-xprop || true
+        elif command -v apt-get >/dev/null; then
+            sudo apt-get install -y x11-utils || true
+        fi
+        command -v xprop >/dev/null || warn "xprop is missing (Arch: xorg-xprop) - Steam windows may cover GamingCrypt in gaming mode"
+    fi
     # Inside gamescope Qt runs on X11 (xcb): ask its plugin what's missing
     local plugin missing
     plugin="$("$VENV/bin/python" -c 'import PySide6, os; print(os.path.join(os.path.dirname(PySide6.__file__), "Qt/plugins/platforms/libqxcb.so"))' 2>/dev/null)"

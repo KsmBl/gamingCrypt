@@ -407,8 +407,8 @@ def test_gamescope_focus_order(qtbot, monkeypatch):
     from gamingcrypt.system import gamescope_ctl as gs
 
     calls = []
-    monkeypatch.setattr(gs, "set_focus_order", lambda order: calls.append(order))
-    monkeypatch.setattr(gs, "set_window_appid", lambda wid: calls.append("appid"))
+    monkeypatch.setattr(gs, "set_focus_order", lambda order: calls.append(order) or True)
+    monkeypatch.setattr(gs, "set_window_appid", lambda wid: calls.append("appid") or True)
     window = MainWindow(_copy.deepcopy(DEFAULTS), lambda c: None)
     qtbot.addWidget(window)
     window.windowed = True
@@ -417,17 +417,20 @@ def test_gamescope_focus_order(qtbot, monkeypatch):
     monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
     window.hide()
     window.show()
-    assert calls == ["appid", [gs.LAUNCHER_APPID]]
+    L, S = gs.LAUNCHER_APPID, gs.BIG_PICTURE_APPID
+    assert calls == ["appid", [L, None, S]]
     window.game_watcher.appid = 620
     window.step_aside("game")
-    assert calls[-1] == [620, gs.LAUNCHER_APPID]
+    assert calls[-1] == [620, L, S]
     window.bring_to_front()  # e.g. the quick menu
-    assert calls[-1] == [gs.LAUNCHER_APPID]
+    assert calls[-1] == [L, 620, S]
     window.big_picture_opened()
-    assert calls[-1] == [gs.BIG_PICTURE_APPID, gs.LAUNCHER_APPID]
+    assert calls[-1] == [S, 620, L]
     window.big_picture.stop()
     window.minimize_for_steam()
-    assert calls[-1] == []  # a Steam dialog: gamescope picks
+    assert calls[-1] == [S, 620, L]  # a Steam dialog
+    # every order names all candidates: in Steam mode no match = black screen
+    assert all(L in c and S in c for c in calls if isinstance(c, list))
 
 
 def test_focus_order_xprop():

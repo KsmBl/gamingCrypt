@@ -125,14 +125,17 @@ class MainWindow(QMainWindow):
             return
         watcher = self.game_watcher
         game = watcher.appid if watcher.active else None
-        order = {"launcher": [gs.LAUNCHER_APPID],
-                 "game": [game, gs.LAUNCHER_APPID],
-                 "big_picture": [gs.BIG_PICTURE_APPID, gs.LAUNCHER_APPID]}.get(front, [])
+        # Every list ends with all candidates: in gamescope's Steam mode an order that
+        # matches no open window would leave the screen black.
+        launcher, steam = gs.LAUNCHER_APPID, gs.BIG_PICTURE_APPID
+        order = {"launcher": [launcher, game, steam],
+                 "game": [game, launcher, steam]}.get(front, [steam, game, launcher])
         log.info("gamescope focus: %s %s", front, order)
         # right away (a few ms): a hide + show in quick succession must not swap the order
-        if front == "launcher":
-            gs.set_window_appid(int(self.winId()))
-        gs.set_focus_order(order)
+        if front == "launcher" and not gs.set_window_appid(int(self.winId())):
+            log.warning("could not give the window its gamescope app id (xprop missing?)")
+        if not gs.set_focus_order(order):
+            log.warning("could not set gamescope's focus order (xprop missing?)")
 
     def start_volume_keys(self):
         """Gaming mode only: on a desktop the compositor already handles the volume buttons."""

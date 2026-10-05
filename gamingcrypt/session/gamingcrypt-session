@@ -50,6 +50,13 @@ while :; do
 	if [ -z "$GC_GAMESCOPE_ARGS" ] && [ -s "$CONF" ]; then
 		args=$(cat "$CONF")  # own options (Settings, or e.g. "-W 1280 -H 800")
 	fi
+	# Steam mode (-e): gamescope follows GamingCrypt's window priority (GamingCrypt in
+	# front, the game while playing, Steam's windows only when wanted). GamingCrypt sets
+	# it through xprop - without xprop its window couldn't be shown in this mode.
+	case " $args " in
+	*" -e "* | *" --steam "*) ;;
+	*) if command -v "${GC_XPROP:-xprop}" >/dev/null 2>&1; then args="-e $args"; fi ;;
+	esac
 	echo "$(date) gaming mode: gamescope $args" >>"$log"
 	start=$(date +%s)
 	# shellcheck disable=SC2086 - the args are meant to split
