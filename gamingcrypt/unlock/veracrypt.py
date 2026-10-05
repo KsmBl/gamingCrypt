@@ -187,6 +187,24 @@ class VeraCryptUnlocker:
                     pass
                 return
 
+    def dismount_command(self, force: bool = False) -> list[str]:
+        return self._base() + (["--force"] if force else []) + ["-d", self.volume]
+
+    def dismount(self) -> UnlockResult:
+        """Unmount the drive (panic lock). Forced when something still holds files on it."""
+        last = UnlockResult(False, "")
+        for force in (False, True):
+            try:
+                result = self.runner(self.dismount_command(force), capture_output=True, text=True, timeout=60,
+                                     stdin=subprocess.DEVNULL)
+            except (OSError, subprocess.SubprocessError) as exc:
+                return UnlockResult(False, f"Could not run VeraCrypt: {exc}")
+            output = f"{result.stdout or ''}\n{result.stderr or ''}"
+            if result.returncode == 0 and "error:" not in output.lower():
+                return UnlockResult(True, "Drive locked")
+            last = UnlockResult(False, explain_error(output))
+        return last
+
     def list_command(self) -> list[str]:
         return self._base() + ["--list", self.volume]
 

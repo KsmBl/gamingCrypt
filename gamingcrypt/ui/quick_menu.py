@@ -33,6 +33,7 @@ def _combo() -> QComboBox:
 class QuickMenu(QWidget):
     closed = Signal()
     force_quit = Signal(int)
+    lock_now = Signal()
 
     def __init__(self, parent: QWidget, system: SystemControls,
                  refresh_get: Callable[[], int] = gamescope_ctl.dynamic_refresh,
@@ -125,6 +126,11 @@ class QuickMenu(QWidget):
         self._disarm = QTimer(self)
         self._disarm.setSingleShot(True)
         self._disarm.timeout.connect(self._disarm_quit)
+        self.lock_button = big_button("🔒  Lock now")
+        self.lock_button.clicked.connect(self._lock)
+        self.box.addWidget(self.lock_button)
+        hint = _label("Shortcut: hold the Windows button and press Volume Down", "cardMeta")
+        self.box.addWidget(hint)
         self.status = _label("", "status")
         self.box.addWidget(self.status)
         self.box.addStretch()
@@ -278,6 +284,10 @@ class QuickMenu(QWidget):
         self.refresh.setCurrentIndex(max(0, self.refresh.findData(self.previous_refresh)))
         self.refresh.blockSignals(False)
         set_status(self.status, "Refresh rate reverted")
+
+    def _lock(self) -> None:
+        self.hide()
+        self.lock_now.emit()
 
     def _quit_tapped(self) -> None:
         if not self._quit_armed:

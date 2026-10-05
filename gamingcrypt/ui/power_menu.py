@@ -11,6 +11,7 @@ from gamingcrypt.ui.widgets import big_button, set_status
 class PowerMenu(QWidget):
     shutdown = Signal()
     sleep = Signal()
+    lock = Signal()
     restart = Signal()
     desktop = Signal()
     boot_into = Signal(str)  # UEFI entry of another system (e.g. Windows)
@@ -32,11 +33,13 @@ class PowerMenu(QWidget):
         box.addWidget(title)
         self.shutdown_button = big_button("⏻  Shut down", "danger")
         self.sleep_button = big_button("☾  Sleep")
+        self.lock_button = big_button("🔒  Lock now")
         self.restart_button = big_button("↻  Restart")
         self.desktop_button = big_button("🖥  Desktop mode")
         self.cancel_button = big_button("Cancel")
         self.system_buttons: dict[str, object] = {}
-        for button, signal in ((self.sleep_button, self.sleep), (self.shutdown_button, self.shutdown),
+        for button, signal in ((self.lock_button, self.lock), (self.sleep_button, self.sleep),
+                               (self.shutdown_button, self.shutdown),
                                (self.restart_button, self.restart),
                                (self.desktop_button, self.desktop)):
             button.clicked.connect(signal.emit)

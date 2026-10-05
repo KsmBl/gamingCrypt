@@ -26,7 +26,7 @@ SYS = "/sys"
 MIN_POWER_W = 3
 FS_OPTIONS = "--fs-options=nosuid,nodev"
 EXACT = {"--text", "--non-interactive", "--stdin", "--protect-hidden=no", "--mount", "--list", "-C",
-         "--random-source=/dev/urandom", FS_OPTIONS}
+         "--random-source=/dev/urandom", FS_OPTIONS, "-d", "--force"}
 PREFIXED = [
     re.compile(r"^--pim=\d{1,10}$"),
     re.compile(r"^--new-pim=\d{1,10}$"),
@@ -38,7 +38,7 @@ PREFIXED = [
 CREATE_EXACT = {"--create", "--volume-type=normal", "--encryption=AES", "--hash=SHA-512",
                 "--filesystem=ext4", "--quick", "--keyfiles="}
 CREATE_PREFIXED = [re.compile(r"^--size=\d{1,6}[MG]$")]
-OPERATIONS = {"--mount", "--list", "-C", "--create"}
+OPERATIONS = {"--mount", "--list", "-C", "--create", "-d"}
 MOUNT_ROOTS = ["/mnt", "/media", "/run/media"]
 
 
@@ -92,7 +92,7 @@ def validate(argv: list[str], user_home: str | None, user_uid: int | None = None
             positionals.append(arg)
     operations = [a for a in argv if a in OPERATIONS]
     if len(operations) != 1:
-        return "exactly one of --mount, --list, -C, --create is required"
+        return "exactly one of --mount, --list, -C, --create, -d is required"
     if len(positionals) < 1 or len(positionals) > 2:
         return "expected a volume and an optional mount point"
     op = operations[0]
@@ -109,6 +109,8 @@ def validate(argv: list[str], user_home: str | None, user_uid: int | None = None
         error = create_target_ok(positionals[0], user_home, user_uid)
         if error:
             return error
+    if "--force" in argv and op != "-d":
+        return "--force only allowed with -d (dismount)"
     if any(a.startswith(("--new-password=", "--new-pim=", "--new-keyfiles=")) for a in argv) and op != "-C":
         return "--new-password only allowed with -C"
     return None

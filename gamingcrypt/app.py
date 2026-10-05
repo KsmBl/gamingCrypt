@@ -22,7 +22,7 @@ from gamingcrypt.ui.lock_screen import LockScreen
 from gamingcrypt.ui.settings_tab import SettingsTab
 from gamingcrypt.ui.shell import Shell
 from gamingcrypt.ui.tasks import run_async
-from gamingcrypt.unlock.veracrypt import VeraCryptUnlocker
+from gamingcrypt.unlock.veracrypt import UnlockResult, VeraCryptUnlocker
 
 
 log = logging.getLogger("gamingcrypt.app")
@@ -210,7 +210,9 @@ class MainWindow(QMainWindow):
     def hardware_key(self, code: int) -> None:
         from gamingcrypt.input import evdev as e
 
-        if code in e.MENU_KEYS:
+        if code == e.PANIC_COMBO:
+            self.panic_lock()
+        elif code in e.MENU_KEYS:
             self.toggle_quick_menu()
         elif code == e.KEY_POWER:
             self.power_button()
@@ -336,6 +338,45 @@ class MainWindow(QMainWindow):
 
     battery_reader = staticmethod(read_battery)
 
+    def panic_lock(self) -> None:
+        """Lock now: end the game, close Steam, unmount the drive, show the lock screen -
+        the lock screen first, so nothing stays visible meanwhile."""
+        from gamingcrypt.steam import library_setup, running
+        from gamingcrypt.ui.widgets import set_status
+
+        if self.screen_name != "shell":
+            return
+        log.warning("panic lock")
+        games = self.shell.pages.get("Games") if self.shell is not None else None
+        service = getattr(games, "service", None)
+        unlocker = self.unlocker_factory(self.config["unlock"])
+        for overlay in (getattr(self, "quick_menu", None), self.sleep_lock, self.battery_warning):
+            if overlay is not None:
+                overlay.hide()
+        self.sleep_lock = None
+        self.game_watcher._stop()
+        self.launch_overlay.hide()
+        self.verifier = None
+        self.show_lock()
+        lock = self.stack.currentWidget()
+        set_status(lock.status, "Locking…")
+        if not self.isVisible():
+            self.bring_to_front()
+
+        def work():
+            for appid in running.running_appids():
+                running.force_quit(appid)
+            if service is not None:
+                library_setup.close_steam(service.client, timeout=20)
+            return unlocker.dismount()
+
+        def done(result) -> None:
+            if shiboken6.isValid(lock):
+                set_status(lock.status, "Locked" if result.success else f"Could not lock the drive: {result.message}",
+                           error=not result.success)
+
+        run_async(work, done, lambda exc: done(UnlockResult(False, str(exc))), owner=self)
+
     def warn_battery(self, percent: int) -> None:
         log.warning("battery at %s %%", percent)
         self.battery_warning.open(percent)
@@ -424,6 +465,7 @@ class MainWindow(QMainWindow):
             menu = self.quick_menu = QuickMenu(self, self.system, refresh_available=in_gaming_session())
             menu.closed.connect(self._quick_menu_closed)
             menu.force_quit.connect(self._force_quit)
+            menu.lock_now.connect(self.panic_lock)
         watcher = self.game_watcher
         appid = watcher.appid if watcher.active and watcher.phase in ("starting", "playing") else None
         if not self.isVisible() or self.isMinimized():
@@ -593,6 +635,9 @@ class MainWindow(QMainWindow):
 
     def power_action(self, kind: str) -> None:
         log.info("power action: %s", kind)
+        if kind == "lock":
+            self.panic_lock()
+            return
         if kind == "sleep":
             if self.shell is not None:
                 self.shell.power_menu.close_menu()

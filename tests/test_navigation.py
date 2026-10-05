@@ -454,8 +454,8 @@ def test_down_reaches_every_control_of_the_quick_menu(qtbot):
     qtbot.waitExposed(window)
     qtbot.wait(50)
     nav = GamepadNavigator(window)
-    assert walk_down(nav, 9) == [menu.back_button, menu.output, menu.input, menu.volume,
-                                 menu.brightness, menu.refresh, menu.quit_button]
+    assert walk_down(nav, 10) == [menu.back_button, menu.output, menu.input, menu.volume,
+                                  menu.brightness, menu.refresh, menu.quit_button, menu.lock_button]
 
 
 def test_highlighted_slider_is_clearly_visible(qtbot):

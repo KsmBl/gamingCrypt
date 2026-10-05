@@ -25,6 +25,7 @@ class VolumeKeys:
         self.open_device = open_device
         self.devices: list = []
         self.errors: list[str] = []
+        self.held: set[int] = set()  # Windows button currently down (for the panic combo)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -50,7 +51,12 @@ class VolumeKeys:
                     self.devices.remove(device)  # unplugged
                     continue
                 for ev_type, code, value in events:
+                    if ev_type == e.EV_KEY and code in e.MENU_KEYS:
+                        (self.held.add if value in (PRESS, REPEAT) else self.held.discard)(code)
                     if ev_type != e.EV_KEY or value not in (PRESS, REPEAT):
+                        continue
+                    if code == e.KEY_VOLUMEDOWN and value == PRESS and self.held:
+                        self.on_key(e.PANIC_COMBO)  # Windows + Volume Down: lock now
                         continue
                     if code in e.VOLUME_KEYS:
                         if code == e.KEY_MUTE and value == REPEAT:
