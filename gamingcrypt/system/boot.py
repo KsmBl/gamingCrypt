@@ -70,6 +70,17 @@ def other_systems(runner: Runner = subprocess.run,
     return [e for e in entries if e.active and e.on_disk and e.num != current]
 
 
+def chosen_systems(choice: str | None, lister: Callable[[], list[BootEntry]] = other_systems) -> list[BootEntry]:
+    """What install.sh asked: "none" (no second system - no button), one UEFI entry, or
+    not asked (None): every system found."""
+    if choice == "none":
+        return []
+    entries = lister()
+    if choice:
+        return [e for e in entries if e.num == choice.upper()]
+    return entries
+
+
 def reboot_into(entry: BootEntry, runner: Runner = subprocess.run, helper: str = DEFAULT_HELPER,
                 exists: Callable[[str], bool] | None = None) -> tuple[bool, str]:
     if not (exists or os.path.exists)(helper):

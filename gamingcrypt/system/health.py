@@ -136,7 +136,14 @@ class Health:
             return Check("Restart into Windows", False, "efibootmgr missing", "Install efibootmgr (or run ./install.sh)",
                          optional=True)
         if lister is None:
-            from gamingcrypt.system.boot import other_systems as lister
+            from gamingcrypt.config import load_config
+            from gamingcrypt.system.boot import chosen_systems
+
+            choice = load_config().get("system", {}).get("other_os")
+            if choice == "none":
+                return Check("Restart into Windows", True, "no second system (install.sh --boot-setup to change)",
+                             optional=True)
+            lister = lambda: chosen_systems(choice)  # noqa: E731
         systems = lister()
         return Check("Restart into Windows", True,
                      ", ".join(s.name for s in systems) if systems else "no other system found", optional=True)

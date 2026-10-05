@@ -9,6 +9,7 @@
 #                              (once installed, plain ./install.sh keeps it updated)
 #   ./install.sh --no-sudo     skip the VeraCrypt sudo helper (you can't mount then
 #                              unless VeraCrypt works without root for you)
+#   ./install.sh --boot-setup  ask the boot questions again (GRUB menu, second OS)
 #   ./install.sh --uninstall   remove everything except your config and cache
 set -euo pipefail
 
@@ -35,12 +36,14 @@ AUTOSTART=0
 SESSION=0
 WITH_SUDO=1
 UNINSTALL=0
+BOOT_SETUP=0
+GRUB_DEFAULT_FILE="${GC_GRUB_DEFAULT:-/etc/default/grub}"
 
 info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
-usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; }
 
 for arg in "$@"; do
     case "$arg" in
@@ -48,6 +51,7 @@ for arg in "$@"; do
         --session) SESSION=1 ;;
         --no-sudo) WITH_SUDO=0 ;;
         --uninstall) UNINSTALL=1 ;;
+        --boot-setup) BOOT_SETUP=1 ;;
         -h|--help) usage; exit 0 ;;
         *) usage; die "unknown option: $arg" ;;
     esac
@@ -213,6 +217,84 @@ install_fonts() {
     fi
 }
 
+# --- boot questions (only when someone answers them: a terminal) -----------------------
+interactive() { [[ -t 0 || ${GC_ASSUME_TTY:-0} == 1 ]]; }
+
+ask_yes_no() {  # ask_yes_no "question" -> 0 = yes
+    local answer
+    read -r -p "$1 [y/N] " answer || answer=""
+    [[ $answer =~ ^[YyJj] ]]
+}
+
+grub_mkconfig() {
+    local tool cfg
+    tool="$(command -v grub-mkconfig || command -v grub2-mkconfig || true)"
+    [[ -n $tool ]] || { warn "grub-mkconfig not found - run it yourself to apply GRUB_TIMEOUT"; return; }
+    for cfg in /boot/grub/grub.cfg /boot/grub2/grub.cfg; do
+        if sudo test -e "$cfg"; then
+            sudo "$tool" -o "$cfg" >/dev/null 2>&1 && info "GRUB updated: Linux starts right away" \
+                || warn "grub-mkconfig failed - GRUB_TIMEOUT is set but not applied yet"
+            return
+        fi
+    done
+    warn "grub.cfg not found - run grub-mkconfig yourself"
+}
+
+ask_grub_timeout() {
+    # No GRUB menu wait: Linux (GamingCrypt) starts at once; the other system is reached
+    # through "Restart into …" in GamingCrypt instead.
+    [[ -f $GRUB_DEFAULT_FILE ]] || return 0
+    local current declined="$APP_DIR/grub-timeout-declined"
+    current="$(sed -n 's/^GRUB_TIMEOUT=\(.*\)/\1/p' "$GRUB_DEFAULT_FILE" | tr -d '"' | tail -1)"
+    [[ $current == 0 ]] && return 0
+    [[ $BOOT_SETUP -eq 0 && -e $declined ]] && return 0
+    if ask_yes_no "Skip the GRUB boot menu so Linux starts right away (GRUB_TIMEOUT=${current:-?} -> 0)?"; then
+        if grep -q '^GRUB_TIMEOUT=' "$GRUB_DEFAULT_FILE"; then
+            sudo sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' "$GRUB_DEFAULT_FILE"
+        else
+            echo 'GRUB_TIMEOUT=0' | sudo tee -a "$GRUB_DEFAULT_FILE" >/dev/null
+        fi
+        rm -f "$declined"
+        grub_mkconfig
+    else
+        mkdir -p "$APP_DIR" && touch "$declined"  # don't ask on every update
+    fi
+}
+
+ask_other_os() {
+    # Which other system "Restart into …" offers - or none (then there's no such button).
+    local current entries choice i=0 nums=()
+    current="$("$VENV/bin/python" -c 'from gamingcrypt.config import load_config
+print(load_config().get("system", {}).get("other_os") or "")' 2>/dev/null || true)"
+    [[ $BOOT_SETUP -eq 0 && -n $current ]] && return 0
+    entries="$("$VENV/bin/python" -m gamingcrypt --list-boot-entries 2>/dev/null || true)"
+    if [[ -z $entries ]]; then
+        info "No second operating system found - no 'Restart into …' button"
+        "$VENV/bin/python" -m gamingcrypt --other-os none
+        return 0
+    fi
+    echo "Is there a second operating system to start from GamingCrypt (\"Restart into …\")?"
+    echo "    0) No"
+    while IFS=$'\t' read -r num name; do
+        i=$((i + 1)); nums+=("$num")
+        echo "    $i) $name (boot entry $num)"
+    done <<< "$entries"
+    read -r -p "Choose [0-$i]: " choice || choice=0
+    if [[ $choice =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= i )); then
+        "$VENV/bin/python" -m gamingcrypt --other-os "${nums[$((choice - 1))]}"
+        info "\"Restart into …\" starts boot entry ${nums[$((choice - 1))]}"
+    else
+        "$VENV/bin/python" -m gamingcrypt --other-os none
+        info "No second operating system - no 'Restart into …' button"
+    fi
+}
+
+ask_boot_questions() {
+    interactive || return 0
+    ask_grub_timeout
+    ask_other_os
+}
+
 install_input_rules() {
     # The virtual controller (calibration + button mapping) is created through /dev/uinput.
     if [[ -w /dev/uinput && -e $UDEV_RULE ]]; then
@@ -312,6 +394,7 @@ if [[ $WITH_SUDO -eq 1 ]]; then
     install_helper
     install_input_rules
     install_fonts
+    ask_boot_questions
     [[ $SESSION -eq 1 ]] && install_session
 else
     info "Skipping the sudo helper (--no-sudo)"

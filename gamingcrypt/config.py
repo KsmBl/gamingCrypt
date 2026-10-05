@@ -44,6 +44,9 @@ DEFAULTS: dict[str, Any] = {
         "power_button": "menu",
         # Set when the device didn't wake up from sleep: sleep is offered no more.
         "sleep_broken": False,
+        # Second operating system for "Restart into …" (asked by install.sh): a UEFI
+        # boot entry like "0000", "none", or None = every system found.
+        "other_os": None,
     },
     "input": {
         # Apply calibration + button mapping through a virtual controller.

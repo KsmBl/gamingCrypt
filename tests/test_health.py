@@ -98,3 +98,11 @@ def test_health_page_in_settings(qtbot):
     assert page.status.text() == "1 problem(s) found"
     page.recheck_button.click()
     qtbot.waitUntil(lambda: Fake.runs == 2)
+
+
+def test_second_os_answer_from_install_script(monkeypatch):
+    from gamingcrypt import config
+
+    monkeypatch.setattr(config, "load_config", lambda *a: {"system": {"other_os": "none"}})
+    check = healthy().other_system()
+    assert check.ok and "no second system" in check.detail

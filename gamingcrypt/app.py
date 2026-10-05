@@ -625,7 +625,9 @@ class MainWindow(QMainWindow):
             if shiboken6.isValid(target):
                 target.set_systems(entries)
 
-        run_async(self.systems_lister or boot.other_systems, done, lambda _e: None, owner=self)
+        choice = self.config.get("system", {}).get("other_os")  # asked by install.sh
+        lister = self.systems_lister or boot.other_systems
+        run_async(lambda: boot.chosen_systems(choice, lister), done, lambda _e: None, owner=self)
 
     systems_lister = None  # tests: a function returning the entries
 
@@ -884,6 +886,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--gaming-mode", action="store_true",
                         help="from the desktop: go back to gaming mode (ends the desktop session)")
     parser.add_argument("--volume-key-devices", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--list-boot-entries", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--other-os", metavar="ENTRY|none|auto", help=argparse.SUPPRESS)
     parser.add_argument("--diagnose", action="store_true",
                         help="print what GamingCrypt sees of Steam, your library and the volume")
     parser.add_argument("--volume-password", action="store_true",
@@ -894,6 +898,18 @@ def main(argv: list[str] | None = None) -> int:
     cfg = config_mod.load_config(cfg_path)
     if args.volume_password:
         return print_volume_password(cfg)
+    if args.list_boot_entries:  # install.sh: "Is there a second operating system?"
+        from gamingcrypt.system import boot
+
+        for entry in boot.other_systems():
+            print(f"{entry.num}\t{entry.name}")
+        return 0
+    if args.other_os is not None:  # install.sh saves the answer
+        value = args.other_os.strip().lower()
+        cfg.setdefault("system", {})["other_os"] = None if value == "auto" else ("none" if value == "none"
+                                                                               else value.upper())
+        config_mod.save_config(cfg, Path(cfg_path))
+        return 0
     if args.volume_key_devices:  # used by install.sh for its udev rule
         from gamingcrypt.input.evdev import find_volume_key_devices
 
