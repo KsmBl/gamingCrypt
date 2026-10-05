@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gamingcrypt"
-version = "0.6.1"
+version = "0.7.0"
 description = "Fullscreen touch UI for Linux gaming handhelds with a VeraCrypt-encrypted game drive"
 readme = "README.md"
 requires-python = ">=3.10"
