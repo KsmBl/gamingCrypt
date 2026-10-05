@@ -35,7 +35,8 @@ CODE_NAMES = {e.BTN_SOUTH: "BTN_SOUTH", e.BTN_EAST: "BTN_EAST", e.BTN_NORTH: "BT
 # value columns next to the drawing: left-hand controls left, right-hand ones right
 LEFT_ROWS = ["lt", "lb", "lstick", "l3", "dpad", "back"]
 RIGHT_ROWS = ["rt", "rb", "y", "x", "b", "a", "rstick", "r3", "start", "guide"]
-WIDTH, HEIGHT, OFFSET = 1500, 620, 250  # drawing size; the controller sits at OFFSET
+WIDTH, HEIGHT, COLUMN = 1680, 620, 420  # drawing size, width of the value columns
+OFFSET = (WIDTH - 1000) // 2  # the controller drawing (1000 wide) in the middle
 STICK_MAX = 32767
 TRIGGER_MAX = 255
 
@@ -117,11 +118,11 @@ class ControllerSchematic(QWidget):
         font = QFont(self.font())
         font.setPixelSize(24)
         p.setFont(font)
-        for rows, x, align in ((LEFT_ROWS, 0, Qt.AlignmentFlag.AlignRight), (RIGHT_ROWS, WIDTH - 330,
-                                                                             Qt.AlignmentFlag.AlignLeft)):
+        for rows, x, align in ((LEFT_ROWS, 0, Qt.AlignmentFlag.AlignRight),
+                               (RIGHT_ROWS, WIDTH - COLUMN, Qt.AlignmentFlag.AlignLeft)):
             for i, row in enumerate(rows):
                 p.setPen(accent if self.active(row) else QColor(theme.TEXT_DIM))
-                p.drawText(QRectF(x, 30 + i * 56, 330, 50), align | Qt.AlignmentFlag.AlignVCenter,
+                p.drawText(QRectF(x, 30 + i * 56, COLUMN, 50), align | Qt.AlignmentFlag.AlignVCenter,
                            self.value_text(row))
         p.translate(OFFSET, 0)
         # body
@@ -183,14 +184,22 @@ class ControllerSchematic(QWidget):
         p.end()
 
 
+HINT = "Press any button. Hold B for 1.5 seconds or tap Done to leave."
+TRIGGER_PICK = 128  # half-pressed trigger counts as "this one" when changing the layout
+
+
 class ControllerTestPage(QWidget):
     closed = Signal()
 
     def __init__(self, labels_for: Callable[[str], dict[str, str]] | None = None,
-                 systems: list[tuple[str, str]] | None = None, parent: QWidget | None = None):
+                 systems: list[tuple[str, str]] | None = None, parent: QWidget | None = None,
+                 layout_store=None):
         super().__init__(parent)
         self.state = ControllerState()
         self.labels_for = labels_for
+        self.store = layout_store  # choices(system) / set(system, button, name or None) / reset(system)
+        self.editing: str | None = None  # "pick": waiting for a button, "choose": picking its meaning
+        self.picked: str | None = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 16, 30, 16)
         top = QHBoxLayout()
@@ -205,25 +214,89 @@ class ControllerTestPage(QWidget):
         self.system_combo.currentIndexChanged.connect(self._system_chosen)
         self.system_combo.setVisible(bool(systems))
         top.addWidget(self.system_combo)
+        self.edit_button = big_button("✎  Change layout")
+        self.edit_button.clicked.connect(self.start_edit)
+        self.edit_button.hide()
+        top.addWidget(self.edit_button)
+        self.reset_button = big_button("Default layout")
+        self.reset_button.clicked.connect(self.reset_layout)
+        self.reset_button.hide()
+        top.addWidget(self.reset_button)
         self.done_button = big_button("Done", "primary")
         self.done_button.clicked.connect(self.finish)
         top.addWidget(self.done_button)
         layout.addLayout(top)
         self.schematic = ControllerSchematic(self.state)
         layout.addWidget(self.schematic, 1)
-        hint = QLabel("Press any button. Hold B for 1.5 seconds or tap Done to leave.")
-        hint.setObjectName("cardMeta")
-        layout.addWidget(hint)
+        from gamingcrypt.ui.widgets import FlowLayout
+
+        self.choices_box = QWidget()
+        self.choices = FlowLayout(self.choices_box)
+        self.choices_box.hide()
+        layout.addWidget(self.choices_box)
+        self.hint = QLabel(HINT)
+        self.hint.setObjectName("cardMeta")
+        layout.addWidget(self.hint)
         self._b_down_at: float | None = None
         self.exit_timer = QTimer(self)
         self.exit_timer.setSingleShot(True)
         self.exit_timer.timeout.connect(self.finish)
         self.update_values()
 
+    @property
+    def system(self) -> str:
+        return self.system_combo.currentData() or ""
+
     def _system_chosen(self, _index: int) -> None:
-        system = self.system_combo.currentData()
+        self.cancel_edit()
+        self.refresh_labels()
+
+    def refresh_labels(self) -> None:
+        system = self.system
         self.schematic.labels = self.labels_for(system) if system and self.labels_for else {}
+        can_edit = bool(system) and self.store is not None
+        self.edit_button.setVisible(can_edit)
+        self.reset_button.setVisible(can_edit and bool(self.store.get(system)))
         self.update_values()
+
+    # changing the layout ----------------------------------------------------------------------
+    def start_edit(self) -> None:
+        self.editing, self.picked = "pick", None
+        self.hint.setText("Press the button you want to change…")
+
+    def _pick(self, button_id: str) -> None:
+        self.editing, self.picked = "choose", button_id
+        while self.choices.count():
+            item = self.choices.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        current = self.schematic.labels.get(button_id, "")
+        for name in self.store.choices(self.system):
+            choice = big_button(name, "primary" if name == current else "")
+            choice.clicked.connect(lambda _c=False, n=name: self.choose(n))
+            self.choices.addWidget(choice)
+        self.choices_box.show()
+        label = next(b[1] for b in BUTTONS if b[0] == button_id) if button_id not in ("lt", "rt") else \
+            button_id.upper()
+        self.hint.setText(f"What should {label} be in {self.system_combo.currentText()}? (D-pad + A, or tap)")
+        first = self.choices.itemAt(0)
+        if first is not None:
+            first.widget().setFocus()
+
+    def choose(self, name: str) -> None:
+        self.store.set(self.system, self.picked, name)
+        self.cancel_edit()
+        self.refresh_labels()
+
+    def reset_layout(self) -> None:
+        self.store.reset(self.system)
+        self.cancel_edit()
+        self.refresh_labels()
+
+    def cancel_edit(self) -> None:
+        self.editing, self.picked = None, None
+        self.choices_box.hide()
+        self.hint.setText(HINT)
 
     def showEvent(self, event) -> None:  # noqa: N802 - Qt API
         if self.on_event not in navigator.LISTENERS:
@@ -238,6 +311,18 @@ class ControllerTestPage(QWidget):
 
     def on_event(self, ev_type: int, code: int, value: int) -> bool:
         self.state.feed(ev_type, code, value)
+        if self.editing == "choose":
+            self.schematic.update()
+            return False  # the controller picks among the choices now
+        if self.editing == "pick":
+            picked = None
+            if ev_type == e.EV_KEY and value == 1:
+                picked = next((b[0] for b in BUTTONS if b[2] == code), None)
+            elif ev_type == e.EV_ABS and code in (e.ABS_Z, e.ABS_RZ) and value >= TRIGGER_PICK:
+                picked = "lt" if code == e.ABS_Z else "rt"
+            if picked is not None:
+                self._pick(picked)
+                return True
         if ev_type == e.EV_KEY and code == e.BTN_EAST:
             if value:
                 self._b_down_at = time.monotonic()

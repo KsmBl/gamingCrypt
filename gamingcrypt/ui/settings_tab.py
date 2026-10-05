@@ -261,8 +261,35 @@ class SettingsTab(QStackedWidget):
         self.setCurrentWidget(page)
 
     def controller_test_options(self) -> dict:
-        """Per-system button meanings (emulators) - filled in once systems exist."""
-        return {}
+        """Per-system button meanings and layouts (emulated systems)."""
+        from gamingcrypt.emulation import layouts
+        from gamingcrypt.emulation.systems import SYSTEMS
+
+        config, save = self.config, self.save
+
+        class Store:
+            def choices(self, system: str) -> list[str]:
+                return list(layouts.console(system))
+
+            def get(self, system: str) -> dict:
+                return layouts.load(config, system)
+
+            def set(self, system: str, button: str, name: str | None) -> None:
+                custom = layouts.load(config, system)
+                default = layouts.labels(system).get(button)
+                if name is None or name == default:
+                    custom.pop(button, None)
+                else:
+                    custom[button] = name
+                layouts.save(config, system, custom)
+                save(config)
+
+            def reset(self, system: str) -> None:
+                layouts.save(config, system, {})
+                save(config)
+
+        return {"labels_for": lambda system: layouts.labels(system, layouts.load(config, system)),
+                "systems": [(s.id, s.name) for s in SYSTEMS], "layout_store": Store()}
 
     def _libraries_section(self) -> QWidget:
         """Which libraries the Games tab shows."""

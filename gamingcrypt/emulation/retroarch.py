@@ -62,7 +62,7 @@ def write_config(paths: EmulationPaths, extra: dict[str, str] | None = None) -> 
         "video_fullscreen": "true", "pause_nonactive": "false", "config_save_on_exit": "false",
         "network_cmd_enable": "true", "network_cmd_port": str(COMMAND_PORT),
         "input_autodetect_enable": "true", "input_menu_toggle_gamepad_combo": "2",  # L3 + R3: RetroArch menu
-        "savestate_auto_index": "false", "menu_driver": "ozone",
+        "savestate_auto_index": "false", "menu_driver": "ozone", "auto_remaps_enable": "true",
         "input_remapping_directory": paths.config / "remaps",
     }
     settings.update(extra or {})
@@ -87,7 +87,8 @@ def command(game: RomGame, core: Path, config: Path, reaper_path: Path) -> list[
 
 
 def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, core_name: str | None = None,
-           popen=subprocess.Popen, which: Callable[[str], str | None] = shutil.which) -> tuple[bool, str]:
+           popen=subprocess.Popen, which: Callable[[str], str | None] = shutil.which,
+           layout: dict[str, str] | None = None) -> tuple[bool, str]:
     if not available(which):
         return False, "RetroArch isn't installed - run ./install.sh"
     core = find_core(paths, game.system, core_name)
@@ -96,6 +97,9 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
         return False, (f"No RetroArch core for {game.system.name} yet - add e.g. {wanted}_libretro.so "
                        "to the cores folder (⬆ Add games)")
     config = write_config(paths)
+    from gamingcrypt.emulation import layouts
+
+    layouts.write_remap(paths.config / "remaps", core.name, game.system.id, layout or {})  # the system's layout
     log_dir.mkdir(parents=True, exist_ok=True)
     try:
         with open(log_dir / "retroarch.log", "ab") as log:

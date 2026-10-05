@@ -119,7 +119,7 @@ def test_play_and_quick_menu_states(qtbot, emu, monkeypatch, tmp_path):
         return dict(pages)
 
     launched = []
-    monkeypatch.setattr(retroarch, "launch", lambda game, paths, data, logs, core=None:
+    monkeypatch.setattr(retroarch, "launch", lambda game, paths, data, logs, core=None, layout=None:
                         launched.append((game.name, core)) or (True, f"Starting {game.name}…"))
     sent = []
     monkeypatch.setattr(retroarch, "send", lambda text: sent.append(text) or True)

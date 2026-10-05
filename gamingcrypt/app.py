@@ -655,8 +655,11 @@ class MainWindow(QMainWindow):
         paths = getattr(games, "emulation", None)
         if paths is None:
             return False, "The games drive isn't unlocked"
+        from gamingcrypt.emulation import layouts
+
         core = self.game_profiles.get(game.appid).get("core")
-        ok, message = retroarch.launch(game, paths, data_dir(), config_mod.cache_dir() / "logs", core)
+        ok, message = retroarch.launch(game, paths, data_dir(), config_mod.cache_dir() / "logs", core,
+                                       layout=layouts.load(self.config, game.system.id))
         if ok:
             log.info("starting %s (%s) with RetroArch", game.name, game.system.id)
             self.game_launched(game.appid)
