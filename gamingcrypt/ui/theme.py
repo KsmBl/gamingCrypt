@@ -28,9 +28,11 @@ QLabel#detailTitle {{ font-size: 36px; font-weight: 700; }}
 QLabel#detailMeta {{ font-size: 20px; color: {TEXT_DIM}; }}
 QPushButton {{
     background: {SURFACE_HI};
-    border: none;
+    /* The focus frame is always there, just invisible: Qt sizes a button without its
+       border, so a frame that only appears on focus ate the text's room ("Detail"). */
+    border: 4px solid transparent;
     border-radius: 14px;
-    padding: 14px 26px;
+    padding: 10px 22px;
     min-height: 40px;
     font-size: 22px;
 }}
@@ -40,11 +42,12 @@ QPushButton:disabled {{ color: {TEXT_DIM}; background: {SURFACE}; }}
 QPushButton#primary {{ background: {ACCENT}; font-weight: 700; }}
 QPushButton#primary:pressed {{ background: {ACCENT_HI}; }}
 QPushButton#danger {{ background: {DANGER}; font-weight: 700; }}
-QPushButton#key {{ padding: 6px; min-height: 52px; min-width: 52px; font-size: 22px; }}
+QPushButton#key {{ padding: 2px; min-height: 52px; min-width: 52px; font-size: 22px; }}
 QPushButton#pinKey {{ min-height: 72px; min-width: 96px; font-size: 32px; border-radius: 40px; }}
 QPushButton#tab {{
     background: transparent;
     border-radius: 0;
+    border: none;
     border-bottom: 4px solid transparent;
     padding: 18px 22px;
     font-size: 24px;
