@@ -92,6 +92,17 @@ check_tools() {
         || warn "Steam not found - install it to play, download and uninstall games"
 }
 
+record_whats_new() {
+    # GamingCrypt shows "What's new" once: the commit titles since the last install.
+    local new old
+    new="$(git -C "$SRC_DIR" rev-parse HEAD 2>/dev/null)" || return 0
+    old="$(cat "$APP_DIR/installed-commit" 2>/dev/null)"
+    if [[ -n $old && $old != "$new" ]] && git -C "$SRC_DIR" cat-file -e "$old^{commit}" 2>/dev/null; then
+        git -C "$SRC_DIR" log --no-merges --format=%s "$old..$new" >> "$APP_DIR/whats-new.txt"
+    fi
+    echo "$new" > "$APP_DIR/installed-commit"
+}
+
 install_app() {
     info "Creating virtual environment in $VENV"
     mkdir -p "$APP_DIR"
@@ -99,6 +110,7 @@ install_app() {
     python3 -m venv --system-site-packages "$VENV"
     info "Installing GamingCrypt and its dependencies"
     "$VENV/bin/python" -m pip install --quiet --upgrade "$SRC_DIR"
+    record_whats_new
 
     info "Creating launcher $LAUNCHER"
     mkdir -p "$BIN_DIR"

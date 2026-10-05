@@ -585,6 +585,10 @@ class MainWindow(QMainWindow):
             return self.sleep_lock
         if self.battery_warning.isVisible():
             return self.battery_warning
+        for name in ("tour", "whats_new"):
+            overlay = getattr(self, name, None)
+            if overlay is not None and overlay.isVisible():
+                return overlay
         confirm = getattr(self, "display_confirm", None)
         if confirm is not None and confirm.isVisible():
             return confirm
@@ -609,6 +613,10 @@ class MainWindow(QMainWindow):
             self.sleep_lock.setGeometry(self.rect())
         if self.battery_warning.isVisible():
             self.battery_warning.setGeometry(self.rect())
+        for name in ("tour", "whats_new"):
+            overlay = getattr(self, name, None)
+            if overlay is not None and overlay.isVisible():
+                overlay.setGeometry(self.rect())
 
     def closeEvent(self, event):  # noqa: N802
         current = self.stack.currentWidget()
@@ -668,6 +676,37 @@ class MainWindow(QMainWindow):
         self.load_other_systems(self.shell.power_menu)
         self._replace(self.shell)
         self.screen_name = "shell"
+        if self.welcome_enabled:
+            QTimer.singleShot(0, self.show_welcome)
+
+    # first start: tour; after an update: what's new ---------------------------------------
+    welcome_enabled = True  # tests switch it off
+
+    def show_welcome(self) -> None:
+        from gamingcrypt.ui.tour import Tour
+
+        if self.config.get("tour_done"):
+            self.show_news()
+            return
+        self.tour = Tour(self)
+        self.tour.finished.connect(self._tour_done)
+        self.tour.open()
+
+    def _tour_done(self) -> None:
+        self.config["tour_done"] = True
+        self.save(self.config)
+        self.show_news()
+
+    def show_news(self) -> None:
+        from gamingcrypt.ui.tour import WhatsNew, mark_news_read, news_file, read_news
+
+        path = news_file()
+        lines = read_news(path)
+        if not lines:
+            return
+        self.whats_new = WhatsNew(self)
+        self.whats_new.closed.connect(lambda: mark_news_read(path))
+        self.whats_new.open_news(lines)
 
 
 SOCKET_NAME = f"gamingcrypt-{os.getuid()}"

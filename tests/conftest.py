@@ -100,3 +100,11 @@ def no_real_battery(monkeypatch):
     from gamingcrypt.app import MainWindow
 
     monkeypatch.setattr(MainWindow, "battery_reader", staticmethod(lambda: None))
+
+
+@pytest.fixture(autouse=True)
+def no_welcome_screens(monkeypatch):
+    """The first-start tour would cover every other UI test."""
+    from gamingcrypt.app import MainWindow
+
+    monkeypatch.setattr(MainWindow, "welcome_enabled", False)
