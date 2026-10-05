@@ -96,7 +96,7 @@ record_whats_new() {
     # GamingCrypt shows "What's new" once: the commit titles since the last install.
     local new old
     new="$(git -C "$SRC_DIR" rev-parse HEAD 2>/dev/null)" || return 0
-    old="$(cat "$APP_DIR/installed-commit" 2>/dev/null)"
+    old="$(cat "$APP_DIR/installed-commit" 2>/dev/null || true)"
     if [[ -n $old && $old != "$new" ]] && git -C "$SRC_DIR" cat-file -e "$old^{commit}" 2>/dev/null; then
         git -C "$SRC_DIR" log --no-merges --format=%s "$old..$new" >> "$APP_DIR/whats-new.txt"
     fi

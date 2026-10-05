@@ -90,9 +90,11 @@ def test_install_script_records_the_changes(tmp_path):
     git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "first")
     function = subprocess.run(["sed", "-n", "/^record_whats_new()/,/^}/p", str(ROOT / "install.sh")],
                               capture_output=True, text=True).stdout
-    run = lambda: subprocess.run(["bash", "-c", f'{function}\nSRC_DIR="{repo}" APP_DIR="{app_dir}" record_whats_new'],  # noqa
-                                 check=True)
-    run()  # first install: nothing is "new"
+    # with install.sh's own strictness: a failing step aborts the whole install
+    run = lambda: subprocess.run(["bash", "-c", f'set -euo pipefail\n{function}\n'  # noqa
+                                  f'SRC_DIR="{repo}" APP_DIR="{app_dir}" record_whats_new\necho done'],
+                                 check=True, capture_output=True, text=True).stdout
+    assert run() == "done\n"  # first install (no installed-commit yet) must not abort install.sh
     assert not (app_dir / "whats-new.txt").exists()
     git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "Sleep on the power button")
     git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "Health page")
