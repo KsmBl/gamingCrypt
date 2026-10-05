@@ -169,11 +169,11 @@ def _body(shape: str) -> QPainterPath:
     return body
 
 
-def paint(painter: QPainter, pic: Picture) -> None:
+def paint(painter: QPainter, pic: Picture, body: str = theme.SURFACE_HI, outline: str = theme.TEXT_DIM) -> None:
     """The controller's body, D-pad, sticks and screen (the buttons are widgets)."""
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setPen(QPen(QColor(theme.TEXT_DIM), 3))
-    painter.setBrush(QColor(theme.SURFACE_HI))
+    painter.setPen(QPen(QColor(outline), 3))
+    painter.setBrush(QColor(body))
     painter.drawPath(_body(pic.body))
     painter.setPen(Qt.PenStyle.NoPen)
     if pic.screen:

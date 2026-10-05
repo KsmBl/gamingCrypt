@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from PySide6.QtCore import QPoint, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
-from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QVBoxLayout, QWidget
 
 from gamingcrypt.steam.models import SteamGame
 from gamingcrypt.steam.webapi import format_price
@@ -144,20 +144,66 @@ class GameCard(Tappable):
 
 
 class SourceCard(Tappable):
-    """Big entry tile for a game source (Steam now, more later)."""
+    """Big entry tile for a library (Steam, Favorites, an emulated system …), with a small
+    picture of it on the right."""
 
-    def __init__(self, name: str, subtitle: str = "", parent: QWidget | None = None):
+    WIDTH, HEIGHT = 320, 180
+    COMPACT_WIDTH, COMPACT_HEIGHT = 220, 150  # many libraries: five per row
+
+    def __init__(self, name: str, subtitle: str = "", parent: QWidget | None = None, icon=None):
         super().__init__(parent)
         self.setObjectName("card")
-        self.setFixedHeight(180)
-        self.setMinimumWidth(320)  # wider when the row has room (FlowLayout stretch)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 20, 24, 20)
+        self.icon_painter = icon  # (width, height) -> QPixmap
+        self.compact = False
+        self.setFixedHeight(self.HEIGHT)
+        self.setMinimumWidth(self.WIDTH)  # wider when the row has room (FlowLayout stretch)
+        self.grid = QGridLayout(self)
+        self.grid.setContentsMargins(24, 20, 20, 20)
         self.title = QLabel(name)
         self.title.setObjectName("sourceTitle")
         self.title.setWordWrap(True)  # "Recently played" must fit
-        layout.addWidget(self.title)
-        layout.addStretch()
         self.subtitle = QLabel(subtitle)
         self.subtitle.setObjectName("cardMeta")
-        layout.addWidget(self.subtitle)
+        self.icon = QLabel()
+        self._arrange()
+
+    def _arrange(self) -> None:
+        """Big card: title left, picture bottom right. Small card (five per row): the picture
+        on top, then the title - the text gets the whole width."""
+        for widget in (self.title, self.subtitle, self.icon):
+            self.grid.removeWidget(widget)
+        for row in range(4):
+            self.grid.setRowStretch(row, 0)
+        right = Qt.AlignmentFlag.AlignRight
+        if self.compact:
+            self.grid.setContentsMargins(18, 14, 16, 14)
+            self.grid.addWidget(self.icon, 0, 0, alignment=right | Qt.AlignmentFlag.AlignTop)
+            self.grid.addWidget(self.title, 1, 0)
+            self.grid.setRowStretch(2, 1)
+            self.grid.addWidget(self.subtitle, 3, 0)
+        else:
+            self.grid.setContentsMargins(24, 20, 20, 20)
+            self.grid.addWidget(self.title, 0, 0)
+            self.grid.setRowStretch(1, 1)
+            self.grid.addWidget(self.subtitle, 2, 0)
+            self.grid.addWidget(self.icon, 0, 1, 3, 1, alignment=right | Qt.AlignmentFlag.AlignBottom)
+        self.title.setObjectName("cardTitle" if self.compact else "sourceTitle")
+        self.title.style().unpolish(self.title)
+        self.title.style().polish(self.title)
+        self._paint_icon()
+
+    def _paint_icon(self) -> None:
+        if self.icon_painter is None:
+            self.icon.hide()
+            return
+        w, h = (56, 36) if self.compact else (96, 64)
+        self.icon.setPixmap(self.icon_painter(w, h))
+        self.icon.show()
+
+    def set_compact(self, compact: bool) -> None:
+        if compact == self.compact:
+            return
+        self.compact = compact
+        self.setFixedHeight(self.COMPACT_HEIGHT if compact else self.HEIGHT)
+        self.setMinimumWidth(self.COMPACT_WIDTH if compact else self.WIDTH)
+        self._arrange()

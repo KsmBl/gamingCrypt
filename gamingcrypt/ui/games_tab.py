@@ -119,6 +119,9 @@ class ContinueCard(QFrame):
             self.tab.open_game(self.game.appid)
 
 
+COMPACT_FROM = 9  # more library cards than this: the small ones
+
+
 def last_played(games: list[SteamGame], roms: list | None = None):
     """The game played last: installed Steam games and emulated ones."""
     played = [g for g in games if g.installed and g.last_played] + [r for r in roms or [] if r.last_played]
@@ -166,13 +169,15 @@ class GamesHome(QWidget):
         self.content_layout.addWidget(self.sources_heading)
         self.sources = QWidget()
         sources = FlowLayout(self.sources, stretch=True)  # wraps: one card per emulated system can be many
-        self.favorites_card = SourceCard("Favorites", "Your starred games")
+        from gamingcrypt.ui import library_icons as icons
+
+        self.favorites_card = SourceCard("Favorites", "Your starred games", icon=lambda w, h: icons.star(h))
         self.favorites_card.tapped.connect(tab.open_favorites)
         sources.addWidget(self.favorites_card)
-        self.steam_card = SourceCard("Steam", "Your Steam library")
+        self.steam_card = SourceCard("Steam", "Your Steam library", icon=lambda w, h: icons.steam(h))
         self.steam_card.tapped.connect(tab.open_steam)
         sources.addWidget(self.steam_card)
-        self.recent_card = SourceCard("Recently played", "Your last 10 games")
+        self.recent_card = SourceCard("Recently played", "Your last 10 games", icon=lambda w, h: icons.clock(h))
         self.recent_card.tapped.connect(tab.open_recent)
         sources.addWidget(self.recent_card)
         self.add_card = SourceCard("⬆ Add ROMs", "Emulator games, cores, BIOS · over Wi-Fi")
@@ -223,7 +228,9 @@ class GamesHome(QWidget):
         for sid, games in found.items():
             card = self.system_cards.get(sid)
             if card is None:
-                card = SourceCard(short_name(sid), "")
+                from gamingcrypt.ui import library_icons as icons
+
+                card = SourceCard(short_name(sid), "", icon=lambda w, h, s=sid: icons.console(s, w, h))
                 card.tapped.connect(lambda s=sid: self.tab.open_system(s))
                 self.system_cards[sid] = card
             card.subtitle.setText(f"{len(games)} game{'s' if len(games) != 1 else ''}")
@@ -242,6 +249,9 @@ class GamesHome(QWidget):
         for key, card in self.library_cards().items():
             card.setVisible(key not in hidden)
         any_shown = any(key not in hidden for key in self.library_cards()) or self.add_card.isVisibleTo(self)
+        shown = sum(key not in hidden for key in self.library_cards()) + (not self.add_card.isHidden())
+        for card in [*self.library_cards().values(), self.add_card]:
+            card.set_compact(shown > COMPACT_FROM)  # many libraries: smaller cards, five per row
         searching = bool(self.search.text().strip())
         self.sources.setVisible(any_shown and not searching)
         self.sources_heading.setVisible(any_shown and not searching)

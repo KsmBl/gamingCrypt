@@ -148,7 +148,9 @@ class FlowLayout(QLayout):
         items = [i for i in self._items if not (i.widget() and i.widget().isHidden())]
         if not items:
             return area.y()
-        base = max(max(i.sizeHint().width(), i.minimumSize().width()) for i in items)
+        # the cards' own minimum width (set for this) - not the text-driven size hint
+        base = max((i.widget().minimumWidth() if i.widget() and i.widget().minimumWidth() else i.sizeHint().width())
+                   for i in items)
         height = max(i.sizeHint().height() for i in items)
         spacing, width = self._spacing, max(area.width(), 1)
         # fewer items than fit in a row: they keep (about) their size and start left
