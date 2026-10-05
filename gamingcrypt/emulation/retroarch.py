@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Callable
 
 from gamingcrypt.emulation.library import EmulationPaths, RomGame
+from gamingcrypt.input import evdev
 from gamingcrypt.emulation.systems import System
 
 COMMAND_PORT = 55355
@@ -53,6 +54,31 @@ def find_core(paths: EmulationPaths, system: System, wanted: str | None = None) 
     return next((cores[c] for c in system.cores if c in cores), None)
 
 
+VIRTUAL_PAD = evdev.VIRTUAL_NAME  # what games see while the remapper runs
+# RetroArch's udev numbering for an Xbox 360 layout pad (the virtual one and xpad devices)
+PAD_BINDS = {
+    "input_b_btn": "0", "input_a_btn": "1", "input_y_btn": "2", "input_x_btn": "3", "input_l_btn": "4",
+    "input_r_btn": "5", "input_select_btn": "6", "input_start_btn": "7", "input_l3_btn": "9", "input_r3_btn": "10",
+    "input_up_btn": "h0up", "input_down_btn": "h0down", "input_left_btn": "h0left", "input_right_btn": "h0right",
+    "input_l2_axis": "+2", "input_r2_axis": "+5",
+    "input_l_x_plus_axis": "+0", "input_l_x_minus_axis": "-0", "input_l_y_plus_axis": "+1",
+    "input_l_y_minus_axis": "-1", "input_r_x_plus_axis": "+3", "input_r_x_minus_axis": "-3",
+    "input_r_y_plus_axis": "+4", "input_r_y_minus_axis": "-4",
+}
+PADS = (VIRTUAL_PAD, "Microsoft X-Box 360 pad")
+
+
+def write_autoconfig(folder: Path) -> Path:
+    """Controller profiles, so RetroArch knows the buttons (no autoconfig package needed)."""
+    udev = folder / "udev"
+    udev.mkdir(parents=True, exist_ok=True)
+    for name in PADS:
+        lines = {"input_driver": "udev", "input_device": name, "input_vendor_id": "1118",
+                 "input_product_id": "654", **PAD_BINDS}
+        (udev / f"{name}.cfg").write_text("".join(f'{k} = "{v}"\n' for k, v in lines.items()))
+    return folder
+
+
 def write_config(paths: EmulationPaths, extra: dict[str, str] | None = None) -> Path:
     """Settings GamingCrypt needs on top of the user's RetroArch config."""
     settings = {
@@ -64,6 +90,9 @@ def write_config(paths: EmulationPaths, extra: dict[str, str] | None = None) -> 
         "input_autodetect_enable": "true", "input_menu_toggle_gamepad_combo": "2",  # L3 + R3: RetroArch menu
         "savestate_auto_index": "false", "menu_driver": "ozone", "auto_remaps_enable": "true",
         "input_remapping_directory": paths.config / "remaps",
+        # the physical pad is grabbed by the remapper: player 1 is the virtual one when it's there
+        "input_joypad_driver": "udev", "joypad_autoconfig_dir": write_autoconfig(paths.config / "autoconfig"),
+        "input_player1_reserved_device": VIRTUAL_PAD, "input_player1_device_reservation_type": "1",
     }
     settings.update(extra or {})
     path = paths.config / "gamingcrypt.cfg"

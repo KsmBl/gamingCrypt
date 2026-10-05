@@ -149,3 +149,16 @@ def test_play_and_quick_menu_states(qtbot, emu, monkeypatch, tmp_path):
     window.toggle_quick_menu()
     window.toggle_quick_menu()
     assert not menu.state_row.isVisibleTo(menu)  # Steam game / nothing running: no states
+
+
+def test_config_gives_player_one_the_virtual_controller(emu):
+    """The physical pad is grabbed by the remapper - RetroArch must read the virtual one, with a profile."""
+    from gamingcrypt.input import evdev
+
+    text = retroarch.write_config(emu).read_text()
+    assert f'input_player1_reserved_device = "{evdev.VIRTUAL_NAME}"' in text
+    assert 'input_player1_device_reservation_type = "1"' in text and 'input_joypad_driver = "udev"' in text
+    profile = (emu.config / "autoconfig" / "udev" / f"{evdev.VIRTUAL_NAME}.cfg").read_text()
+    assert f'input_device = "{evdev.VIRTUAL_NAME}"' in profile and 'input_up_btn = "h0up"' in profile
+    assert 'input_b_btn = "0"' in profile and 'input_r2_axis = "+5"' in profile
+    assert (emu.config / "autoconfig" / "udev" / "Microsoft X-Box 360 pad.cfg").exists()
