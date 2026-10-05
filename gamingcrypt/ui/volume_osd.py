@@ -59,6 +59,36 @@ class VolumeOsd(QFrame):
         self.timer.start(SHOW_MS)
 
 
+class GameOverlay(QWidget):
+    """The volume indicator over a game (no Steam there to show one, e.g. emulators): a
+    transparent window that gamescope draws on top as an "external overlay"."""
+
+    def __init__(self, mark_overlay: Callable[[int], bool] | None = None):
+        super().__init__(None)
+        from gamingcrypt.system import gamescope_ctl
+
+        self.mark_overlay = mark_overlay or gamescope_ctl.set_external_overlay
+        self.marked = False
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
+                            | Qt.WindowType.WindowDoesNotAcceptFocus | Qt.WindowType.Tool)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.osd = VolumeOsd(self)
+        self.osd.timer.timeout.connect(self.hide)
+
+    def show_level(self, percent: int | None, muted: bool = False) -> None:
+        from PySide6.QtGui import QGuiApplication
+
+        screen = QGuiApplication.primaryScreen()
+        if screen is not None:
+            self.setGeometry(screen.geometry())  # gamescope stretches overlays to the screen anyway
+        self.show()
+        if not self.marked:
+            self.marked = self.mark_overlay(int(self.winId()))
+        self.osd.show_level(percent, muted)
+
+
 class _Bridge(QObject):
     key = Signal(int)
 
@@ -67,9 +97,12 @@ class VolumeController(QObject):
     """Volume buttons -> default output volume (+ the indicator when GamingCrypt is visible)."""
 
     def __init__(self, audio, osd: VolumeOsd | None = None, parent: QObject | None = None,
-                 step: Callable[[], int] = lambda: STEP):
+                 step: Callable[[], int] = lambda: STEP, game_osd=None,
+                 use_game_osd: Callable[[], bool] = lambda: False):
         super().__init__(parent)
         self.audio = audio
+        self.game_osd = game_osd  # over a game without Steam's own indicator (see GameOverlay)
+        self.use_game_osd = use_game_osd
         self.step = step  # read on every press: the settings slider applies at once
         self.osd = osd
         self.bridge = _Bridge(self)
@@ -86,11 +119,20 @@ class VolumeController(QObject):
             delta = step if code == e.KEY_VOLUMEUP else -step
             run_async(lambda: audio.step_volume(delta), self._show, owner=self)
 
+    def _target(self):
+        if self.osd is not None and self.osd.parentWidget().isVisible():
+            return self.osd
+        if self.game_osd is not None and self.use_game_osd():
+            return self.game_osd
+        return None
+
     def _show(self, percent) -> None:
-        if self.osd is not None and percent is not None and self.osd.parentWidget().isVisible():
-            self.osd.show_level(percent)
+        target = self._target()
+        if target is not None and percent is not None:
+            target.show_level(percent)
 
     def _show_mute(self, result) -> None:
         percent, muted = result
-        if self.osd is not None and muted is not None and self.osd.parentWidget().isVisible():
-            self.osd.show_level(percent, muted=muted)
+        target = self._target()
+        if target is not None and muted is not None:
+            target.show_level(percent, muted=muted)

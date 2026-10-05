@@ -196,8 +196,12 @@ class MainWindow(QMainWindow):
         if not in_gaming_session() or audio is None:
             return None
         self.volume_osd = VolumeOsd(self)
+        from gamingcrypt.ui.volume_osd import GameOverlay
+
+        self.game_volume_osd = GameOverlay()
         self.volume = VolumeController(audio, self.volume_osd, self,
-                                       step=lambda: self.config["system"].get("volume_step", 5))
+                                       step=lambda: self.config["system"].get("volume_step", 5),
+                                       game_osd=self.game_volume_osd, use_game_osd=self.emulated_game_in_front)
         # volume -> VolumeController, Windows button -> quick menu; keys arrive from a thread
         self.key_bridge = _KeyBridge(self)
         self.key_bridge.key.connect(self.hardware_key)
@@ -694,6 +698,10 @@ class MainWindow(QMainWindow):
         return self._rom_started(game, games, ok, message, "RetroArch")
 
     # running speed of RetroArch games ----------------------------------------------------------
+    def emulated_game_in_front(self) -> bool:
+        """Steam shows its own volume indicator over its games - over emulators nobody does."""
+        return not self.isVisible() and self.running_rom() is not None
+
     def running_rom(self):
         games = self.shell.pages.get("Games") if self.shell else None
         appid = self.game_watcher.appid if self.game_watcher.active else None

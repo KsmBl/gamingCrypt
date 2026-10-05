@@ -222,3 +222,65 @@ def test_configurable_step_swapped_and_off(qtbot):
     qtbot.wait(50)
     assert pactl.volume == 60
     assert clamp_step(99) == 10 and clamp_step(-99) == -10 and clamp_step("x") == 5
+
+
+def test_indicator_over_an_emulated_game(qtbot, monkeypatch):
+    """No Steam over emulators to show the volume: GamingCrypt's own overlay window (gamescope draws it on top)."""
+    from PySide6.QtWidgets import QWidget
+
+    from gamingcrypt.ui import volume_osd
+    from gamingcrypt.ui.volume_osd import GameOverlay, VolumeController, VolumeOsd
+
+    monkeypatch.setattr(volume_osd, "SHOW_MS", 200)
+    host = QWidget()  # hidden: the game is in front
+    qtbot.addWidget(host)
+    marked = []
+    overlay = GameOverlay(mark_overlay=lambda window: marked.append(window) or True)
+    qtbot.addWidget(overlay)
+    emulated = {"on": True}
+    pactl = Pactl(volume=50)
+    controller = VolumeController(PulseAudio(pactl), VolumeOsd(host), game_osd=overlay,
+                                  use_game_osd=lambda: emulated["on"])
+    controller.bridge.key.emit(e.KEY_VOLUMEUP)
+    qtbot.waitUntil(lambda: overlay.isVisible())
+    assert overlay.osd.value.text() == "55%" and marked == [int(overlay.winId())]
+    qtbot.waitUntil(lambda: not overlay.isVisible(), timeout=3000)  # gone again
+    controller.bridge.key.emit(e.KEY_VOLUMEUP)
+    qtbot.waitUntil(lambda: overlay.isVisible())
+    assert len(marked) == 1  # marked once
+    overlay.hide()
+    emulated["on"] = False  # a Steam game: Steam shows its own
+    controller.bridge.key.emit(e.KEY_VOLUMEDOWN)
+    qtbot.waitUntil(lambda: pactl.volume == 55)
+    qtbot.wait(100)
+    assert not overlay.isVisible()
+
+
+def test_app_knows_when_an_emulated_game_is_in_front(qtbot, monkeypatch, tmp_path):
+    import copy
+
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.config import DEFAULTS
+
+    window = MainWindow(copy.deepcopy(DEFAULTS), lambda c: None, page_factory=lambda c: {})
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window, "running_rom", lambda: object())
+    window.hide()
+    assert window.emulated_game_in_front()
+    window.show()
+    assert not window.emulated_game_in_front()  # GamingCrypt shows its own indicator
+    window.hide()
+    monkeypatch.setattr(window, "running_rom", lambda: None)
+    assert not window.emulated_game_in_front()
+
+
+def test_external_overlay_property():
+    import subprocess
+
+    from gamingcrypt.system import gamescope_ctl
+
+    calls = []
+    run = lambda cmd, **kw: calls.append(cmd) or subprocess.CompletedProcess(cmd, 0, "", "")  # noqa: E731
+    assert gamescope_ctl.set_external_overlay(42, runner=run)
+    assert calls[0][:3] == ["xprop", "-id", "42"] and calls[0][-8:] == ["-id", "42", "-f", "GAMESCOPE_EXTERNAL_OVERLAY", "32c",
+                                                       "-set", "GAMESCOPE_EXTERNAL_OVERLAY", "1"]

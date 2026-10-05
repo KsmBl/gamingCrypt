@@ -63,6 +63,17 @@ def set_window_appid(window: int, appid: int = LAUNCHER_APPID, runner: Runner = 
     return result.returncode == 0
 
 
+def set_external_overlay(window: int, runner: Runner = subprocess.run) -> bool:
+    """Draw this window over the game (gamescope stretches it to the whole screen; the
+    window is transparent but for what it shows)."""
+    try:
+        result = runner(["xprop", "-id", str(int(window)), "-f", "GAMESCOPE_EXTERNAL_OVERLAY", "32c", "-set",
+                         "GAMESCOPE_EXTERNAL_OVERLAY", "1"], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
+
 def set_focus_order(appids: list[int], runner: Runner = subprocess.run) -> bool:
     """App ids, most wanted on screen first. Empty = gamescope decides by itself."""
     appids = [int(a) for a in dict.fromkeys(appids) if a]
