@@ -269,7 +269,11 @@ class GamepadNavigator(QObject):
                 ahead = rect.left() - mine.right() if dx > 0 else mine.left() - rect.right()
                 aside = self._gap(mine.top(), mine.bottom(), rect.top(), rect.bottom())
             # tie-break between widgets in line: the one closer to the centre line
-            score = max(0, ahead) + 0.5 * aside + 0.02 * abs(vx * dy + vy * dx)
+            if ahead < 0:
+                # overlaps along the way (e.g. a wide field above a key when moving right):
+                # not really ahead - only its centre counts
+                ahead = vx * dx + vy * dy
+            score = ahead + 0.5 * aside + 0.02 * abs(vx * dy + vy * dx)
             if best_score is None or score < best_score:
                 best, best_score = w, score
         return best
