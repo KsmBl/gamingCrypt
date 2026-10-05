@@ -450,7 +450,8 @@ class GamesTab(QStackedWidget):
         self._fetching_cores = True
         from gamingcrypt.emulation.systems import BY_ID
 
-        systems = [BY_ID[sid] for sid, games in found.items() if games and sid in BY_ID]
+        systems = [BY_ID[sid] for sid, games in found.items()
+                   if games and sid in BY_ID and BY_ID[sid].emulator == "retroarch"]  # Eden: when played
 
         def work():
             from gamingcrypt.emulation import cores

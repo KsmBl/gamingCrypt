@@ -520,7 +520,8 @@ class MainWindow(QMainWindow):
         from gamingcrypt.emulation.library import EMU_APPID_BASE
 
         menu.set_performance(**self.performance_state(appid))
-        menu.set_emulated(appid is not None and appid >= EMU_APPID_BASE)
+        rom = self.running_rom() if appid is not None and appid >= EMU_APPID_BASE else None
+        menu.set_emulated(rom is not None and rom.system.emulator == "retroarch")
         menu.open_menu(appid, self.game_name(appid) if appid else "")
 
     def performance_state(self, appid: int | None) -> dict:
@@ -666,19 +667,47 @@ class MainWindow(QMainWindow):
             return False, "The games drive isn't unlocked"
         from gamingcrypt.emulation import layouts
 
+        if game.system.emulator == "eden":
+            ok, message = self.launch_switch(game, paths, games)
+            if ok is None:
+                return True, message  # downloading Eden first
+            return self._rom_started(game, games, ok, message, "Eden")
         core = self.game_profiles.get(game.appid).get("core")
         fetch = getattr(games, "core_fetcher", None)
         if fetch is not None and retroarch.available() and retroarch.find_core(paths, game.system, core) is None:
             return self.download_core_then_launch(game, paths, core, fetch)
         ok, message = retroarch.launch(game, paths, data_dir(), config_mod.cache_dir() / "logs", core,
                                        layout=layouts.load(self.config, game.system.id))
+        return self._rom_started(game, games, ok, message, "RetroArch")
+
+    def running_rom(self):
+        games = self.shell.pages.get("Games") if self.shell else None
+        appid = self.game_watcher.appid if self.game_watcher.active else None
+        return getattr(games, "rom_games", {}).get(appid) if appid is not None else None
+
+    def launch_switch(self, game, paths, games) -> tuple[bool | None, str]:
+        """Switch games: Eden - downloaded first when it isn't there yet (ok None: downloading)."""
+        from gamingcrypt.emulation import eden
+        from gamingcrypt.ui.tour import data_dir
+
+        if not eden.available():
+            installer = getattr(games, "eden_installer", None)
+            if installer is None:
+                return False, "The Switch emulator (Eden) isn't installed"
+            _ok, message = self.download_then_launch(
+                game, installer, "the Switch emulator (Eden)",
+                "Couldn't download the Switch emulator (Eden) - no network?")
+            return None, message
+        return eden.launch(game, paths, data_dir(), config_mod.cache_dir() / "logs")
+
+    def _rom_started(self, game, games, ok: bool, message: str, emulator: str) -> tuple[bool, str]:
         if ok:
-            log.info("starting %s (%s) with RetroArch", game.name, game.system.id)
+            log.info("starting %s (%s) with %s", game.name, game.system.id, emulator)
             if getattr(games, "play_log", None) is not None:
                 games.play_log.start(game)  # Continue / Recently played, play time
             self.game_launched(game.appid)
         else:
-            log.warning("RetroArch: %s", message)
+            log.warning("%s: %s", emulator, message)
         return ok, message
 
     def download_core_then_launch(self, game, paths, core, fetch) -> tuple[bool, str]:
@@ -686,25 +715,31 @@ class MainWindow(QMainWindow):
         from gamingcrypt.emulation.systems import short_name
 
         system = short_name(game.system.id)
+        return self.download_then_launch(
+            game, lambda: fetch(paths, game.system, core), f"the RetroArch core for {system}",
+            f"Couldn't download a RetroArch core for {system} - no network? You can also add one with "
+            "⬆ Add ROMs (cores folder)")
+
+    def download_then_launch(self, game, work, what: str, failed: str) -> tuple[bool, str]:
+        """Download what the game needs (core, emulator) behind the loading screen, then start it."""
         self.launch_overlay.show_for(game.name)
-        self.launch_overlay.set_phase(f"Downloading the RetroArch core for {system}…")
+        self.launch_overlay.set_phase(f"Downloading {what}…")
 
         def done(path) -> None:
             if not self.launch_overlay.isVisible():
                 return  # cancelled meanwhile
             if path is None:
                 self.launch_overlay.hide()
-                self.notify(f"Couldn't download a RetroArch core for {system} - no network? You can also add "
-                            "one with ⬆ Add ROMs (cores folder)", "⚠")
+                self.notify(failed, "⚠")
                 return
-            log.info("downloaded RetroArch core %s", path.name)
+            log.info("downloaded %s: %s", what, path)
             ok, message = self.launch_rom(game)
             if not ok:
                 self.launch_overlay.hide()
                 self.notify(message, "⚠")
 
-        run_async(lambda: fetch(paths, game.system, core), done, lambda _e: done(None), owner=self)
-        return True, f"Downloading the RetroArch core for {system}…"
+        run_async(work, done, lambda _e: done(None), owner=self)
+        return True, f"Downloading {what}…"
 
     def open_running_controls(self) -> None:
         """Quick menu: the running emulated game's button layout, over the game."""
@@ -1150,6 +1185,9 @@ def default_pages(config: dict) -> dict[str, QWidget]:
 
     if retroarch.available():
         games.core_fetcher = cores.ensure  # missing cores come from the libretro buildbot
+    from gamingcrypt.emulation import eden
+
+    games.eden_installer = eden.install  # Switch: Eden is downloaded when a game first needs it
     return {"Games": games, "Downloads": DownloadsTab(service)}
 
 

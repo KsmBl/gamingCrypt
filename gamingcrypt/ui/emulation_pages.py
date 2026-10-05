@@ -88,7 +88,8 @@ class SystemPage(QWidget):
         top.addWidget(title, 1)
         self.controls_button = big_button("🕹  Controls")
         self.controls_button.clicked.connect(lambda: tab.open_controls(system.id))
-        self.controls_button.setVisible(getattr(tab, "layout_store", None) is not None)
+        self.controls_button.setVisible(getattr(tab, "layout_store", None) is not None
+                                        and system.emulator == "retroarch")  # Eden has its own
         top.addWidget(self.controls_button)
         self.add_button = big_button("⬆  Add ROMs")
         self.add_button.clicked.connect(tab.open_upload)
