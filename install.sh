@@ -173,6 +173,30 @@ fi
 check_python
 check_tools
 install_app
+install_fonts() {
+    # The UI uses emoji / symbol icons (search, volume, trash, battery, ...). Without a
+    # font that has them Qt draws a square with a question mark.
+    command -v fc-list >/dev/null || return 0
+    if [[ -n "$(fc-list ':charset=1f50b' family 2>/dev/null)" ]]; then
+        return
+    fi
+    if command -v pacman >/dev/null; then
+        info "Installing an emoji font for the icons (needs sudo)"
+        sudo pacman -S --needed --noconfirm noto-fonts-emoji noto-fonts \
+            || warn "could not install noto-fonts-emoji - icons show as squares until it is"
+    elif command -v apt-get >/dev/null; then
+        info "Installing an emoji font for the icons (needs sudo)"
+        sudo apt-get install -y fonts-noto-color-emoji fonts-noto-core \
+            || warn "could not install fonts-noto-color-emoji - icons show as squares until it is"
+    elif command -v dnf >/dev/null; then
+        info "Installing an emoji font for the icons (needs sudo)"
+        sudo dnf install -y google-noto-emoji-color-fonts google-noto-sans-symbols2-fonts \
+            || warn "could not install the Noto emoji font - icons show as squares until it is"
+    else
+        warn "no emoji font found - install Noto Color Emoji, otherwise icons show as squares"
+    fi
+}
+
 install_input_rules() {
     # The virtual controller (calibration + button mapping) is created through /dev/uinput.
     if [[ -w /dev/uinput && -e $UDEV_RULE ]]; then
@@ -263,9 +287,12 @@ ENTRY
 if [[ $WITH_SUDO -eq 1 ]]; then
     install_helper
     install_input_rules
+    install_fonts
     [[ $SESSION -eq 1 ]] && install_session
 else
     info "Skipping the sudo helper (--no-sudo)"
+    fc-list ':charset=1f50b' family 2>/dev/null | grep -q . \
+        || warn "no emoji font found - install Noto Color Emoji, otherwise icons show as squares"
     [[ $SESSION -eq 1 ]] && warn "--session needs sudo - not installed"
 fi
 
