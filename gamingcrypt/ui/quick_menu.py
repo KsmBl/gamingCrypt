@@ -39,7 +39,7 @@ class QuickMenu(QWidget):
     screenshot = Signal()
     emulator_command = Signal(str)  # RetroArch: SAVE_STATE / LOAD_STATE
     controls_requested = Signal()  # emulated game: its button layout
-    speed_chosen = Signal(float)  # emulated game: running speed (applied when the menu closes)
+    speed_mode_chosen = Signal(str)  # emulated game: slow / normal / fast, right away
 
     def __init__(self, parent: QWidget, system: SystemControls,
                  refresh_get: Callable[[], int] = gamescope_ctl.dynamic_refresh,
@@ -169,16 +169,19 @@ class QuickMenu(QWidget):
         self.box.addWidget(row)
         self.state_row = row
         row.hide()
-        from gamingcrypt.emulation.retroarch import SPEEDS
-
-        self.speeds = SPEEDS
-        self.speed = _slider(0, len(SPEEDS) - 1, SPEEDS.index(1.0))
-        self.speed.setPageStep(1)
-        self.speed_value = QLabel("1x")
-        self.speed.valueChanged.connect(lambda i: self.speed_value.setText(f"{SPEEDS[i]:g}x"))
-        self.speed_row = self._row("Speed", self.speed, self.speed_value)
+        speed = QWidget()
+        speed.setObjectName("menuRow")
+        line = QHBoxLayout(speed)
+        line.setContentsMargins(0, 0, 0, 0)
+        self.speed_buttons: dict[str, QWidget] = {}
+        for mode in ("slow", "normal", "fast"):
+            button = big_button(mode.capitalize(), checkable=True)
+            button.clicked.connect(lambda _c=False, m=mode: self._speed_mode(m))
+            line.addWidget(button, 1)
+            self.speed_buttons[mode] = button
+        self.box.addWidget(speed)  # no caption: the three buttons need the width
+        self.speed_row = speed
         self.speed_row.hide()
-        self._speed_shown = 1.0
 
         # running game
         self.quit_button = big_button("✕  Force quit", "danger")
@@ -235,19 +238,23 @@ class QuickMenu(QWidget):
         self.screenshot_button.setVisible(in_game)
         self.tools_row.setVisible(overlay is not None or in_game)
 
-    def set_emulated(self, emulated: bool, speed: float | None = None) -> None:
-        """RetroArch game: states, controls and the speed (None: no speed row)."""
+    def set_emulated(self, emulated: bool, speed: tuple[float, float, str] | None = None) -> None:
+        """RetroArch game: states, controls and the speed - (fast rate, slow rate, current mode)."""
         self.state_row.setVisible(emulated)
         self.speed_row.setVisible(emulated and speed is not None)
         if speed is not None:
-            index = min(range(len(self.speeds)), key=lambda i: abs(self.speeds[i] - speed))
-            self._set_quietly(self.speed, index)
-            self.speed_value.setText(f"{self.speeds[index]:g}x")
-            self._speed_shown = self.speeds[index]
+            fast, slow, mode = speed
+            self.speed_buttons["fast"].setText(f"Fast {fast:g}x")
+            self.speed_buttons["slow"].setText(f"Slow {slow:g}x")
+            self._show_speed_mode(mode)
 
-    @property
-    def chosen_speed(self) -> float:
-        return self.speeds[self.speed.value()]
+    def _show_speed_mode(self, mode: str) -> None:
+        for name, button in self.speed_buttons.items():
+            button.setChecked(name == mode)
+
+    def _speed_mode(self, mode: str) -> None:
+        self._show_speed_mode(mode)
+        self.speed_mode_chosen.emit(mode)  # instant; the menu stays open
 
     def _emulator(self, command: str) -> None:
         self.close_menu()  # back into the game; RetroArch saves / loads right away
@@ -290,11 +297,7 @@ class QuickMenu(QWidget):
             self.revert_refresh()  # leaving with an unconfirmed mode = revert
         self.battery_timer.stop()
         self.hide()
-        changed = self.speed_row.isVisibleTo(self) and self.chosen_speed != self._speed_shown
         self.closed.emit()
-        if changed:  # once, when going back: the game restarts at the new speed
-            self._speed_shown = self.chosen_speed
-            self.speed_chosen.emit(self.chosen_speed)
 
     def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt API
         """A tap on the dimmed area next to the panel closes the menu."""

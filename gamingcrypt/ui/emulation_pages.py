@@ -170,6 +170,8 @@ class RomGamePage(QWidget):
         self.facts = QLabel(f"{game.system.name}\n{game.path.name}\n{format_size(game.size)}\n{played}")
         self.facts.setObjectName("detailMeta")
         info.addWidget(self.facts)
+        if game.system.emulator == "retroarch":
+            info.addLayout(self._speed_options())
         info.addStretch()
         actions = QHBoxLayout()
         self.main_button = big_button("▶  Play", "primary")
@@ -189,6 +191,33 @@ class RomGamePage(QWidget):
         info.addWidget(self.status)
         body.addLayout(info, 1)
         layout.addLayout(body, 1)
+
+    def _speed_options(self) -> QHBoxLayout:
+        """How fast "Fast" and how slow "Slow" are in the quick menu (from the next start)."""
+        from PySide6.QtWidgets import QComboBox
+
+        from gamingcrypt.emulation import retroarch
+
+        row = QHBoxLayout()
+        caption = QLabel("Quick menu speeds")
+        caption.setObjectName("cardMeta")
+        row.addWidget(caption)
+        profile = self.tab.profiles.get(self.game.appid)
+        self.speed_combos = {}
+        for key, label, values, default in (("slow_speed", "Slow", retroarch.SLOW_SPEEDS, retroarch.DEFAULT_SLOW),
+                                            ("fast_speed", "Fast", retroarch.FAST_SPEEDS, retroarch.DEFAULT_FAST)):
+            combo = QComboBox()
+            for value in values:
+                combo.addItem(f"{label} {value:g}x", value)
+            current = profile.get(key) if profile.get(key) in values else default
+            combo.setCurrentIndex(values.index(current))
+            combo.currentIndexChanged.connect(
+                lambda _i, k=key, c=combo, d=default: self.tab.profiles.set(
+                    self.game.appid, k, None if c.currentData() == d else c.currentData()))
+            row.addWidget(combo)
+            self.speed_combos[key] = combo
+        row.addStretch()
+        return row
 
     def _favorite_text(self) -> None:
         self.favorite_button.setText("★ Favorite" if self.favorite_button.isChecked() else "☆ Favorite")
