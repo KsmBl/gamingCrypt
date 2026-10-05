@@ -131,6 +131,9 @@ class GamesHome(QWidget):
         self.sources_heading = heading("Libraries")
         self.content_layout.addWidget(self.sources_heading)
         sources = QHBoxLayout()
+        self.favorites_card = SourceCard("Favorites", "Your starred games")
+        self.favorites_card.tapped.connect(tab.open_favorites)
+        sources.addWidget(self.favorites_card)
         self.steam_card = SourceCard("Steam", "Your Steam library")
         self.steam_card.tapped.connect(tab.open_steam)
         sources.addWidget(self.steam_card)
@@ -163,6 +166,11 @@ class GamesHome(QWidget):
         self._focus_filter.watch(self.search)
         layout.addWidget(self.keyboard)
 
+    def update_favorites(self) -> None:
+        count = len(self.tab.profiles.favorites())
+        self.favorites_card.subtitle.setText(f"{count} game{'s' if count != 1 else ''}" if count
+                                             else "Your starred games")
+
     def remember_selection(self, appid: int) -> None:
         self.selected_appid = appid
 
@@ -173,6 +181,7 @@ class GamesHome(QWidget):
     def set_installed(self, games: list[SteamGame]) -> None:
         self.installed = sort_games([g for g in games if g.installed], "name")
         self.continue_card.set_game(last_played(self.installed))
+        self.update_favorites()
         self.refresh_results()
 
     def refresh_results(self) -> None:
@@ -220,6 +229,9 @@ class GamesTab(QStackedWidget):
         self.service = service
         self.games: dict[int, SteamGame] = {}
         self._came_from: list = []
+        from gamingcrypt.game_profiles import GameProfiles
+
+        self.profiles = GameProfiles()  # favorites, per-game power / FPS limit
         self.home = GamesHome(self)
         self.addWidget(self.home)
         self.reload_installed()
@@ -301,6 +313,11 @@ class GamesTab(QStackedWidget):
             page = GameDetailPage(self, game)
             self.push(page)
             page.main_button.setFocus()  # Play / Download is the obvious next step
+
+    def open_favorites(self) -> None:
+        from gamingcrypt.ui.recent_page import FavoritesPage
+
+        self.push(FavoritesPage(self))
 
     def open_recent(self) -> None:
         from gamingcrypt.ui.recent_page import RecentPage

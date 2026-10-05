@@ -64,6 +64,11 @@ class GameDetailPage(QWidget):
         self.options_button = big_button("⚙ Options", checkable=True)
         self.options_button.toggled.connect(self.toggle_options)
         actions.addWidget(self.options_button)
+        self.favorite_button = big_button("", checkable=True)
+        self.favorite_button.setChecked(self.profiles.is_favorite(game.appid))
+        self._favorite_text()
+        self.favorite_button.toggled.connect(self.toggle_favorite)
+        actions.addWidget(self.favorite_button)
         actions.addStretch()
         info.addLayout(actions)
 
@@ -139,6 +144,20 @@ class GameDetailPage(QWidget):
         self.main_button.setEnabled(g.installed or not self.downloading)
         self.uninstall_button.setVisible(g.installed)
 
+
+    def _favorite_text(self) -> None:
+        self.favorite_button.setText("★ Favorite" if self.favorite_button.isChecked() else "☆ Favorite")
+
+    def toggle_favorite(self, on: bool) -> None:
+        self._favorite_text()
+        try:
+            self.profiles.set(self.game.appid, "favorite", True if on else None)
+        except OSError as exc:
+            set_status(self.status, f"Could not save: {exc}", error=True)
+            return
+        home = getattr(self.tab, "home", None)
+        if home is not None and hasattr(home, "update_favorites"):
+            home.update_favorites()
 
     def _fetch_protondb(self) -> None:
         """How well it runs on Linux - from the cache at once, otherwise in the background."""

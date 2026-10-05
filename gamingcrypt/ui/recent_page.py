@@ -19,6 +19,8 @@ def recently_played(games: list[SteamGame], limit: int = LIMIT) -> list[SteamGam
 
 
 class RecentPage(QWidget):
+    title_text = "Recently played"
+
     def __init__(self, tab, parent: QWidget | None = None):
         super().__init__(parent)
         self.tab = tab
@@ -30,7 +32,7 @@ class RecentPage(QWidget):
         layout.setContentsMargins(30, 16, 30, 10)
         top = QHBoxLayout()
         top.addWidget(tab.back_button())
-        title = QLabel("Recently played")
+        title = QLabel(self.title_text)
         title.setObjectName("title")
         top.addWidget(title)
         top.addStretch()
@@ -65,3 +67,22 @@ class RecentPage(QWidget):
     def _failed(self, exc: Exception) -> None:
         self.loading = False
         self.status.setText(f"Could not load your games: {exc}")
+
+
+class FavoritesPage(RecentPage):
+    """Library "Favorites": the games starred on their page."""
+
+    title_text = "Favorites"
+
+    def _loaded(self, games: list[SteamGame]) -> None:
+        self.loading = False
+        wanted = set(self.tab.profiles.favorites())
+        favorites = sorted((g for g in games if g.appid in wanted), key=lambda g: g.name.lower())
+        self.order = [g.appid for g in favorites]
+        for game in favorites:
+            self.tab.games[game.appid] = game
+            card = GameCard(game, self.service)
+            card.clicked.connect(self.tab.open_game)
+            self.cards[game.appid] = card
+            self.grid.addWidget(card)
+        self.status.setText("" if favorites else "No favorites yet - tap ☆ Favorite on a game's page")

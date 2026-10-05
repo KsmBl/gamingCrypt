@@ -43,3 +43,10 @@ class GameProfiles:
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, indent=1))
         tmp.replace(self.path)
+
+    def favorites(self) -> list[int]:
+        return sorted(int(appid) for appid, profile in self._all().items()
+                      if isinstance(profile, dict) and profile.get("favorite"))
+
+    def is_favorite(self, appid: int) -> bool:
+        return bool(self.get(appid).get("favorite"))
