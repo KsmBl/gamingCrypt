@@ -25,6 +25,9 @@ NO_GPU_FALLBACK_S = 45  # never seen on the GPU (unusual): step aside anyway
 # Steam hasn't started the game yet after this long: it's probably showing a window
 # (license agreement, cloud conflict, shader processing) that must not stay hidden.
 STALL_S = 15
+# Some games restart themselves through Steam right after starting (e.g. Unity games
+# via SteamAPI_RestartAppIfNecessary): for a moment none of their processes exist.
+EXIT_GRACE_S = 6
 
 
 class GameWatcher(QObject):
@@ -67,6 +70,7 @@ class GameWatcher(QObject):
         self.stall_reported = False
         self.seen_at = 0.0
         self.gpu_at: float | None = None
+        self.gone_at: float | None = None
         log.info("waiting for app %s to start", appid)
         self.timer.start(POLL_MS)
 
@@ -88,10 +92,18 @@ class GameWatcher(QObject):
                         log.info("app %s: no game process after %ss - showing Steam", appid, STALL_S)
                         self.stalled.emit(appid)
                 return
+            if self.gone_at is None:
+                self.gone_at = now
+                log.info("app %s: no processes - waiting %ss in case it restarts", appid, EXIT_GRACE_S)
+            if now - self.gone_at < EXIT_GRACE_S:
+                return
             log.info("app %s exited", appid)
             self._stop()
             self.finished.emit(appid)
             return
+        if self.gone_at is not None:
+            log.info("app %s is back (restarted itself)", appid)
+            self.gone_at = None
         if self.phase == "launching":
             self.phase = "starting"
             self.seen_at = now

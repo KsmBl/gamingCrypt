@@ -94,7 +94,36 @@ def test_watcher_phases(qtbot):
     assert events == ["started", "visible"]
     game.pids = set()
     w.poll()
+    assert events == ["started", "visible"]  # maybe it restarts itself - wait a moment
+    clock.now += game_watcher.EXIT_GRACE_S
+    w.poll()
     assert events == ["started", "visible", "finished"] and not w.active
+
+
+def test_watcher_game_restarting_itself_keeps_playing():
+    """Among Us & co. restart through Steam right after starting: no processes for a moment."""
+    game, clock = Game(), Clock()
+    w, events = watcher_for(game, clock)
+    w.watch(945360)
+    game.pids, game.drawing = {5}, True
+    w.poll()
+    clock.now += game_watcher.WINDOW_DELAY_S
+    w.poll()
+    assert events == ["started", "visible"]
+    game.pids = set()  # the first process exits ...
+    w.poll()
+    clock.now += game_watcher.EXIT_GRACE_S - 1
+    w.poll()
+    game.pids = {9}  # ... Steam starts it again
+    w.poll()
+    clock.now += game_watcher.EXIT_GRACE_S + 5
+    w.poll()
+    assert events == ["started", "visible"] and w.phase == "playing" and w.active
+    game.pids = set()  # this time it really quits
+    w.poll()
+    clock.now += game_watcher.EXIT_GRACE_S
+    w.poll()
+    assert events == ["started", "visible", "finished"]
 
 
 def test_watcher_steps_aside_without_gpu_after_fallback():
@@ -115,6 +144,8 @@ def test_watcher_game_exits_before_drawing():
     game.pids = {5}
     w.poll()
     game.pids = set()
+    w.poll()
+    clock.now += game_watcher.EXIT_GRACE_S
     w.poll()
     assert events == ["started", "finished"]
 
@@ -244,6 +275,9 @@ def test_launcher_waits_for_the_game_window_then_steps_aside(qtbot, monkeypatch)
     assert calls == ["aside"]
     game.pids = set()
     window.game_watcher.poll()
+    assert calls == ["aside"]  # gone for a moment: maybe it restarts itself
+    clock.now += game_watcher.EXIT_GRACE_S
+    window.game_watcher.poll()
     assert calls == ["aside", "back"] and not window.launch_overlay.isVisible()
 
 
@@ -315,6 +349,7 @@ def test_loading_screen_has_cover_and_spinner(qtbot, monkeypatch):
 
 
 def test_game_page_forgets_starting_message_after_the_game(qtbot, monkeypatch):
+    monkeypatch.setattr(game_watcher, "EXIT_GRACE_S", 0)
     window, service, calls = make_window(qtbot, monkeypatch)
     games = window.shell.pages["Games"]
     games.open_game(620)
@@ -380,6 +415,8 @@ def test_steps_aside_when_steam_waits_for_a_click(qtbot, monkeypatch):
     clock.now += game_watcher.WINDOW_DELAY_S
     w.poll()
     game.pids = set()
+    w.poll()
+    clock.now += game_watcher.EXIT_GRACE_S
     w.poll()
     assert calls == ["aside", "aside", "back"]  # back after the game
 
