@@ -84,7 +84,8 @@ def remove(paths: EmulationPaths, game: RomGame, with_saves: bool) -> int:
     targets = removal.files + (removal.saves if with_saves else [])
     from gamingcrypt.emulation import retroarch
 
-    leftovers = [paths.config / "covers" / game.system.id / f"{game.path.stem}{suffix}" for suffix in (".png", ".miss", ".nomatch")]
+    covers = paths.config / "covers" / game.system.id
+    leftovers = [covers / f"{game.path.stem}{suffix}" for suffix in (".png", ".miss", ".nomatch")]
     leftovers.append(retroarch.core_options_file(paths, game))
     freed = Removal.size(targets)
     for f in targets + leftovers:
