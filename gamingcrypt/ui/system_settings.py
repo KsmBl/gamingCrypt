@@ -331,6 +331,9 @@ class AudioSection(Section):
             self.unavailable(f"No audio {kind} device found.")
             return
         combo = QComboBox()
+        # long device names get elided instead of widening the page
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        combo.setMinimumContentsLength(8)
         for d in devices:
             combo.addItem(d.description, d.name)
         default = next((d for d in devices if d.is_default), devices[0])

@@ -20,6 +20,15 @@ REFRESH_RATES = [40, 45, 50, 55, 60]
 KEEP_SECONDS = 15
 
 
+def _combo() -> QComboBox:
+    """Long device names ("Family 17h/19h HD Audio Controller Speaker …") must not
+    widen the panel past the screen - they get elided, the open list shows them whole."""
+    combo = QComboBox()
+    combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+    combo.setMinimumContentsLength(8)
+    return combo
+
+
 class QuickMenu(QWidget):
     closed = Signal()
     force_quit = Signal(int)
@@ -40,7 +49,7 @@ class QuickMenu(QWidget):
 
         outer = QHBoxLayout(self)
         outer.addStretch()
-        scroll = QScrollArea()
+        scroll = self.panel = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFixedWidth(560)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -61,8 +70,8 @@ class QuickMenu(QWidget):
         self.box.addWidget(self.back_button)
 
         # audio
-        self.output = QComboBox()
-        self.input = QComboBox()
+        self.output = _combo()
+        self.input = _combo()
         self.output.currentIndexChanged.connect(lambda _i: self._device("output", self.output))
         self.input.currentIndexChanged.connect(lambda _i: self._device("input", self.input))
         self.volume_value = QLabel()
@@ -77,7 +86,7 @@ class QuickMenu(QWidget):
             self._row(caption, widget, value)
 
         # refresh rate (gamescope, at runtime) with keep / revert
-        self.refresh = QComboBox()
+        self.refresh = _combo()
         self.refresh.addItem("Default", 0)
         for hz in REFRESH_RATES:
             self.refresh.addItem(f"{hz} Hz", hz)
@@ -147,6 +156,14 @@ class QuickMenu(QWidget):
             self.revert_refresh()  # leaving with an unconfirmed mode = revert
         self.hide()
         self.closed.emit()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt API
+        """A tap on the dimmed area next to the panel closes the menu."""
+        if not self.panel.geometry().contains(event.position().toPoint()):
+            self.close_menu()
+            event.accept()
+            return
+        super().mousePressEvent(event)
 
     def gamepad_back(self) -> bool:
         if self.isVisible():

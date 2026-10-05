@@ -446,3 +446,19 @@ def test_focus_order_xprop():
     assert gs.set_focus_order([], run) and seen[-1][-2:] == ["-remove", gs.FOCUS_ORDER]
     assert gs.set_window_appid(0x1200007, runner=run)
     assert seen[-1][:3] == ["xprop", "-id", str(0x1200007)] and seen[-1][-1] == str(gs.LAUNCHER_APPID)
+
+
+def test_no_cursor_in_gaming_mode(qtbot, monkeypatch):
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+
+    from gamingcrypt.app import hide_cursor_in_gaming_mode
+
+    app = QApplication.instance()
+    assert not hide_cursor_in_gaming_mode(app)
+    monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
+    try:
+        assert hide_cursor_in_gaming_mode(app)
+        assert app.overrideCursor().shape() == Qt.CursorShape.BlankCursor
+    finally:
+        app.restoreOverrideCursor()

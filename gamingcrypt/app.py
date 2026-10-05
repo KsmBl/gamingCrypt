@@ -598,6 +598,7 @@ def main(argv: list[str] | None = None) -> int:
     nav_source.start()
     server = listen_for_activation(window.bring_to_front)  # noqa: F841 - keep alive
     window.check_display_change()
+    hide_cursor_in_gaming_mode(app)
     if cfg.get("fullscreen", True) and not args.windowed:
         window.showFullScreen()
     else:
@@ -611,6 +612,18 @@ def main(argv: list[str] | None = None) -> int:
     # still has to delete its unfinished file.
     QThreadPool.globalInstance().waitForDone(30_000)
     return code
+
+
+def hide_cursor_in_gaming_mode(app) -> bool:
+    """gamescope draws the cursor of the window under a tap - a touch UI needs none."""
+    from PySide6.QtCore import Qt
+
+    from gamingcrypt.session.mode import in_gaming_session
+
+    if not in_gaming_session():
+        return False
+    app.setOverrideCursor(Qt.CursorShape.BlankCursor)
+    return True
 
 
 if __name__ == "__main__":

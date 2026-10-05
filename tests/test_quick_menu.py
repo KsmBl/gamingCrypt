@@ -244,3 +244,21 @@ def test_menu_closes_when_the_game_ends(qtbot, monkeypatch):
     assert window.quick_menu.isVisible() and window.quick_menu.quit_button.isHidden()  # no game
     window.game_over(620)
     assert not window.quick_menu.isVisible()
+
+
+def test_tap_outside_closes_and_long_names_fit(qtbot, menu):
+    from PySide6.QtCore import QPoint, Qt
+
+    m, audio, *_ = menu
+    audio.devices = lambda kind: [Device("x", "Family 17h/19h HD Audio Controller Speaker + Headphones",
+                                         40, False, True)]
+    m.open_menu(620, "ROUNDS")
+    qtbot.waitUntil(m.isVisible)
+    card = m.box.parentWidget()
+    assert card.minimumSizeHint().width() <= m.panel.viewport().width()  # nothing cut off on the right
+    closed = []
+    m.closed.connect(lambda: closed.append(1))
+    qtbot.mouseClick(m, Qt.MouseButton.LeftButton, pos=m.panel.geometry().center())
+    assert m.isVisible() and closed == []  # inside the panel: stays
+    qtbot.mouseClick(m, Qt.MouseButton.LeftButton, pos=QPoint(50, 400))
+    assert not m.isVisible() and closed == [1]
