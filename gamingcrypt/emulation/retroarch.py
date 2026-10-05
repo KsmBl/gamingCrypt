@@ -171,6 +171,11 @@ WIDESCREEN = {"pcsx2": {"16:9": {"pcsx2_widescreen_hint": "enabled (16:9)"},
                         None: {"pcsx2_widescreen_hint": "disabled"}}}
 
 
+# Renderer: the GPU one is fast; paraLLEl-GS draws like a real PS2 (NFSU2's light and blur
+# passes come out wrong - dark, ghost images - with the GPU one), at about half the speed
+RENDERERS = {"pcsx2": {"accurate": {"pcsx2_renderer": "paraLLEl-GS"}, None: {"pcsx2_renderer": "Auto"}}}
+
+
 def core_options_file(paths: EmulationPaths, game: RomGame) -> Path:
     return paths.config / "core-options" / game.system.id / f"{game.path.stem}.opt"
 
@@ -223,7 +228,8 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
            popen=subprocess.Popen, which: Callable[[str], str | None] = shutil.which,
            layout: dict[str, str] | None = None, fast: float = DEFAULT_FAST,
            slow: float = DEFAULT_SLOW, memory_card: str | None = None,
-           widescreen: str | None = None, input_lag: str | None = None) -> tuple[bool, str]:
+           widescreen: str | None = None, input_lag: str | None = None,
+           renderer: str | None = None) -> tuple[bool, str]:
     if not available(which):
         return False, "RetroArch isn't installed - run ./install.sh"
     core = find_core(paths, game.system, core_name)
@@ -236,8 +242,10 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
         extra["video_driver"] = game.system.video
     short = core.name.removesuffix(".so").removesuffix("_libretro")
     options = dict(MEMORY_CARDS.get(short, {}).get(memory_card or "", {}))
-    if short in WIDESCREEN and (widescreen or core_options_file(paths, game).exists() or options):
-        options.update(WIDESCREEN[short].get(widescreen, WIDESCREEN[short][None]))
+    choices = [(table, choice) for table, choice in ((WIDESCREEN, widescreen), (RENDERERS, renderer)) if short in table]
+    if options or core_options_file(paths, game).exists() or any(choice for _t, choice in choices):
+        for table, choice in choices:  # all of them explicit: an earlier choice is undone
+            options.update(table[short].get(choice, table[short][None]))
     if options:  # the game's own core options file
         extra["global_core_options"] = "true"
         extra["core_options_path"] = write_core_options(core_options_file(paths, game), options)

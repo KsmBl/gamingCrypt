@@ -189,3 +189,38 @@ def test_input_lag_option_on_the_game_page(qtbot, window, emu):
     qtbot.addWidget(page)
     page.lag_combo.setCurrentIndex(1)
     assert window.game_profiles.get(mario.appid)["input_lag"] == "normal"
+
+
+def test_ps2_renderer_option(emu, tmp_path):
+    (emu.cores / "pcsx2_libretro.so").write_text("x")
+    (emu.roms / "ps2").mkdir(exist_ok=True)
+    (emu.roms / "ps2" / "NFSU2.iso").write_text("x")
+    nfs = scan(emu, BY_ID["ps2"])[0]
+    run = dict(popen=lambda cmd, **k: None, which=lambda n: "/usr/bin/retroarch")
+    retroarch.launch(nfs, emu, tmp_path / "d", tmp_path / "l", renderer="accurate", **run)
+    options = retroarch.core_options_file(emu, nfs)
+    assert 'pcsx2_renderer = "paraLLEl-GS"' in options.read_text()
+    assert 'pcsx2_widescreen_hint = "disabled"' in options.read_text()  # explicit: no stale choice
+    retroarch.launch(nfs, emu, tmp_path / "d", tmp_path / "l", **run)  # back to the default
+    assert 'pcsx2_renderer = "Auto"' in options.read_text()
+
+
+def test_renderer_choice_on_the_page(qtbot, window, emu):
+    from gamingcrypt.ui.emulation_pages import RomGamePage
+
+    (emu.roms / "ps2").mkdir(exist_ok=True)
+    (emu.roms / "ps2" / "NFSU2.iso").write_text("x")
+    nfs = scan(emu, BY_ID["ps2"])[0]
+    page = RomGamePage(window._games, nfs)
+    qtbot.addWidget(page)
+    page.show()
+    page.options_button.click()
+    assert page.renderer_combo.isVisible() and page.renderer_combo.currentText() == "GPU (fast)"
+    page.renderer_combo.setCurrentIndex(1)
+    assert window.game_profiles.get(nfs.appid)["renderer"] == "accurate"
+    window.launch_rom(nfs)
+    page2 = RomGamePage(window._games, window._ff7)
+    qtbot.addWidget(page2)
+    page2.show()
+    page2.options_button.click()
+    assert not page2.renderer_combo.isVisible()  # PS1 cores: not this option

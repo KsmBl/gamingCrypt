@@ -305,10 +305,20 @@ class RomGamePage(QWidget):
         self.screen_combo.currentIndexChanged.connect(
             lambda _i: self.tab.profiles.set(appid, "widescreen", self.screen_combo.currentData()))
 
+        self.renderer_combo = QComboBox()
+        self.renderer_combo.addItem("GPU (fast)", None)
+        self.renderer_combo.addItem("paraLLEl-GS (like a PS2, slower)", "accurate")
+        self.renderer_combo.setCurrentIndex(1 if profile.get("renderer") == "accurate" else 0)
+        self.renderer_caption = row("Renderer", self.renderer_combo)
+        self.renderer_combo.currentIndexChanged.connect(
+            lambda _i: self.tab.profiles.set(appid, "renderer", self.renderer_combo.currentData()))
+
         def core_chosen_screen() -> None:
-            wide = (self.core_combo.currentData() or cores[0]) in retroarch.WIDESCREEN
-            self.screen_combo.setVisible(wide)
-            self.screen_caption.setVisible(wide)
+            core = self.core_combo.currentData() or cores[0]
+            for combo, caption, table in ((self.screen_combo, self.screen_caption, retroarch.WIDESCREEN),
+                                          (self.renderer_combo, self.renderer_caption, retroarch.RENDERERS)):
+                combo.setVisible(core in table)
+                caption.setVisible(core in table)
 
         if self.game.system.id in retroarch.LOW_LAG_SYSTEMS:
             self.lag_combo = QComboBox()

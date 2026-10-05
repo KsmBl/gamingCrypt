@@ -694,7 +694,7 @@ class MainWindow(QMainWindow):
                                            ("fast", "slow"), self.speed_rates(game))),
                                        memory_card=profile.get("memory_card"),
                                        widescreen=profile.get("widescreen"),
-                                       input_lag=profile.get("input_lag"))
+                                       input_lag=profile.get("input_lag"), renderer=profile.get("renderer"))
         if ok:
             self.follow_game_refresh(config_mod.cache_dir() / "logs" / retroarch.LOG_NAME)
             self.speed_mode = "normal"  # RetroArch starts at normal speed
