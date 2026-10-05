@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+import shiboken6
 from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPoint, QPointF, QPropertyAnimation, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import (
@@ -159,6 +160,7 @@ class GamepadNavigator(QObject):
         top = w.mapTo(content, QPoint(0, 0)).y()
         bottom = top + w.height()
         view = area.viewport().height()
+        anim = self._live_anim(bar)
         start = self._scroll_targets.get(id(bar), bar.value())
         target = start
         if top - margin < start:
@@ -169,7 +171,6 @@ class GamepadNavigator(QObject):
         if target == start:
             return
         self._scroll_targets[id(bar)] = target
-        anim = self._scroll_anims.get(id(bar))
         if anim is None:
             anim = QPropertyAnimation(bar, b"value", bar)  # owned by the bar: others can stop it
             anim.setEasingCurve(QEasingCurve.Type.OutCubic)
@@ -183,9 +184,27 @@ class GamepadNavigator(QObject):
         FoldingHeader.programmatic = True
         anim.start()
 
+    def _live_anim(self, bar) -> QPropertyAnimation | None:
+        """The bar's animation - entries of deleted pages are dropped (Qt deletes the
+        animation with its bar, and a new bar may even get the same id)."""
+        self._forget_deleted()
+        anim = self._scroll_anims.get(id(bar))
+        if anim is not None and anim.targetObject() is not bar:
+            self._scroll_anims.pop(id(bar), None)
+            self._scroll_targets.pop(id(bar), None)
+            anim = None
+        return anim
+
+    def _forget_deleted(self) -> None:
+        for key, anim in list(self._scroll_anims.items()):
+            if not shiboken6.isValid(anim):
+                del self._scroll_anims[key]
+                self._scroll_targets.pop(key, None)
+
     def _scroll_done(self) -> None:
         from gamingcrypt.ui.widgets import FoldingHeader
 
+        self._forget_deleted()
         if not any(a.state() == QPropertyAnimation.State.Running for a in self._scroll_anims.values()):
             FoldingHeader.programmatic = False
 

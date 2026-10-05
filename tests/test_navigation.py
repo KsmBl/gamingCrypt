@@ -480,3 +480,46 @@ def test_highlighted_slider_is_clearly_visible(qtbot):
     accent = QColor(theme.ACCENT)
     assert right_edge(first) == accent  # the frame
     assert right_edge(second) != accent
+
+
+def test_deleted_scroll_page_leaves_no_broken_animation(qtbot):
+    """Pages get rebuilt: Qt deletes the scroll animation with its bar. That used to raise
+    "Internal C++ object already deleted" on every later scroll and could keep the
+    folding headers stuck."""
+    import shiboken6
+    from PySide6.QtWidgets import QScrollArea
+
+    from gamingcrypt.ui.widgets import FoldingHeader
+
+    window = QWidget()
+    qtbot.addWidget(window)
+    window.resize(400, 300)
+    outer = QVBoxLayout(window)
+
+    def page():
+        area = QScrollArea()
+        area.setWidgetResizable(True)
+        content = QWidget()
+        column = QVBoxLayout(content)
+        buttons = [QPushButton(f"b{i}") for i in range(20)]
+        for b in buttons:
+            b.setMinimumHeight(60)
+            column.addWidget(b)
+        area.setWidget(content)
+        outer.addWidget(area)
+        return area, buttons
+
+    area, buttons = page()
+    window.show()
+    qtbot.waitExposed(window)
+    nav = GamepadNavigator(window)
+    nav.focus(buttons[-1])  # scrolls (animated)
+    anim = nav._scroll_anims[id(area.verticalScrollBar())]
+    area.deleteLater()  # the page is rebuilt while / after scrolling
+    qtbot.waitUntil(lambda: not shiboken6.isValid(anim))
+    nav._scroll_done()  # used to raise
+    assert nav._scroll_anims == {} and not FoldingHeader.programmatic
+    area2, buttons2 = page()
+    qtbot.wait(20)
+    nav.focus(buttons2[-1])  # scrolling in the new page works
+    qtbot.waitUntil(lambda: area2.verticalScrollBar().value() == area2.verticalScrollBar().maximum())
