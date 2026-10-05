@@ -160,6 +160,9 @@ class SettingsTab(QStackedWidget):
         layout = page("Controller")
         self.controller_page = ControllerPage(self.input)
         layout.addWidget(self.controller_page)
+        self.controller_test_button = big_button("🎮  Controller test")
+        self.controller_test_button.clicked.connect(self.open_controller_test)
+        layout.addWidget(self.controller_test_button, alignment=Qt.AlignmentFlag.AlignLeft)
         from gamingcrypt.ui.device_buttons import DeviceButtonsSection
 
         self.device_buttons = DeviceButtonsSection(config, save)
@@ -248,6 +251,18 @@ class SettingsTab(QStackedWidget):
         self.show_sub_tab(SUB_TABS[0])
         self.addWidget(self.overview)
         self.refresh()
+
+    def open_controller_test(self) -> None:
+        from gamingcrypt.ui.controller_test import ControllerTestPage
+
+        page = ControllerTestPage(**self.controller_test_options())
+        page.closed.connect(lambda: self.close_page(""))
+        self.addWidget(page)
+        self.setCurrentWidget(page)
+
+    def controller_test_options(self) -> dict:
+        """Per-system button meanings (emulators) - filled in once systems exist."""
+        return {}
 
     def _libraries_section(self) -> QWidget:
         """Which libraries the Games tab shows."""
