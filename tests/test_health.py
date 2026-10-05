@@ -74,8 +74,9 @@ def test_one_broken_probe_does_not_hide_the_others():
     h.buttons = lambda: Check("Buttons", True)
     h.power_limit = lambda: Check("Power", True)
     h.other_system = lambda: Check("Windows", True)
+    h.bios = lambda: Check("BIOS files", True)
     checks = h.run()
-    assert checks[0].ok is False and "boom" in checks[0].detail and len(checks) == 12
+    assert checks[0].ok is False and "boom" in checks[0].detail and len(checks) == 13
 
 
 def test_health_page_in_settings(qtbot):

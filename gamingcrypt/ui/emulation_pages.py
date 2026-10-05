@@ -90,6 +90,19 @@ class SystemPage(QWidget):
         self.add_button.clicked.connect(tab.open_upload)
         top.addWidget(self.add_button)
         layout.addLayout(top)
+        self.bios_note = QLabel("")
+        self.bios_note.setObjectName("status")
+        self.bios_note.setWordWrap(True)
+        self.bios_note.hide()
+        layout.addWidget(self.bios_note)
+        if getattr(tab, "emulation", None) is not None:
+            from gamingcrypt.emulation import bios
+
+            status = bios.check(tab.emulation, system.id)
+            if status is not None and status.state != "ok":
+                set_status(self.bios_note, f"BIOS {status.describe()} - add it under bios (⬆ Add ROMs)",
+                           error=status.problem)
+                self.bios_note.show()
         self.search = QLineEdit()
         self.search.setPlaceholderText(f"🔍  Search {len(games)} games")
         self.search.textChanged.connect(self.refresh)

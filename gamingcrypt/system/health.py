@@ -38,13 +38,15 @@ class Health:
 
     def __init__(self, runner: Runner = subprocess.run, which: Callable[[str], str | None] = shutil.which,
                  exists: Callable[[str], bool] = os.path.exists, access: Callable[[str, int], bool] = os.access,
-                 env: dict | None = None, helper: str | None = None, session_bin: str = "/usr/local/bin/gamingcrypt-session"):
+                 env: dict | None = None, helper: str | None = None, session_bin: str = "/usr/local/bin/gamingcrypt-session",
+                 emulation_root: str | None = None):
         from gamingcrypt.unlock.veracrypt import DEFAULT_HELPER
 
         self.runner, self.which, self.exists, self.access = runner, which, exists, access
         self.env = os.environ if env is None else env
         self.helper = helper or DEFAULT_HELPER
         self.session_bin = session_bin
+        self.emulation_root = emulation_root
 
     @property
     def gaming(self) -> bool:
@@ -155,10 +157,36 @@ class Health:
         return Check("Restart into Windows", True,
                      ", ".join(s.name for s in systems) if systems else "no other system found", optional=True)
 
+    def bios(self) -> Check:
+        """BIOS files of the emulated systems that have games."""
+        import os
+
+        from gamingcrypt.emulation import bios
+        from gamingcrypt.emulation.library import EmulationPaths, scan_all
+        from gamingcrypt.emulation.systems import short_name
+
+        root = self.emulation_root
+        if root is None:
+            from gamingcrypt.config import load_config
+
+            mount = os.path.expanduser(load_config().get("unlock", {}).get("mount_point", "") or "")
+            root = os.path.join(mount, "Emulation") if mount else ""
+        if not root or not os.path.isdir(root):
+            return Check("BIOS files", True, "no emulated games", optional=True)
+        paths = EmulationPaths(root)
+        statuses = bios.check_all(paths, scan_all(paths))
+        if not statuses:
+            return Check("BIOS files", True, "none needed for your games", optional=True)
+        problems = [s for s in statuses if s.problem]
+        detail = "\n".join(f"{short_name(s.system_id)}: {s.describe()}" for s in statuses)
+        return Check("BIOS files", not problems, detail,
+                     "" if not problems else "Add them to the bios folder (Games → ⬆ Add ROMs)")
+
     def run(self) -> list[Check]:
         checks = []
         for probe in (self.veracrypt, self.helper_allowed, self.steam, self.session, self.steam_mode, self.xprop,
-                      self.emoji_font, self.buttons, self.uinput, self.power_limit, self.sleep, self.other_system):
+                      self.emoji_font, self.buttons, self.uinput, self.power_limit, self.sleep, self.other_system,
+                      self.bios):
             try:
                 checks.append(probe())
             except Exception as exc:  # noqa: BLE001 - one broken probe must not hide the others
