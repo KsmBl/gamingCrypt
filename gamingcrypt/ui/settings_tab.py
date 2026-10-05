@@ -21,7 +21,7 @@ from gamingcrypt.ui.system_settings import AudioSection, DisplaySection, PowerSe
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button, enable_touch_scroll, set_status
 
-SUB_TABS = ["Device", "Network", "Controller", "Steam", "Security", "Health", "Updates"]
+SUB_TABS = ["Device", "Network", "Controller", "Steam", "Storage", "Security", "Health", "Updates"]
 LOCK_AFTER_SLEEP = [("Never", None), ("Right away", 0), ("After 5 minutes", 5), ("After 15 minutes", 15),
                     ("After 1 hour", 60)]
 API_KEY_RE = re.compile(r"^[0-9A-Fa-f]{32}$")
@@ -210,6 +210,14 @@ class SettingsTab(QStackedWidget):
         layout.addWidget(hint)
         layout.addStretch()
 
+        # Storage
+        from gamingcrypt.ui.storage_page import StoragePage
+
+        layout = page("Storage")
+        self.storage_page = StoragePage(lambda: self.steam)
+        layout.addWidget(self.storage_page)
+        layout.addStretch()
+
         # Health
         from gamingcrypt.ui.health_page import HealthPage
 
@@ -291,6 +299,8 @@ class SettingsTab(QStackedWidget):
             button.setChecked(tab == name)
         if name == "Health" and not self.health_page.checks:
             self.health_page.refresh()  # first visit: check now
+        if name == "Storage":
+            self.storage_page.refresh()
         if name == "Network":
             self.wifi_section.refresh()
             self.bluetooth_section.refresh()
