@@ -302,4 +302,50 @@ def test_emulator_row_fits_the_panel(menu):
         r = button.rect().translated(button.mapTo(m.panel.viewport(), button.rect().topLeft()))
         assert panel.left() <= r.left() and r.right() <= panel.right(), button.text()
         assert button.width() >= button.sizeHint().width(), button.text()  # the text isn't cut
-    assert m.controls_button.y() > m.save_state_button.y() and m.save_state_button.y() == m.load_state_button.y()
+    y = lambda w: w.mapTo(m, w.rect().topLeft()).y()  # noqa: E731
+    assert y(m.controls_button) > y(m.save_state_button) and y(m.save_state_button) == y(m.load_state_button)
+
+
+def test_everything_fits_without_scrolling(menu):
+    """1280 x 800 with an emulated game on several discs and a long name: no scrolling, all reachable by touch."""
+    from PySide6.QtWidgets import QScroller
+
+    m, *_ = menu
+
+    class Limit:
+        min_w, max_w, watts = 5, 28, 15
+
+    m.set_performance(limit=Limit(), watts=15, fps=0, overlay=False, in_game=True)
+    m.set_emulated(True, (2.0, 0.5, "normal"))
+    m.set_discs(3, 0)
+    m.open_menu(0x70000001, "Final Fantasy VII - German Retranslation")
+    m._test_host.grab()
+    assert m.panel.verticalScrollBar().maximum() == 0
+    assert not QScroller.hasScroller(m.panel.viewport())  # flick-scrolling would swallow taps
+    viewport = m.panel.viewport().rect()
+    for button in [m.back_button, *m.speed_buttons.values(), m.disc_next, m.lock_button, m.quit_button]:
+        r = button.rect().translated(button.mapTo(m.panel.viewport(), button.rect().topLeft()))
+        assert viewport.contains(r), button.text()
+
+
+def test_opens_at_the_top(qtbot, menu):
+    m, *_ = menu
+    m.open_menu(620, "Portal 2")
+    bar = m.panel.verticalScrollBar()
+    bar.setRange(0, 300)  # as on a small screen
+    bar.setValue(300)
+    m.close_menu()
+    m.open_menu(620, "Portal 2")
+    assert bar.value() == 0
+
+
+def test_tapping_the_speed(qtbot, menu):
+    from PySide6.QtCore import Qt
+
+    m, *_ = menu
+    m.set_emulated(True, (2.0, 0.5, "normal"))
+    m.open_menu(0x70000001, "Mario")
+    chosen = []
+    m.speed_mode_chosen.connect(chosen.append)
+    qtbot.mouseClick(m.speed_buttons["fast"], Qt.MouseButton.LeftButton)
+    assert chosen == ["fast"] and m.speed_buttons["fast"].isChecked()

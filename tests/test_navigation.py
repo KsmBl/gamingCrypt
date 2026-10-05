@@ -457,9 +457,14 @@ def test_down_reaches_every_control_of_the_quick_menu(qtbot):
     qtbot.waitExposed(window)
     qtbot.wait(50)
     nav = GamepadNavigator(window)
-    assert walk_down(nav, 14) == [menu.back_button, menu.output, menu.input, menu.volume, menu.brightness,
-                                  menu.refresh, menu.power, menu.fps, menu.screenshot_button, menu.quit_button,
-                                  menu.lock_button]  # right below the FPS box: Screenshot
+    # two columns: the game on the right (where the menu starts), the device settings on the left
+    assert walk_down(nav, 3) == [menu.back_button, menu.overlay_button, menu.quit_button, menu.lock_button]
+    nav.focus(menu.back_button)
+    nav.move(-1, 0)
+    assert nav.focused() in (menu.output, menu.input)  # over to the settings
+    nav.focus(menu.output)
+    assert walk_down(nav, 10) == [menu.output, menu.input, menu.volume, menu.brightness, menu.refresh, menu.power,
+                                  menu.fps]
     nav.focus(menu.screenshot_button)
     nav.move(-1, 0)
     assert nav.focused() is menu.overlay_button  # its neighbour in the row

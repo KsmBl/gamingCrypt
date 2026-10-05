@@ -8,14 +8,15 @@ from __future__ import annotations
 from typing import Callable
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QScrollArea, QSizePolicy, QVBoxLayout,
+                               QWidget)
 
 from gamingcrypt.system import gamescope_ctl
 from gamingcrypt.system.battery import read_battery
 from gamingcrypt.system.controls import SystemControls
 from gamingcrypt.ui.system_settings import _label, _on_change, _slider
 from gamingcrypt.ui.tasks import run_async
-from gamingcrypt.ui.widgets import big_button, enable_touch_scroll, set_status
+from gamingcrypt.ui.widgets import big_button, set_status
 
 REFRESH_RATES = [40, 45, 50, 55, 60]
 KEEP_SECONDS = 15
@@ -28,6 +29,9 @@ def _combo() -> QComboBox:
     combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
     combo.setMinimumContentsLength(8)
     return combo
+
+
+PANEL_WIDTH = 940
 
 
 class QuickMenu(QWidget):
@@ -59,26 +63,35 @@ class QuickMenu(QWidget):
 
         outer = QHBoxLayout(self)
         outer.addStretch()
+        # Two columns - device settings left, the game right - so everything fits on the screen:
+        # no scrolling, and taps always reach the buttons (no flick-scrolling to swallow them).
         scroll = self.panel = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFixedWidth(560)
+        scroll.setFixedWidth(PANEL_WIDTH)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        enable_touch_scroll(scroll)
         card = QFrame()
         card.setObjectName("card")
-        self.box = QVBoxLayout(card)
-        self.box.setContentsMargins(24, 20, 24, 20)
-        self.box.setSpacing(12)
+        columns = QHBoxLayout(card)
+        columns.setContentsMargins(24, 16, 24, 12)
+        columns.setSpacing(28)
+        self.left_column, self.right_column = QVBoxLayout(), QVBoxLayout()
+        for column in (self.left_column, self.right_column):
+            column.setSpacing(10)
+            columns.addLayout(column, 1)
         scroll.setWidget(card)
         outer.addWidget(scroll)
 
+        self.box = self.right_column
         self.title = QLabel("Quick menu")
         self.title.setObjectName("section")
+        self.title.setWordWrap(True)  # long game names must not widen the column
+        self.title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.box.addWidget(self.title)
         self.back_button = big_button("▶  Back", "primary")
         self.back_button.clicked.connect(self.close_menu)
         self.box.addWidget(self.back_button)
 
+        self.box = self.left_column
         # battery, refreshed every second while the menu is open
         self.battery = QLabel()
         self.battery.setObjectName("battery")  # green when plugged in, red when low (theme.py)
@@ -138,6 +151,8 @@ class QuickMenu(QWidget):
             self.fps.addItem(f"{fps} FPS" if fps else "No limit", fps)
         self.fps.currentIndexChanged.connect(lambda _i: self.fps_chosen.emit(self.fps.currentData() or 0))
         self.fps_row = self._row("FPS limit", self.fps, None)
+        self.left_column.addStretch()
+        self.box = self.right_column
         row = QWidget()
         row.setObjectName("menuRow")
         line = QHBoxLayout(row)
@@ -154,10 +169,8 @@ class QuickMenu(QWidget):
         # emulated game: save / load state
         row = QWidget()
         row.setObjectName("menuRow")
-        column = QVBoxLayout(row)  # two lines: three buttons don't fit next to each other
-        column.setContentsMargins(0, 0, 0, 0)
-        line = QHBoxLayout()
-        column.addLayout(line)
+        line = QHBoxLayout(row)
+        line.setContentsMargins(0, 0, 0, 0)
         self.save_state_button = big_button("💾  Save state")
         self.save_state_button.clicked.connect(lambda: self._emulator("SAVE_STATE"))
         self.load_state_button = big_button("↺  Load state")
@@ -166,9 +179,16 @@ class QuickMenu(QWidget):
         self.controls_button.clicked.connect(self._controls)
         line.addWidget(self.save_state_button, 1)
         line.addWidget(self.load_state_button, 1)
-        column.addWidget(self.controls_button)
         self.box.addWidget(row)
         self.state_row = row
+        row.hide()
+        row = QWidget()  # its own line: three buttons don't fit next to each other
+        row.setObjectName("menuRow")
+        line = QHBoxLayout(row)
+        line.setContentsMargins(0, 0, 0, 0)
+        line.addWidget(self.controls_button)
+        self.box.addWidget(row)
+        self.controls_row = row
         row.hide()
         speed = QWidget()
         speed.setObjectName("menuRow")
@@ -211,8 +231,9 @@ class QuickMenu(QWidget):
         self.lock_button = big_button("🔒  Lock now")
         self.lock_button.clicked.connect(self._lock)
         self.box.addWidget(self.lock_button)
-        hint = _label("Shortcut: hold the Windows button and press Volume Down", "cardMeta")
-        self.box.addWidget(hint)
+        hint = _label("Lock shortcut: hold the Windows button and press Volume Down", "cardMeta")
+        hint.setWordWrap(True)
+        self.left_column.addWidget(hint)  # under the settings: the game column is the full one
         self.status = _label("", "status")
         self.box.addWidget(self.status)
         self.box.addStretch()
@@ -259,6 +280,7 @@ class QuickMenu(QWidget):
     def set_emulated(self, emulated: bool, speed: tuple[float, float, str] | None = None) -> None:
         """RetroArch game: states, controls and the speed - (fast rate, slow rate, current mode)."""
         self.state_row.setVisible(emulated)
+        self.controls_row.setVisible(emulated)
         self.speed_row.setVisible(emulated and speed is not None)
         if speed is not None:
             fast, slow, mode = speed
@@ -324,6 +346,8 @@ class QuickMenu(QWidget):
         self.update_battery()
         self.battery_timer.start(1000)
         self.setGeometry(self.parentWidget().rect())
+        self.panel.setFixedWidth(min(PANEL_WIDTH, self.width() - 200))  # room to tap next to it
+        self.panel.verticalScrollBar().setValue(0)  # always from the top
         self.raise_()
         self.show()
         self.back_button.setFocus()
