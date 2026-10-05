@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import shiboken6
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QStackedWidget, QVBoxLayout,
+                               QWidget)
 
 from gamingcrypt.steam.models import SteamGame
 from gamingcrypt.steam.sorting import filter_games, sort_games
-from gamingcrypt.ui.game_widgets import GameCard, SourceCard
+from gamingcrypt.ui.game_widgets import (GameCard, SourceCard, format_date, format_playtime, load_cover,
+                                        placeholder_cover)
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import (
     FlowLayout,
@@ -26,6 +28,67 @@ def heading(text: str) -> QLabel:
     label = QLabel(text)
     label.setObjectName("cardTitle")
     return label
+
+
+class ContinueCard(QFrame):
+    """The game played last, right at the top: one tap to play on."""
+
+    def __init__(self, tab: "GamesTab"):
+        super().__init__()
+        self.tab = tab
+        self.game: SteamGame | None = None
+        self.setObjectName("card")
+        row = QHBoxLayout(self)
+        row.setContentsMargins(18, 16, 18, 16)
+        row.setSpacing(20)
+        self.cover = QLabel()
+        self.cover.setFixedSize(150, 225)
+        row.addWidget(self.cover)
+        text = QVBoxLayout()
+        caption = QLabel("Continue playing")
+        caption.setObjectName("cardMeta")
+        text.addWidget(caption)
+        self.title = QLabel("")
+        self.title.setObjectName("sourceTitle")
+        self.title.setWordWrap(True)
+        text.addWidget(self.title)
+        self.meta = QLabel("")
+        self.meta.setObjectName("cardMeta")
+        text.addWidget(self.meta)
+        text.addStretch()
+        buttons = QHBoxLayout()
+        self.play_button = big_button("▶  Play", "primary")
+        self.play_button.setMinimumWidth(220)
+        self.play_button.clicked.connect(self.play)
+        self.details_button = big_button("Details")
+        self.details_button.clicked.connect(lambda: self.game and tab.open_game(self.game.appid))
+        buttons.addWidget(self.play_button)
+        buttons.addWidget(self.details_button)
+        buttons.addStretch()
+        text.addLayout(buttons)
+        row.addLayout(text, 1)
+
+    def set_game(self, game: SteamGame | None) -> None:
+        self.game = game
+        self.setVisible(game is not None)
+        if game is None:
+            return
+        self.title.setText(game.name)
+        self.meta.setText(f"Last played {format_date(game.last_played)} · {format_playtime(game.playtime_minutes)}")
+        self.cover.setPixmap(placeholder_cover(game.name, 150, 225))
+        load_cover(self.tab.service, game.appid, self.cover, 150, 225)
+
+    def play(self) -> None:
+        if self.game is None:
+            return
+        ok = self.tab.service.client.play(self.game.appid)
+        if not ok:
+            self.tab.home.show_notice("Could not reach Steam - is it installed?", error=True)
+
+
+def last_played(games: list[SteamGame]) -> SteamGame | None:
+    played = [g for g in games if g.installed and g.last_played]
+    return max(played, key=lambda g: g.last_played) if played else None
 
 
 class GamesHome(QWidget):
@@ -62,6 +125,9 @@ class GamesHome(QWidget):
         self.content_layout = QVBoxLayout(content)
         self.content_layout.setContentsMargins(0, 10, 0, 10)
 
+        self.continue_card = ContinueCard(tab)
+        self.continue_card.hide()
+        self.content_layout.addWidget(self.continue_card)
         self.sources_heading = heading("Libraries")
         self.content_layout.addWidget(self.sources_heading)
         sources = QHBoxLayout()
@@ -106,6 +172,7 @@ class GamesHome(QWidget):
 
     def set_installed(self, games: list[SteamGame]) -> None:
         self.installed = sort_games([g for g in games if g.installed], "name")
+        self.continue_card.set_game(last_played(self.installed))
         self.refresh_results()
 
     def refresh_results(self) -> None:
@@ -113,6 +180,7 @@ class GamesHome(QWidget):
         searching = bool(query.strip())
         self.sources.setVisible(not searching)
         self.sources_heading.setVisible(not searching)
+        self.continue_card.setVisible(not searching and self.continue_card.game is not None)
         self.results_heading.setText(f'Results for "{query.strip()}"' if searching else "Installed games")
         matches = filter_games(self.installed, query, installed_only=True)
         focused = self.window().focusWidget() if self.window() else None
