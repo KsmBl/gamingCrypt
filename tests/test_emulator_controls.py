@@ -126,6 +126,24 @@ def test_no_controls_button_without_a_store(qtbot, emu):
     assert not tab.currentWidget().controls_button.isVisibleTo(tab.currentWidget())
 
 
+def test_installed_games_include_emulated_ones(qtbot, emu):
+    from gamingcrypt.ui.emulation_pages import RomCard
+
+    portal = SteamGame(620, "Portal 2", installed=True)
+    tab = games_tab(qtbot, emu, steam=[portal, SteamGame(10, "Not installed")])
+    home = tab.home
+    qtbot.waitUntil(lambda: len(home.result_appids) == 3)
+    names = [home.cards[a].game.name for a in home.result_appids]
+    assert names == ["Crash Bandicoot", "Portal 2", "Super Mario World"]
+    mario = home.cards[home.result_appids[2]]
+    assert isinstance(mario, RomCard) and mario.meta.text().startswith("SNES · ")
+    home.search.setText("mario")
+    assert [home.cards[a].game.name for a in home.result_appids] == ["Super Mario World"]
+    assert not home.cards[620].isVisible()
+    mario.clicked.emit(mario.game)
+    assert tab.currentWidget().game is mario.game  # the ROM's page
+
+
 @pytest.fixture
 def window(qtbot, emu, monkeypatch):
     from gamingcrypt.app import MainWindow

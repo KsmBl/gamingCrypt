@@ -265,15 +265,37 @@ class GamesHome(QWidget):
         self.update_favorites()
         self.refresh_results()
 
+    def _card(self, game):
+        """GameCard for an installed Steam game, RomCard (with its system) for an emulated one."""
+        from gamingcrypt.emulation.library import RomGame
+
+        if isinstance(game, RomGame):
+            from gamingcrypt.emulation.systems import short_name
+            from gamingcrypt.ui.emulation_pages import RomCard
+
+            card = RomCard(game, covers=self.tab.covers)
+            card.meta.setText(f"{short_name(game.system.id)} · {card.meta.text()}")
+            card.clicked.connect(self.tab.open_rom)
+            return card
+        card = GameCard(game, self.tab.service)
+        card.clicked.connect(self.tab.open_game)
+        return card
+
     def refresh_results(self) -> None:
         query = self.search.text()
         searching = bool(query.strip())
         self.apply_libraries()
         self.continue_card.setVisible(not searching and self.continue_card.game is not None)
         self.results_heading.setText(f'Results for "{query.strip()}"' if searching else "Installed games")
-        matches = filter_games(self.installed, query, installed_only=True)
+        words = query.casefold().split()
+        roms = [g for games in self.tab.roms.values() for g in games if all(w in g.name.casefold() for w in words)]
+        # Steam games and emulated ones together, by name
+        matches = sorted(filter_games(self.installed, query, installed_only=True) + roms,
+                         key=lambda g: g.name.casefold())
+        from gamingcrypt.ui.emulation_pages import RomCard
+
         focused = self.window().focusWidget() if self.window() else None
-        if isinstance(focused, GameCard):
+        if isinstance(focused, (GameCard, RomCard)):
             self.selected_appid = focused.game.appid
         # cards are made once and only re-ordered: typing must stay fast
         for card in self.grid.take_all():
@@ -283,15 +305,14 @@ class GamesHome(QWidget):
             if card is None or card.game is not game:
                 if card is not None:
                     card.deleteLater()
-                card = GameCard(game, self.tab.service)
-                card.clicked.connect(self.tab.open_game)
+                card = self._card(game)
                 self.cards[game.appid] = card
             self.grid.addWidget(card)
             card.show()
         self.grid.invalidate()
         self.result_appids = [g.appid for g in matches]
         card = self.cards.get(self.selected_appid) if self.selected_appid is not None else None
-        if card is not None and card.isVisible() and isinstance(focused, GameCard):
+        if card is not None and card.isVisible() and isinstance(focused, (GameCard, RomCard)):
             focus_and_reveal(card)  # hiding/re-adding cards must not lose the selection
         if matches:
             self.empty_label.setText("")
@@ -418,6 +439,7 @@ class GamesTab(QStackedWidget):
                 self.rom_games[game.appid] = game
         self.home.set_systems(found)
         self.home.update_continue()
+        self.home.refresh_results()  # emulated games are in "Installed games" too
         self.fetch_missing_cores(found)
 
     def fetch_missing_cores(self, found: dict) -> None:
