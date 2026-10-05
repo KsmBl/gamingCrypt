@@ -54,6 +54,15 @@ class GameWatcher(QObject):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll)
 
+    def drawing_game(self, running: Callable[[], set[int]] | None = None) -> int | None:
+        """A Steam game that runs and draws right now (started anywhere, e.g. Big Picture)."""
+        from gamingcrypt.steam.running import running_appids
+
+        for appid in sorted((running or running_appids)()):
+            if self.gpu(self.processes(appid)):
+                return appid
+        return None
+
     @property
     def active(self) -> bool:
         return self.appid is not None

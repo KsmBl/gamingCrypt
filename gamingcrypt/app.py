@@ -57,6 +57,16 @@ class MainWindow(QMainWindow):
         self.game_watcher.stalled.connect(lambda _appid: self.step_aside())
         self.game_watcher.finished.connect(lambda appid: self.game_over(appid))
         self.game_watcher.failed.connect(lambda appid: self.game_over(appid, failed=True))
+        # Gaming mode: games started elsewhere (Big Picture, a self-restart we missed) must be
+        # taken in too - otherwise gamescope's focus order would keep them hidden.
+        from PySide6.QtCore import QTimer
+
+        from gamingcrypt.session.mode import in_gaming_session
+
+        self.adopt_timer = QTimer(self)
+        self.adopt_timer.timeout.connect(self.adopt_running_game)
+        if in_gaming_session():
+            self.adopt_timer.start(3000)
         # Device controls (display, power, audio); empty in tests unless given.
         from gamingcrypt.system.controls import SystemControls
 
@@ -203,9 +213,14 @@ class MainWindow(QMainWindow):
 
         if getattr(self, "big_picture", None) is None:
             self.big_picture = BigPictureWatcher(parent=self)
-            self.big_picture.closed.connect(self.bring_to_front)
+            self.big_picture.closed.connect(self._big_picture_closed)
         self.step_aside("big_picture")
         self.big_picture.watch()
+
+    def _big_picture_closed(self) -> None:
+        if self.game_watcher.active and self.game_watcher.phase == "playing":
+            return  # a game started from Big Picture is running - it comes back after that
+        self.bring_to_front()
 
     def game_launched(self, appid: int) -> None:
         """Stay visible ("Starting …") until the game draws, then step aside."""
@@ -218,6 +233,19 @@ class MainWindow(QMainWindow):
             self.game_watcher.describe = lambda a: launch_phase(a, None, name, progress=service.install_progress)
         self.launch_overlay.show_for(self.game_name(appid), appid, getattr(games, "service", None))
         self.game_watcher.watch(appid)
+
+    def adopt_running_game(self) -> None:
+        watcher = self.game_watcher
+        if watcher.active:
+            return
+
+        def adopt(appid: int | None) -> None:
+            if appid is None or watcher.active:
+                return
+            log.info("app %s is running (not started here) - following it", appid)
+            watcher.watch(appid)
+
+        run_async(watcher.drawing_game, adopt, lambda _e: None, owner=self)
 
     def game_name(self, appid: int) -> str:
         games = getattr(self.shell, "pages", {}).get("Games") if self.shell else None

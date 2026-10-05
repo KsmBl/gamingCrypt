@@ -502,3 +502,45 @@ def test_no_cursor_in_gaming_mode(qtbot, monkeypatch):
         assert app.overrideCursor().shape() == Qt.CursorShape.BlankCursor
     finally:
         app.restoreOverrideCursor()
+
+
+def test_watcher_finds_a_drawing_game_started_elsewhere():
+    w = GameWatcher(processes=lambda appid: {appid} if appid == 945360 else {1},
+                    gpu=lambda pids: pids == {945360})
+    assert w.drawing_game(lambda: {10, 945360}) == 945360
+    assert w.drawing_game(lambda: {10}) is None  # running but not drawing (e.g. leftovers)
+    assert w.drawing_game(lambda: set()) is None
+
+
+def test_gaming_mode_follows_games_started_elsewhere(qtbot, monkeypatch):
+    """E.g. started from Big Picture: GamingCrypt steps aside for it and comes back after."""
+    monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
+    from gamingcrypt.system import gamescope_ctl as gs
+
+    monkeypatch.setattr(gs, "set_focus_order", lambda order: True)
+    monkeypatch.setattr(gs, "set_window_appid", lambda wid: True)
+    window, service, calls = make_window(qtbot, monkeypatch)
+    assert window.adopt_timer.isActive()
+    w = window.game_watcher
+    w.drawing_game = lambda: 945360
+    window.adopt_running_game()
+    qtbot.waitUntil(lambda: w.active)
+    assert w.appid == 945360 and not window.launch_overlay.isVisible()  # no loading screen for it
+    w.drawing_game = lambda: 1
+    window.adopt_running_game()  # already following one
+    qtbot.wait(50)
+    assert w.appid == 945360
+    window.game_watcher._stop()
+    window.big_picture_opened()
+    w.appid, w.phase = 945360, "playing"
+    window._big_picture_closed()
+    assert "back" not in calls  # the game from Big Picture stays in front
+    w.appid, w.phase = None, "idle"
+    window._big_picture_closed()
+    assert calls[-1] == "back"
+    window.big_picture.stop()
+
+
+def test_no_adopting_outside_gaming_mode(qtbot, monkeypatch):
+    window, service, calls = make_window(qtbot, monkeypatch)
+    assert not window.adopt_timer.isActive()
