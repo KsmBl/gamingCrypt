@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPoint, QPointF, QPropertyAnimation, Qt, QTimer, Signal
+from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPoint, QPointF, QPropertyAnimation, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -127,7 +127,8 @@ class GamepadNavigator(QObject):
     def candidates(self) -> list[QWidget]:
         root = self.root()
         return [w for w in root.findChildren(QWidget)
-                if w.isVisible() and w.isEnabled() and w.focusPolicy() & Qt.FocusPolicy.TabFocus
+                if not isinstance(w, QScrollArea)  # a container, not something to select
+                and w.isVisible() and w.isEnabled() and w.focusPolicy() & Qt.FocusPolicy.TabFocus
                 and w.width() > 0 and w.height() > 0]
 
     @staticmethod
@@ -241,17 +242,34 @@ class GamepadNavigator(QObject):
             options = [w for w in options if not content.isAncestorOf(w)]
         return self._best(current, options, dx, dy)
 
+    @staticmethod
+    def _rect(w: QWidget) -> QRect:
+        return QRect(w.mapToGlobal(QPoint(0, 0)), QSize(w.width(), w.height()))
+
+    @staticmethod
+    def _gap(a0: int, a1: int, b0: int, b1: int) -> int:
+        """Distance between two ranges, 0 when they overlap."""
+        return max(0, b0 - a1, a0 - b1)
+
     def _best(self, current: QWidget, options: list[QWidget], dx: int, dy: int) -> QWidget | None:
-        here = self._center(current)
+        """Nearest widget in that direction, measured edge to edge: the next row wins
+        even when its control sits off to the side (a wide drop-down right of its
+        caption, below a narrow button) - centre distances used to skip those."""
+        here, mine = self._center(current), self._rect(current)
         best, best_score = None, None
         for w in options:
-            there = self._center(w)
+            there, rect = self._center(w), self._rect(w)
             vx, vy = there.x() - here.x(), there.y() - here.y()
-            primary = vx * dx + vy * dy
-            if primary <= 4:
-                continue
-            secondary = abs(vx * dy) + abs(vy * dx)
-            score = primary + 2.5 * secondary
+            if vx * dx + vy * dy <= 4:
+                continue  # not in that direction
+            if dy:
+                ahead = rect.top() - mine.bottom() if dy > 0 else mine.top() - rect.bottom()
+                aside = self._gap(mine.left(), mine.right(), rect.left(), rect.right())
+            else:
+                ahead = rect.left() - mine.right() if dx > 0 else mine.left() - rect.right()
+                aside = self._gap(mine.top(), mine.bottom(), rect.top(), rect.bottom())
+            # tie-break between widgets in line: the one closer to the centre line
+            score = max(0, ahead) + 0.5 * aside + 0.02 * abs(vx * dy + vy * dx)
             if best_score is None or score < best_score:
                 best, best_score = w, score
         return best

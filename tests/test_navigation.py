@@ -360,3 +360,123 @@ def test_tab_highlight_looks_different_from_the_open_tab():
     focus_rule = next(line for line in css.splitlines() if line.startswith("QPushButton#tab:focus"))
     assert theme.ACCENT not in focus_rule and theme.ACCENT_HI not in focus_rule  # no blue underline
     assert "transparent" in focus_rule and theme.SURFACE_HI in focus_rule
+
+
+# --- rows with a caption: wide controls must not be skipped ------------------------------
+
+class LongNamesAudio:
+    """Real device names are long - the drop-downs get as wide as the row allows."""
+
+    def devices(self, kind):
+        from gamingcrypt.system.audio import Device
+
+        name = {"output": "Family 17h/19h HD Audio Controller Speaker + Headphones",
+                "input": "Family 17h/19h HD Audio Controller Digital Microphone"}[kind]
+        return [Device(kind, name, 50, False, True)]
+
+    def set_default(self, kind, name):
+        return True
+
+    def set_volume(self, kind, name, percent):
+        return True
+
+
+def walk_down(nav, steps):
+    seen = [nav.focused()]
+    for _ in range(steps):
+        nav.move(0, 1)
+        if nav.focused() is not seen[-1]:
+            seen.append(nav.focused())
+    return seen
+
+
+def test_down_reaches_every_control_of_the_device_settings(qtbot, monkeypatch):
+    """Was: the output / input drop-downs (and resolution, refresh) were jumped over -
+    their centre is far right of a narrow button or slider above them."""
+    import copy
+
+    from PySide6.QtWidgets import QMainWindow
+
+    from gamingcrypt.config import DEFAULTS
+    from gamingcrypt.session import mode
+    from gamingcrypt.system.controls import SystemControls
+    from gamingcrypt.ui.settings_tab import SettingsTab
+    from tests.test_system_settings import FakeBrightness
+
+    monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
+    monkeypatch.setattr(mode, "panel_size", lambda *a: (1280, 800))
+    from gamingcrypt.ui import theme
+
+    window = QMainWindow()
+    window.setStyleSheet(theme.STYLESHEET)  # real sizes
+    qtbot.addWidget(window)
+    window.resize(1280, 800)
+    tab = SettingsTab(copy.deepcopy(DEFAULTS), lambda c: None,
+                      system=SystemControls(audio=LongNamesAudio(), brightness=FakeBrightness()),
+                      restart_gaming=lambda: None)
+    window.setCentralWidget(tab)
+    window.show()
+    qtbot.waitExposed(window)
+    qtbot.wait(50)  # let the layout settle (sizes from the stylesheet)
+    nav = GamepadNavigator(window)
+    nav.focus(tab.sub_buttons["Device"])
+    d, a = tab.display_section, tab.audio_section
+    expected = [tab.sub_buttons["Device"], d.gs_resolution, d.gs_refresh, d.gs_apply, d.brightness_slider,
+                a.combos["output"], a.sliders["output"], a.combos["input"], a.sliders["input"], a.step_slider]
+    assert walk_down(nav, 12) == expected
+
+
+def test_down_reaches_every_control_of_the_quick_menu(qtbot):
+    from PySide6.QtWidgets import QMainWindow
+
+    from gamingcrypt.system.battery import BatteryState
+    from gamingcrypt.system.controls import SystemControls
+    from gamingcrypt.ui.quick_menu import QuickMenu
+    from tests.test_quick_menu import Brightness
+
+    from gamingcrypt.ui import theme
+
+    window = QMainWindow()
+    window.setStyleSheet(theme.STYLESHEET)  # real sizes
+    qtbot.addWidget(window)
+    window.resize(1280, 800)
+    window.show()
+    menu = QuickMenu(window, SystemControls(audio=LongNamesAudio(), brightness=Brightness()),
+                     refresh_get=lambda: 0, refresh_set=lambda hz: True,
+                     battery_reader=lambda: BatteryState(64, False, False))
+    window.nav_root = lambda: menu
+    menu.open_menu(620, "Portal 2")
+    qtbot.waitExposed(window)
+    qtbot.wait(50)
+    nav = GamepadNavigator(window)
+    assert walk_down(nav, 9) == [menu.back_button, menu.output, menu.input, menu.volume,
+                                 menu.brightness, menu.refresh, menu.quit_button]
+
+
+def test_highlighted_slider_is_clearly_visible(qtbot):
+    """A focused slider gets a blue frame - grey on the grey card wasn't visible."""
+    from PySide6.QtGui import QColor
+
+    from gamingcrypt.ui import theme
+    from gamingcrypt.ui.system_settings import _slider
+
+    host = QWidget()
+    host.setStyleSheet(theme.STYLESHEET)
+    qtbot.addWidget(host)
+    layout = QVBoxLayout(host)
+    first, second = _slider(0, 100, 0), _slider(0, 100, 0)  # value 0: the knob sits left
+    layout.addWidget(first)
+    layout.addWidget(second)
+    host.resize(400, 200)
+    host.show()
+    qtbot.waitExposed(host)
+
+    def right_edge(slider):
+        image = slider.grab().toImage()
+        return QColor(image.pixel(image.width() - 2, image.height() // 2))
+
+    first.setFocus()
+    qtbot.waitUntil(first.hasFocus)
+    accent = QColor(theme.ACCENT)
+    assert right_edge(first) == accent  # the frame
+    assert right_edge(second) != accent

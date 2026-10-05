@@ -84,7 +84,9 @@ QPushButton#danger:focus {{ background: #ff6b6f; border: 4px solid {TEXT}; }}
 QPushButton#tab:focus {{ background: {SURFACE_HI}; border: none; border-bottom: 4px solid transparent; color: {TEXT}; }}
 QPushButton#tab:checked:focus {{ border-bottom: 4px solid {ACCENT}; }}
 QComboBox:focus {{ border-color: {ACCENT}; }}
-QSlider:focus {{ background: {SURFACE_HI}; border-radius: 10px; }}
+/* Controller highlight on a slider: frame + blue knob - grey on grey wasn't visible on a card */
+QSlider:focus {{ background: {SURFACE_HI}; border: 3px solid {ACCENT}; border-radius: 12px; }}
+QSlider::handle:horizontal:focus {{ background: {ACCENT_HI}; border: 3px solid {TEXT}; }}
 QFrame#card:hover {{ background: {SURFACE_HI}; }}
 QFrame#topBar {{ background: {SURFACE}; }}
 QWidget#menuRow {{ background: transparent; }}
