@@ -7,9 +7,9 @@ import os
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 
-from gamingcrypt.ui.widgets import big_button
+from gamingcrypt.ui.widgets import big_button, enable_touch_scroll
 
 TOUR = [
     ("🎮", "Welcome to GamingCrypt",
@@ -28,7 +28,8 @@ TOUR = [
     ("✓", "If something doesn't work",
      "Settings → Health shows what's missing and how to fix it - usually by running ./install.sh again."),
 ]
-MAX_NEWS_LINES = 12
+MAX_NEWS_LINES = 40  # the list scrolls
+WINDOW_MARGIN = 40  # the card keeps this far from the window's edges
 
 
 class _Overlay(QWidget):
@@ -159,17 +160,28 @@ def mark_news_read(path: Path) -> None:
 
 
 class WhatsNew(_Overlay):
+    """The changes since the last update - in a list that scrolls when it's longer than the
+    screen (finger, or up / down on the controller)."""
+
     closed = Signal()
+    navigation_complete = True  # the controller stays in here
 
     def __init__(self, parent: QWidget):
         super().__init__(parent)
+        self.card.setFixedWidth(900)
         title = QLabel("What's new")
         title.setObjectName("section")
         self.box.addWidget(title)
         self.text = QLabel("")
         self.text.setWordWrap(True)
         self.text.setObjectName("detailMeta")
-        self.box.addWidget(self.text)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll.setWidget(self.text)
+        enable_touch_scroll(self.scroll)
+        self.box.addWidget(self.scroll, 1)
         self.ok_button = big_button("OK", "primary")
         self.ok_button.clicked.connect(self.close_news)
         self.box.addWidget(self.ok_button, alignment=Qt.AlignmentFlag.AlignRight)
@@ -180,9 +192,31 @@ class WhatsNew(_Overlay):
         if len(lines) > len(shown):
             text += f"\n… and {len(lines) - len(shown)} more"
         self.text.setText(text)
-        self.fit(self.text)
         self.open()
+        self.fit_to_window()
         self.ok_button.setFocus()
+
+    def fit_to_window(self) -> None:
+        """As tall as the text needs - but never taller than the window (then it scrolls)."""
+        margins = self.box.contentsMargins()
+        width = self.card.width() - margins.left() - margins.right() - 16  # (room for the scroll bar)
+        text_height = self.text.heightForWidth(width)
+        others = self.card.sizeHint().height() - self.scroll.sizeHint().height()
+        room = self.height() - 2 * WINDOW_MARGIN - others
+        self.scroll.setFixedHeight(max(120, min(text_height + 4, room)))
+        self.scroll.verticalScrollBar().setValue(0)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API
+        super().resizeEvent(event)
+        if self.isVisible():
+            self.fit_to_window()
+
+    def gamepad_navigate(self, current, dx: int, dy: int):
+        """Up / down scroll the list (the OK button is the only thing to select)."""
+        if dy:
+            bar = self.scroll.verticalScrollBar()
+            bar.setValue(bar.value() + dy * 120)
+        return None
 
     def close_news(self) -> None:
         self.hide()

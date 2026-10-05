@@ -77,8 +77,40 @@ def test_long_news_are_shortened(qtbot):
     qtbot.addWidget(host)
     host.show()
     news = tour_mod.WhatsNew(host)
-    news.open_news([f"change {i}" for i in range(20)])
-    assert news.text.text().endswith("… and 8 more")
+    news.open_news([f"change {i}" for i in range(50)])
+    assert news.text.text().endswith("… and 10 more")
+
+
+def test_long_news_fit_the_window_and_scroll(qtbot):
+    """Was: a dozen long commit messages made the card taller than the screen - cut off at top and bottom."""
+    from PySide6.QtWidgets import QWidget
+
+    from gamingcrypt.ui import theme
+    from gamingcrypt.ui.navigator import GamepadNavigator
+
+    host = QWidget()
+    host.setStyleSheet(theme.STYLESHEET)
+    qtbot.addWidget(host)
+    host.resize(1280, 800)
+    host.show()
+    news = tour_mod.WhatsNew(host)
+    host.nav_root = lambda: news
+    line = ("Emulated games: Options behind a button as for Steam games, with Remove (asks again, and whether "
+            "save states and memory card go too); PS2 widescreen option")
+    news.open_news([line] * 14)
+    qtbot.wait(50)
+    card = news.card.geometry()
+    assert card.top() >= 0 and card.bottom() <= news.height()  # nothing cut off
+    ok = news.ok_button.mapTo(news, news.ok_button.rect().bottomRight())
+    assert ok.y() <= news.height()
+    bar = news.scroll.verticalScrollBar()
+    assert bar.maximum() > 0 and bar.value() == 0  # the rest scrolls, from the top
+    nav = GamepadNavigator(host)
+    nav.move(0, 1)
+    assert bar.value() > 0 and nav.focused() is news.ok_button
+    news.open_news(["one change"])
+    qtbot.wait(50)
+    assert news.scroll.verticalScrollBar().maximum() == 0 and news.card.height() < 400  # short: small
 
 
 def test_install_script_records_the_changes(tmp_path):
