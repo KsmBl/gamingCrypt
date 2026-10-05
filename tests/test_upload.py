@@ -1,6 +1,7 @@
 """Add games / cores / BIOS over Wi-Fi: browser upload and SMB share, only while the page is open."""
 
 import http.client
+import re
 import subprocess
 
 import pytest
@@ -165,7 +166,7 @@ def test_share_client():
     share = SmbShare(helper="/h", runner=run, exists=lambda p: True, user="gay")
     assert share.start("/home/gay/GamingCrypt/Emulation") == (True, "")
     assert calls[0][0] == ["sudo", "-n", "/h", "smb-start", "/home/gay/GamingCrypt/Emulation"]
-    assert calls[0][1] == share.password + "\n" and len(share.password) == 10
+    assert calls[0][1] == share.password + "\n" and re.fullmatch(r"([A-Z][a-z]+){2}", share.password)
     share.stop()
     share.stop()  # only once
     assert [c[0][-1] for c in calls] == ["/home/gay/GamingCrypt/Emulation", "smb-stop"]
@@ -318,3 +319,18 @@ def test_qr_without_segno(monkeypatch):
                         lambda name, *a, **k: (_ for _ in ()).throw(ImportError()) if name == "segno"
                         else real(name, *a, **k))
     assert qr_pixmap("x") is None
+
+
+def test_passwords_and_addresses_are_two_words(paths):
+    from gamingcrypt.emulation.sharing import new_password
+    from gamingcrypt.emulation.words import WORDS, phrase
+
+    assert len(set(WORDS)) == len(WORDS) >= 300 and all(w.isalpha() and w.islower() for w in WORDS)
+    for _ in range(50):
+        word = phrase()
+        parts = re.findall(r"[A-Z][a-z]+", word)
+        assert len(parts) == 2 and "".join(parts) == word and all(p.lower() in WORDS for p in parts)
+    assert re.fullmatch(r"([A-Z][a-z]+){2}", new_password())
+    assert len({phrase() for _ in range(30)}) > 20  # random
+    server = UploadServer(paths)
+    assert re.fullmatch(r"([A-Z][a-z]+){2}", server.token)

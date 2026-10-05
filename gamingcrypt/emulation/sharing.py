@@ -5,8 +5,6 @@ from __future__ import annotations
 
 import getpass
 import os
-import secrets
-import string
 import subprocess
 from typing import Callable
 
@@ -16,9 +14,11 @@ Runner = Callable[..., subprocess.CompletedProcess]
 SHARE = "GamingCrypt"
 
 
-def new_password(length: int = 10) -> str:
-    alphabet = string.ascii_letters + string.digits
-    return "".join(secrets.choice(alphabet) for _ in range(length))
+def new_password() -> str:
+    """Two random words ("MapleOtter"): easy to type on a phone."""
+    from gamingcrypt.emulation.words import phrase
+
+    return phrase()
 
 
 class SmbShare:

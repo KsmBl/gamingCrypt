@@ -10,7 +10,6 @@ from __future__ import annotations
 import html
 import json
 import re
-import secrets
 import shutil
 import socket
 import threading
@@ -115,7 +114,9 @@ class UploadServer:
                  token: str | None = None, ports=PORTS, host: str = "0.0.0.0"):
         self.paths = paths
         self.on_received = on_received or (lambda folder, path: None)
-        self.token = token or secrets.token_urlsafe(6).replace("-", "x").replace("_", "y")
+        from gamingcrypt.emulation.words import phrase
+
+        self.token = token or phrase()  # two words: easy to type into a phone
         self.ports, self.host = ports, host
         self.server: ThreadingHTTPServer | None = None
         self.thread: threading.Thread | None = None
