@@ -54,7 +54,7 @@ def test_launch(emu, tmp_path):
     assert not ok and "isn't installed" in message
     ok, message = retroarch.launch(game, emu, tmp_path / "data", tmp_path / "logs",
                                    popen=popen, which=lambda t: "/usr/bin/retroarch")
-    assert not ok and "snes9x_libretro.so" in message and "Add games" in message  # no core yet
+    assert not ok and "snes9x_libretro.so" in message and "Add emulator games" in message  # no core yet
     (emu.cores / "snes9x_libretro.so").write_text("core")
     ok, message = retroarch.launch(game, emu, tmp_path / "data", tmp_path / "logs",
                                    popen=popen, which=lambda t: "/usr/bin/retroarch")

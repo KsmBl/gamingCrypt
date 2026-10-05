@@ -1,4 +1,4 @@
-"""Add games, cores and BIOS over Wi-Fi: browser address and SMB share.
+"""Add emulator games (ROMs), cores and BIOS over Wi-Fi: browser address and SMB share.
 
 Both services run only while this page is visible - they stop when it's left.
 """
@@ -51,15 +51,16 @@ class UploadPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 16, 30, 16)
         top = QHBoxLayout()
-        title = QLabel("Add games, cores and BIOS")
+        title = QLabel("Add emulator games")
         title.setObjectName("title")
         top.addWidget(title, 1)
         self.done_button = big_button("Done", "primary")
         self.done_button.clicked.connect(self.closed.emit)
         top.addWidget(self.done_button)
         layout.addLayout(top)
-        hint = QLabel("From a PC or phone in the same Wi-Fi. Everything lands on your encrypted drive. "
-                      "Both ways work only while this page is open.")
+        hint = QLabel("For the emulators (RetroArch) only: ROMs, cores and BIOS files from a PC or phone in the "
+                      "same Wi-Fi. Steam games are installed from the Steam library as usual. Everything lands "
+                      "on your encrypted drive; both ways work only while this page is open.")
         hint.setObjectName("cardMeta")
         hint.setWordWrap(True)
         layout.addWidget(hint)

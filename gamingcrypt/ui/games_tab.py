@@ -134,7 +134,8 @@ class GamesHome(QWidget):
         self.content_layout.addWidget(self.continue_card)
         self.sources_heading = heading("Libraries")
         self.content_layout.addWidget(self.sources_heading)
-        sources = QHBoxLayout()
+        self.sources = QWidget()
+        sources = FlowLayout(self.sources)  # wraps: one card per emulated system can be many
         self.favorites_card = SourceCard("Favorites", "Your starred games")
         self.favorites_card.tapped.connect(tab.open_favorites)
         sources.addWidget(self.favorites_card)
@@ -144,15 +145,12 @@ class GamesHome(QWidget):
         self.recent_card = SourceCard("Recently played", "Your last 10 games")
         self.recent_card.tapped.connect(tab.open_recent)
         sources.addWidget(self.recent_card)
-        self.add_card = SourceCard("⬆ Add games", "Games, cores and BIOS over Wi-Fi")
+        self.add_card = SourceCard("⬆ Add ROMs", "Emulator games, cores, BIOS · over Wi-Fi")
         self.add_card.tapped.connect(tab.open_upload)
         self.add_card.setVisible(tab.emulation is not None)
         sources.addWidget(self.add_card)
-        sources.addStretch()
         self.sources_row = sources
         self.system_cards: dict[str, SourceCard] = {}  # emulated systems with games
-        self.sources = QWidget()
-        self.sources.setLayout(sources)
         self.content_layout.addWidget(self.sources)
 
         self.results_heading = heading("Installed games")
@@ -183,7 +181,7 @@ class GamesHome(QWidget):
 
     def set_systems(self, found: dict) -> None:
         """One card per emulated system that has games (Emulation/roms/<system> on the drive)."""
-        from gamingcrypt.emulation.systems import BY_ID
+        from gamingcrypt.emulation.systems import short_name
 
         for sid in list(self.system_cards):
             if sid not in found:
@@ -191,11 +189,17 @@ class GamesHome(QWidget):
         for sid, games in found.items():
             card = self.system_cards.get(sid)
             if card is None:
-                card = SourceCard(BY_ID[sid].name, "")
+                card = SourceCard(short_name(sid), "")
                 card.tapped.connect(lambda s=sid: self.tab.open_system(s))
-                self.sources_row.insertWidget(self.sources_row.indexOf(self.add_card), card)
                 self.system_cards[sid] = card
             card.subtitle.setText(f"{len(games)} game{'s' if len(games) != 1 else ''}")
+        # order: Favorites, Steam, Recently played, the systems (as in SYSTEMS), Add ROMs last
+        from gamingcrypt.emulation.systems import SYSTEMS
+
+        self.sources_row.take_all()
+        for card in [self.favorites_card, self.steam_card, self.recent_card,
+                     *(self.system_cards[s.id] for s in SYSTEMS if s.id in self.system_cards), self.add_card]:
+            self.sources_row.addWidget(card)
         self.apply_libraries()
 
     def apply_libraries(self) -> None:
@@ -207,6 +211,7 @@ class GamesHome(QWidget):
         searching = bool(self.search.text().strip())
         self.sources.setVisible(any_shown and not searching)
         self.sources_heading.setVisible(any_shown and not searching)
+        self.sources_row.invalidate()  # cards shown / hidden: new height
 
     def update_favorites(self) -> None:
         count = len(self.tab.profiles.favorites())

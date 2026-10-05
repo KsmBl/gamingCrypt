@@ -219,3 +219,24 @@ def test_no_add_card_without_the_drive(qtbot):
     qtbot.addWidget(tab)
     tab.show()
     assert not tab.home.add_card.isVisible()
+
+
+def test_it_says_these_are_emulator_games(qtbot, paths):
+    """Adding games here is only for the emulators - Steam games come from the Steam library."""
+    import copy
+
+    from gamingcrypt.config import DEFAULTS
+    from gamingcrypt.emulation.systems import BY_ID
+    from gamingcrypt.ui.emulation_pages import SystemPage
+    from gamingcrypt.ui.games_tab import GamesTab
+    from tests.fakes import FakeService
+
+    tab = GamesTab(FakeService(), library_settings=copy.deepcopy(DEFAULTS)["libraries"],
+                   emulation_root=str(paths.root))
+    qtbot.addWidget(tab)
+    assert tab.home.add_card.title.text() == "⬆ Add ROMs"
+    assert tab.home.add_card.subtitle.text().startswith("Emulator games")
+    assert SystemPage(tab, BY_ID["snes"], []).add_button.text() == "⬆  Add ROMs"
+    page = make_page(qtbot, paths, FakeShare())
+    texts = " ".join(label.text() for label in page.findChildren(type(page.log)))
+    assert "Add emulator games" in texts and "emulators (RetroArch) only" in texts and "Steam games" in texts

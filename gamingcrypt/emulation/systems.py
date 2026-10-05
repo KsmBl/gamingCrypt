@@ -48,3 +48,13 @@ SYSTEMS: tuple[System, ...] = (
     System("arcade", "Arcade", (".zip", ".7z"), ("fbneo", "mame2003_plus")),
 )
 BY_ID = {s.id: s for s in SYSTEMS}
+# short names for the library cards (the full name is on the system's page)
+SHORT = {"nes": "NES", "snes": "SNES", "n64": "N64", "gb": "Game Boy", "gbc": "Game Boy Color",
+         "gba": "GBA", "nds": "Nintendo DS", "gc": "GameCube", "mastersystem": "Master System",
+         "megadrive": "Mega Drive", "gamegear": "Game Gear", "segacd": "Sega CD", "saturn": "Saturn",
+         "dreamcast": "Dreamcast", "psx": "PlayStation", "psp": "PSP", "pce": "PC Engine",
+         "atari2600": "Atari 2600", "arcade": "Arcade"}
+
+
+def short_name(system_id: str) -> str:
+    return SHORT.get(system_id, BY_ID[system_id].name)

@@ -57,7 +57,7 @@ class SystemPage(QWidget):
         title = QLabel(system.name)
         title.setObjectName("title")
         top.addWidget(title, 1)
-        self.add_button = big_button("⬆  Add games")
+        self.add_button = big_button("⬆  Add ROMs")
         self.add_button.clicked.connect(tab.open_upload)
         top.addWidget(self.add_button)
         layout.addLayout(top)

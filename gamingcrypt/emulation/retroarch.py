@@ -95,7 +95,7 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
     if core is None:
         wanted = game.system.cores[0]
         return False, (f"No RetroArch core for {game.system.name} yet - add e.g. {wanted}_libretro.so "
-                       "to the cores folder (⬆ Add games)")
+                       "to the cores folder (⬆ Add emulator games)")
     config = write_config(paths)
     from gamingcrypt.emulation import layouts
 

@@ -112,3 +112,42 @@ def test_default_pages_know_where_emulation_lives():
     assert str(pages["Games"].emulation.root) == "/home/u/GamingCrypt/Emulation"
     cfg["unlock"]["mount_point"] = ""
     assert app.default_pages(cfg)["Games"].emulation is None
+
+
+def test_many_systems_wrap_instead_of_running_off_screen(qtbot, tmp_path):
+    from gamingcrypt.ui.games_tab import GamesTab
+    from tests.fakes import FakeService
+
+    paths = EmulationPaths(tmp_path / "Emulation")
+    paths.ensure()
+    for system in SYSTEMS[:8]:
+        put(paths.roms_for(system) / f"Game{system.extensions[0]}")
+    tab = GamesTab(FakeService(), library_settings=copy.deepcopy(DEFAULTS)["libraries"], emulation_root=str(paths.root))
+    qtbot.addWidget(tab)
+    tab.resize(1280, 800)
+    tab.show()
+    tab.reload_roms()
+    qtbot.waitUntil(lambda: len(tab.home.system_cards) == 8)
+    qtbot.wait(20)
+    cards = list(tab.home.library_cards().values()) + [tab.home.add_card]
+    right = tab.home.sources.width()
+    assert all(card.geometry().right() <= right for card in cards if card.isVisible())  # all on screen
+    order = [tab.home.sources_row.itemAt(i).widget() for i in range(tab.home.sources_row.count())]
+    assert order[0] is tab.home.favorites_card and order[-1] is tab.home.add_card  # Add ROMs last
+
+
+def test_card_names_fit(qtbot):
+    from PySide6.QtGui import QFont, QFontMetrics
+
+    from gamingcrypt.emulation.systems import short_name
+    from gamingcrypt.ui import theme
+    from gamingcrypt.ui.game_widgets import SourceCard
+
+    card = SourceCard("x", "")
+    card.setStyleSheet(theme.STYLESHEET)
+    qtbot.addWidget(card)
+    card.show()
+    font = QFont(card.title.font())
+    metrics = QFontMetrics(font)
+    for system in SYSTEMS:
+        assert metrics.horizontalAdvance(short_name(system.id)) <= card.width() - 50, system.id  # one line
