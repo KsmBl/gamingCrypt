@@ -116,9 +116,11 @@ async function send(){{
 
 
 class UploadServer:
-    def __init__(self, paths: EmulationPaths, on_received: Callable[[str, Path], None] | None = None,
-                 token: str | None = None, ports=PORTS, host: str = "0.0.0.0"):
+    def __init__(self, paths: EmulationPaths | None, on_received: Callable[[str, Path], None] | None = None,
+                 token: str | None = None, ports=PORTS, host: str = "0.0.0.0",
+                 folders: Callable[[], dict[str, tuple[str, Path]]] | None = None):
         self.paths = paths
+        self.folders = folders or (lambda: targets(paths))  # folder id -> (label, folder)
         self.on_received = on_received or (lambda folder, path: None)
         from gamingcrypt.emulation.words import phrase
 
@@ -184,11 +186,11 @@ class UploadServer:
                     return
                 path, _query = route
                 if path == "folders":
-                    self._reply(200, json.dumps({k: v[0] for k, v in targets(owner.paths).items()}),
+                    self._reply(200, json.dumps({k: v[0] for k, v in owner.folders().items()}),
                                 "application/json")
                     return
                 options = "".join(f'<option value="{html.escape(k)}">{html.escape(label)}</option>'
-                                  for k, (label, _p) in targets(owner.paths).items())
+                                  for k, (label, _p) in owner.folders().items())
                 self._reply(200, PAGE.format(options=options), "text/html; charset=utf-8")
 
             def do_PUT(self) -> None:  # noqa: N802
@@ -199,7 +201,7 @@ class UploadServer:
                 query = route[1]
                 folder_id = (query.get("folder") or [""])[0]
                 name = safe_name((query.get("name") or [""])[0])
-                folder = targets(owner.paths).get(folder_id)
+                folder = owner.folders().get(folder_id)
                 if folder is None or name is None:
                     self._reply(400, "bad folder or file name")
                     return

@@ -173,7 +173,10 @@ class MainWindow(QMainWindow):
             return
         watcher = self.game_watcher
         game = watcher.appid if watcher.active else None
-        gs.apply_overlay(front == "game" and game is not None)  # the performance overlay: games only
+        from gamingcrypt.movies.library import is_movie_appid
+
+        # the performance overlay: games only (not over GamingCrypt, not over a movie)
+        gs.apply_overlay(front == "game" and game is not None and not is_movie_appid(game))
         # Every list ends with all candidates: in gamescope's Steam mode an order that
         # matches no open window would leave the screen black.
         launcher, steam = gs.LAUNCHER_APPID, gs.BIG_PICTURE_APPID
@@ -474,6 +477,9 @@ class MainWindow(QMainWindow):
         from gamingcrypt.emulation.library import EMU_APPID_BASE
 
         self.end_game_refresh()  # the screen's own refresh rate again
+        movies = self.shell.pages.get("Movies") if self.shell is not None else None
+        if appid is not None and hasattr(movies, "movie_ended"):
+            movies.movie_ended(appid)  # watched? where it was stopped
 
         games = self.shell.pages.get("Games") if self.shell is not None else None
         play_log = getattr(games, "play_log", None)
@@ -632,7 +638,15 @@ class MainWindow(QMainWindow):
         """Stay visible ("Starting …") until the game draws, then step aside."""
         from gamingcrypt.emulation.library import EMU_APPID_BASE
 
+        from gamingcrypt.movies.library import is_movie_appid
+
         games = self.shell.pages.get("Games") if self.shell else None
+        if is_movie_appid(appid):  # a movie (mpv)
+            self.game_watcher.describe = lambda a: "Starting the movie…"
+            self.launch_overlay.show_for(self.game_name(appid), appid, None)
+            self.launch_overlay.set_phase("Starting the movie…")
+            self.game_watcher.watch(appid)
+            return
         if appid >= EMU_APPID_BASE:  # an emulated game (RetroArch)
             self.game_watcher.describe = lambda a: "Starting RetroArch…"
             self.launch_overlay.show_for(self.game_name(appid), appid, None)
@@ -666,6 +680,9 @@ class MainWindow(QMainWindow):
         game = getattr(games, "games", {}).get(appid) if games is not None else None
         if game is None and games is not None:
             game = getattr(games, "rom_games", {}).get(appid)  # emulated
+        movie = self.running_movie(appid)
+        if movie is not None:
+            return movie.title
         return game.name if game is not None else "your game"
 
     def launch_rom(self, game) -> tuple[bool, str]:
@@ -703,8 +720,30 @@ class MainWindow(QMainWindow):
 
     # running speed of RetroArch games ----------------------------------------------------------
     def emulated_game_in_front(self) -> bool:
-        """Steam shows its own volume indicator over its games - over emulators nobody does."""
-        return not self.isVisible() and self.running_rom() is not None
+        """Steam shows its own volume indicator over its games - over emulators and movies nobody does."""
+        return not self.isVisible() and (self.running_rom() is not None or self.running_movie() is not None)
+
+    def running_movie(self, appid: int | None = None):
+        movies = self.shell.pages.get("Movies") if self.shell else None
+        if appid is None:
+            appid = self.game_watcher.appid if self.game_watcher.active else None
+        finder = getattr(movies, "by_appid", None)
+        return finder(appid) if finder is not None and appid is not None else None
+
+    def launch_movie(self, movie, start: float = 0) -> tuple[bool, str]:
+        """A movie: mpv full screen, like a game (quick menu, volume, Force quit)."""
+        from gamingcrypt.movies import player
+        from gamingcrypt.ui.tour import data_dir
+
+        movies = self.shell.pages.get("Movies") if self.shell else None
+        ok, message = player.launch(movie, data_dir(), config_mod.cache_dir() / "logs", start,
+                                    languages=getattr(movies, "languages", ("en", "de")))
+        if ok:
+            log.info("playing movie %s from %.0f s", movie.key, start)
+            self.game_launched(movie.appid)
+        else:
+            log.warning("movie player: %s", message)
+        return ok, message
 
     def running_rom(self):
         games = self.shell.pages.get("Games") if self.shell else None
@@ -1145,6 +1184,9 @@ class MainWindow(QMainWindow):
                 self.download_notifier.message.connect(lambda icon, text: self.notify(text, icon))
         from gamingcrypt.session.mode import in_gaming_session
 
+        movies = pages.get("Movies")
+        if hasattr(movies, "player_launcher"):
+            movies.player_launcher = self.launch_movie
         self.shell = Shell(pages, show_hints=in_gaming_session())
         self.shell.exit_requested.connect(self.desktop_mode)
         self.shell.power_requested.connect(self.power_action)
@@ -1299,7 +1341,11 @@ def default_pages(config: dict) -> dict[str, QWidget]:
     from gamingcrypt.emulation import eden
 
     games.eden_installer = eden.install  # Switch: Eden is downloaded when a game first needs it
-    return {"Games": games, "Downloads": DownloadsTab(service)}
+    from gamingcrypt.movies.metadata import languages_for
+    from gamingcrypt.ui.movies_tab import MoviesTab
+
+    movies = MoviesTab(os.path.join(mount_point, "Movies") if mount_point else "", languages=languages_for(config))
+    return {"Games": games, "Downloads": DownloadsTab(service), "Movies": movies}
 
 
 SECRET_FORMAT_HINT = {

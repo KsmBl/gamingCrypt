@@ -382,9 +382,13 @@ class QuickMenu(QWidget):
         self.screenshot.emit()
 
     def open_menu(self, appid: int | None = None, game_name: str = "") -> None:
+        from gamingcrypt.movies.library import is_movie_appid
+
         self.appid = appid
+        self.movie = is_movie_appid(appid)  # its place is kept: stopping needs no second tap
         self.title.setText(game_name or "Quick menu")
-        self.back_button.setText("▶  Back to the game" if appid else "▶  Back")
+        self.back_button.setText(("▶  Back to the movie" if self.movie else "▶  Back to the game") if appid
+                                 else "▶  Back")
         self.quit_button.setVisible(appid is not None)
         self._disarm_quit()
         set_status(self.status, "")
@@ -520,6 +524,10 @@ class QuickMenu(QWidget):
         self.lock_now.emit()
 
     def _quit_tapped(self) -> None:
+        if getattr(self, "movie", False) and self.appid is not None:
+            set_status(self.status, "Stopping the movie…")
+            self.force_quit.emit(self.appid)
+            return
         if not self._quit_armed:
             self._quit_armed = True
             self.quit_button.setText("Tap again to force quit")
@@ -532,4 +540,4 @@ class QuickMenu(QWidget):
 
     def _disarm_quit(self) -> None:
         self._quit_armed = False
-        self.quit_button.setText("✕  Force quit")
+        self.quit_button.setText("■  Stop the movie" if getattr(self, "movie", False) else "✕  Force quit")

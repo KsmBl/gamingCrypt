@@ -43,6 +43,13 @@ def smb_url(ip: str, user: str, password: str) -> str:
 
 class UploadPage(QWidget):
     closed = Signal()
+    TITLE = "Add emulator games"
+    HINT = ("For the emulators (RetroArch) only: ROMs, cores and BIOS files from a PC or phone in the "
+            "same Wi-Fi. Steam games are installed from the Steam library as usual. Everything lands "
+            "on your encrypted drive; both ways work only while this page is open.")
+    FOLDERS = ("Where things go:  roms/<system> - games (e.g. roms/snes, roms/psx)  ·  bios - BIOS "
+               "files (in the browser: choose which one - it's named and placed for you)  ·  cores - "
+               "RetroArch cores (*_libretro.so - missing ones are downloaded automatically)")
 
     def __init__(self, paths: EmulationPaths, server_factory: Callable = UploadServer,
                  share: SmbShare | None = None, ip: Callable[[], str] = local_ip, parent: QWidget | None = None):
@@ -58,16 +65,14 @@ class UploadPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 16, 30, 16)
         top = QHBoxLayout()
-        title = QLabel("Add emulator games")
+        title = QLabel(self.TITLE)
         title.setObjectName("title")
         top.addWidget(title, 1)
         self.done_button = big_button("Done", "primary")
         self.done_button.clicked.connect(self.closed.emit)
         top.addWidget(self.done_button)
         layout.addLayout(top)
-        hint = QLabel("For the emulators (RetroArch) only: ROMs, cores and BIOS files from a PC or phone in the "
-                      "same Wi-Fi. Steam games are installed from the Steam library as usual. Everything lands "
-                      "on your encrypted drive; both ways work only while this page is open.")
+        hint = QLabel(self.HINT)
         hint.setObjectName("cardMeta")
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -94,9 +99,7 @@ class UploadPage(QWidget):
         box.addStretch()
         row.addWidget(smb, 1)
         layout.addLayout(row)
-        folders = QLabel("Where things go:  roms/<system> - games (e.g. roms/snes, roms/psx)  ·  bios - BIOS "
-                         "files (in the browser: choose which one - it's named and placed for you)  ·  cores - "
-                         "RetroArch cores (*_libretro.so - missing ones are downloaded automatically)")
+        folders = QLabel(self.FOLDERS)
         folders.setObjectName("cardMeta")
         folders.setWordWrap(True)
         layout.addWidget(folders)
@@ -137,7 +140,7 @@ class UploadPage(QWidget):
     def start(self) -> None:
         if self.server is not None:
             return
-        self.paths.ensure()
+        self.prepare()
         ip = self.ip()
         self.server = self.server_factory(self.paths, lambda folder, path: self.bridge.received.emit(folder, path.name))
         if self.server.start():
@@ -150,8 +153,14 @@ class UploadPage(QWidget):
             self._show_qr(self.browser_qr, None)
         self.smb.setText("Starting…")
         self._show_qr(self.smb_qr, None)
-        folder = str(self.paths.root)
+        folder = self.share_folder()
         run_async(lambda: self.share.start(folder), lambda r: self._share_started(r, ip), owner=self)
+
+    def prepare(self) -> None:
+        self.paths.ensure()
+
+    def share_folder(self) -> str:
+        return str(self.paths.root)
 
     def _share_started(self, result, ip: str) -> None:
         ok, message = result

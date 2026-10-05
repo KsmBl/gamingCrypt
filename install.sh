@@ -307,6 +307,15 @@ install_retroarch() {
     fi
 }
 
+install_player() {
+    # the Movies tab plays with mpv (controller through SDL, hardware video decoding)
+    command -v mpv >/dev/null && return 0
+    if command -v pacman >/dev/null; then
+        info "Installing the movie player mpv (needs sudo)"
+        sudo pacman -S --needed --noconfirm mpv >/dev/null || warn "could not install mpv (movies can't be played)"
+    fi
+}
+
 install_sharing() {
     # Settings -> add games over the network: Samba runs only while that page is open
     command -v smbd >/dev/null && return 0
@@ -446,6 +455,7 @@ if [[ $WITH_SUDO -eq 1 ]]; then
     install_overlay
     install_sharing
     install_retroarch
+    install_player
     ask_boot_questions
     [[ $SESSION -eq 1 ]] && install_session
 else
