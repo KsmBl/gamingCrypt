@@ -280,3 +280,41 @@ def test_it_says_these_are_emulator_games(qtbot, paths):
     page = make_page(qtbot, paths, FakeShare())
     texts = " ".join(label.text() for label in page.findChildren(type(page.log)))
     assert "Add emulator games" in texts and "emulators (RetroArch) only" in texts and "Steam games" in texts
+
+
+def test_qr_codes_for_the_phone(qtbot, paths):
+    from gamingcrypt.ui.qr import qr_pixmap
+    from gamingcrypt.ui.upload_page import smb_url
+
+    assert smb_url("192.168.1.198", "gay", "a/b:c") == "smb://gay:a%2Fb%3Ac@192.168.1.198/GamingCrypt"
+    pixmap = qr_pixmap("http://192.168.1.198:8080/t/", 220)
+    assert pixmap is not None and pixmap.width() == pixmap.height() and 180 <= pixmap.width() <= 220
+    image = pixmap.toImage()
+    assert image.pixelColor(2, 2).name() == "#ffffff"  # quiet zone: phones need it
+    assert any(image.pixelColor(x, x).name() == "#000000" for x in range(pixmap.width()))
+    page = make_page(qtbot, paths, FakeShare())
+    page.show()
+    assert page.browser_qr.isVisible() and page.browser_qr.qr_text == page.url.text()
+    qtbot.waitUntil(lambda: page.smb_qr.isVisible())
+    assert page.smb_qr.qr_text == "smb://gay:Secret1234@192.168.1.198/GamingCrypt"
+    page.hide()
+
+
+def test_no_smb_qr_without_the_share(qtbot, paths):
+    page = make_page(qtbot, paths, FakeShare(ok=False))
+    page.show()
+    qtbot.waitUntil(lambda: "Not available" in page.smb.text())
+    assert not page.smb_qr.isVisible() and page.browser_qr.isVisible()
+    page.hide()
+
+
+def test_qr_without_segno(monkeypatch):
+    import builtins
+
+    from gamingcrypt.ui.qr import qr_pixmap
+
+    real = builtins.__import__
+    monkeypatch.setattr(builtins, "__import__",
+                        lambda name, *a, **k: (_ for _ in ()).throw(ImportError()) if name == "segno"
+                        else real(name, *a, **k))
+    assert qr_pixmap("x") is None

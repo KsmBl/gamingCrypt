@@ -34,6 +34,13 @@ def _card(title: str) -> tuple[QFrame, QVBoxLayout]:
     return card, box
 
 
+def smb_url(ip: str, user: str, password: str) -> str:
+    """For a phone's file manager: share, user and (temporary) password in one."""
+    from urllib.parse import quote
+
+    return f"smb://{quote(user, safe='')}:{quote(password, safe='')}@{ip}/{SHARE}"
+
+
 class UploadPage(QWidget):
     closed = Signal()
 
@@ -74,6 +81,7 @@ class UploadPage(QWidget):
         self.browser_status = QLabel("")
         self.browser_status.setObjectName("status")
         box.addWidget(self.browser_status)
+        self.browser_qr = self._qr_label(box)
         box.addStretch()
         row.addWidget(browser, 1)
         smb, box = _card("Network share (SMB)")
@@ -82,6 +90,7 @@ class UploadPage(QWidget):
         self.smb.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.smb.setWordWrap(True)
         box.addWidget(self.smb)
+        self.smb_qr = self._qr_label(box)
         box.addStretch()
         row.addWidget(smb, 1)
         layout.addLayout(row)
@@ -95,6 +104,26 @@ class UploadPage(QWidget):
         self.log.setObjectName("detailMeta")
         layout.addWidget(self.log)
         layout.addStretch()
+
+    @staticmethod
+    def _qr_label(box: QVBoxLayout) -> QLabel:
+        label = QLabel()
+        label.setToolTip("Scan with your phone's camera")
+        label.hide()
+        box.addWidget(label, alignment=Qt.AlignmentFlag.AlignLeft)
+        return label
+
+    @staticmethod
+    def _show_qr(label: QLabel, text: str | None) -> None:
+        from gamingcrypt.ui.qr import qr_pixmap
+
+        pixmap = qr_pixmap(text) if text else None
+        label.qr_text = text if pixmap is not None else None
+        if pixmap is None:
+            label.hide()
+            return
+        label.setPixmap(pixmap)
+        label.show()
 
     # services live exactly as long as the page is shown --------------------------------------
     def showEvent(self, event) -> None:  # noqa: N802 - Qt API
@@ -113,11 +142,14 @@ class UploadPage(QWidget):
         self.server = self.server_factory(self.paths, lambda folder, path: self.bridge.received.emit(folder, path.name))
         if self.server.start():
             self.url.setText(self.server.url(ip))
-            set_status(self.browser_status, "Open this address in a browser")
+            set_status(self.browser_status, "Open this address in a browser - or scan the code with your phone")
+            self._show_qr(self.browser_qr, self.server.url(ip))
         else:
             self.url.setText("-")
             set_status(self.browser_status, "No free port for the upload page", error=True)
+            self._show_qr(self.browser_qr, None)
         self.smb.setText("Starting…")
+        self._show_qr(self.smb_qr, None)
         folder = str(self.paths.root)
         run_async(lambda: self.share.start(folder), lambda r: self._share_started(r, ip), owner=self)
 
@@ -131,6 +163,7 @@ class UploadPage(QWidget):
             return
         self.smb.setText(f"Windows: \\\\{ip}\\{SHARE}\nMac / Linux: smb://{ip}/{SHARE}\n"
                          f"User: {self.share.user}\nPassword: {self.share.password}")
+        self._show_qr(self.smb_qr, smb_url(ip, self.share.user, self.share.password))
 
     def stop(self) -> None:
         if self.server is not None:
