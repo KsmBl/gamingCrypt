@@ -15,6 +15,7 @@ action=$(echo "$FAKE_ACTIONS" | cut -d, -f$n)
 case "$action" in
   desktop) echo desktop > "$XDG_RUNTIME_DIR/gamingcrypt/next-mode"; exit 0 ;;
   crash) exit 1 ;;
+  hang) echo gaming > "$XDG_RUNTIME_DIR/gamingcrypt/next-mode"; trap '' TERM; sleep 60; exit 0 ;;
   *) exit 0 ;;
 esac
 """
@@ -164,3 +165,15 @@ def test_gaming_mode_cli(monkeypatch, tmp_path):
     assert app.main(["--config", str(tmp_path / "c.json"), "--gaming-mode"]) == 0
     monkeypatch.setattr(mode, "leave_desktop", lambda: False)
     assert app.main(["--config", str(tmp_path / "c.json"), "--gaming-mode"]) == 1
+
+
+def test_gamescope_ignoring_sigterm_is_killed_after_leave_request(tmp_path):
+    """Steam-mode gamescope ignores SIGTERM: after GamingCrypt asked for a restart / the
+    desktop, the session ends it hard instead of leaving a frozen screen."""
+    import time
+
+    start = time.monotonic()
+    code, calls = run_session(tmp_path, "hang,exit0", {"GC_KILL_GRACE_S": "1"}, timeout=20)
+    assert code == 0 and [c.split(" ")[0] for c in calls] == ["gaming", "gaming"]  # restarted
+    assert time.monotonic() - start < 10
+    assert "didn't exit - killing it" in (tmp_path / "state/gamingcrypt/session.log").read_text()

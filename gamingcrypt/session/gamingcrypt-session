@@ -19,6 +19,7 @@ GAMESCOPE_ARGS="${GC_GAMESCOPE_ARGS:--f --xwayland-count 2 --default-touch-mode 
 CONF="$CONFDIR/gamescope-args"
 QUICK_EXIT_S="${GC_QUICK_EXIT_S:-15}"
 MAX_QUICK_FAILS=3
+KILL_GRACE_S="${GC_KILL_GRACE_S:-8}"
 
 mkdir -p "$STATE" "$RUN"
 rm -f "$STATE/next-mode"  # old location (before 0.5.2) - could be stale
@@ -61,8 +62,21 @@ while :; do
 	start=$(date +%s)
 	# shellcheck disable=SC2086 - the args are meant to split
 	GAMINGCRYPT_SESSION=1 QT_QPA_PLATFORM=xcb XDG_CURRENT_DESKTOP=gamescope \
-		"$GAMESCOPE" $args -- "$LAUNCHER" >>"$log" 2>&1
+		"$GAMESCOPE" $args -- "$LAUNCHER" >>"$log" 2>&1 &
+	gs=$!
+	# gamescope in Steam mode ignores SIGTERM: once GamingCrypt asked to leave (next-mode)
+	# it gets a few seconds, then it's ended hard - otherwise the screen stays frozen
+	# (GamingCrypt can't do that itself: it dies with gamescope's X server).
+	(
+		while [ ! -f "$RUN/next-mode" ]; do sleep 1; done
+		sleep "$KILL_GRACE_S"
+		echo "$(date) gamescope didn't exit - killing it" >>"$log"
+		kill -KILL "$gs" 2>/dev/null
+	) &
+	watchdog=$!
+	wait "$gs"
 	code=$?
+	kill "$watchdog" 2>/dev/null
 	[ -f "$RUN/next-mode" ] && continue  # Desktop mode, or a restart for new display settings
 	if [ "$code" -eq 0 ]; then
 		exit 0  # closed on purpose -> end the session (log out / shutdown)
