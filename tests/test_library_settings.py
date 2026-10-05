@@ -18,7 +18,7 @@ def test_hide_and_show_libraries(qtbot):
     games.show()
     settings.libraries_changed.connect(games.home.apply_libraries)
     home = games.home
-    assert set(settings.library_buttons) == set(LIBRARIES)
+    assert set(LIBRARIES) <= set(settings.library_buttons)  # + one per emulated system
     assert all(b.isChecked() and b.text().startswith("✓") for b in settings.library_buttons.values())
     settings.library_buttons["recent"].click()
     assert saved[-1]["libraries"]["hidden"] == ["recent"]

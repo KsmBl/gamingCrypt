@@ -145,6 +145,8 @@ class GamesHome(QWidget):
         self.recent_card.tapped.connect(tab.open_recent)
         sources.addWidget(self.recent_card)
         sources.addStretch()
+        self.sources_row = sources
+        self.system_cards: dict[str, SourceCard] = {}  # emulated systems with games
         self.sources = QWidget()
         self.sources.setLayout(sources)
         self.content_layout.addWidget(self.sources)
@@ -171,7 +173,26 @@ class GamesHome(QWidget):
         layout.addWidget(self.keyboard)
 
     def library_cards(self) -> dict:
-        return {"favorites": self.favorites_card, "steam": self.steam_card, "recent": self.recent_card}
+        cards = {"favorites": self.favorites_card, "steam": self.steam_card, "recent": self.recent_card}
+        cards.update({f"emu:{sid}": card for sid, card in self.system_cards.items()})
+        return cards
+
+    def set_systems(self, found: dict) -> None:
+        """One card per emulated system that has games (Emulation/roms/<system> on the drive)."""
+        from gamingcrypt.emulation.systems import BY_ID
+
+        for sid in list(self.system_cards):
+            if sid not in found:
+                self.system_cards.pop(sid).deleteLater()
+        for sid, games in found.items():
+            card = self.system_cards.get(sid)
+            if card is None:
+                card = SourceCard(BY_ID[sid].name, "")
+                card.tapped.connect(lambda s=sid: self.tab.open_system(s))
+                self.sources_row.insertWidget(self.sources_row.count() - 1, card)
+                self.system_cards[sid] = card
+            card.subtitle.setText(f"{len(games)} game{'s' if len(games) != 1 else ''}")
+        self.apply_libraries()
 
     def apply_libraries(self) -> None:
         """Only the libraries chosen in Settings; no heading when none is left."""
@@ -241,11 +262,16 @@ class GamesTab(QStackedWidget):
     """Navigation stack: home -> Steam library -> game details / store."""
 
     def __init__(self, service, library_path: str = "", parent: QWidget | None = None,
-                 library_settings: dict | None = None):
+                 library_settings: dict | None = None, emulation_root: str = ""):
         super().__init__(parent)
         self.service = service
         # shared with the config: Settings changes it, apply_libraries() shows it
         self.library_settings = library_settings if library_settings is not None else {"hidden": []}
+        from gamingcrypt.emulation.library import EmulationPaths
+
+        self.emulation = EmulationPaths(emulation_root) if emulation_root else None
+        self.roms: dict = {}  # system id -> games
+        self.rom_launcher = None  # set by the app: RomGame -> (ok, message)
         self.games: dict[int, SteamGame] = {}
         self._came_from: list = []
         from gamingcrypt.game_profiles import GameProfiles
@@ -312,6 +338,49 @@ class GamesTab(QStackedWidget):
     # data -------------------------------------------------------------------
     def reload_installed(self) -> None:
         run_async(self.service.installed_games, self._installed_loaded, owner=self)
+        self.reload_roms()
+
+    def reload_roms(self) -> None:
+        if self.emulation is None:
+            return
+        paths = self.emulation
+
+        def work():
+            import os
+
+            from gamingcrypt.emulation.library import scan_all
+
+            if os.path.ismount(paths.root.parent) and not paths.roms.exists():
+                paths.ensure()  # first time on an unlocked drive: the folders to put things in
+            return scan_all(paths)
+
+        run_async(work, self._roms_loaded, lambda _e: None, owner=self)
+
+    def _roms_loaded(self, found: dict) -> None:
+        self.roms = found
+        for games in found.values():
+            for game in games:
+                self.rom_games[game.appid] = game
+        self.home.set_systems(found)
+
+    @property
+    def rom_games(self) -> dict:
+        if not hasattr(self, "_rom_games"):
+            self._rom_games = {}
+        return self._rom_games
+
+    def open_system(self, system_id: str) -> None:
+        from gamingcrypt.emulation.systems import BY_ID
+        from gamingcrypt.ui.emulation_pages import SystemPage
+
+        self.push(SystemPage(self, BY_ID[system_id], self.roms.get(system_id, [])))
+
+    def open_rom(self, game) -> None:
+        from gamingcrypt.ui.emulation_pages import RomGamePage
+
+        page = RomGamePage(self, game)
+        self.push(page)
+        page.main_button.setFocus()
 
     def _installed_loaded(self, games: list[SteamGame]) -> None:
         for game in games:

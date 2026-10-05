@@ -289,6 +289,24 @@ class SettingsTab(QStackedWidget):
             self.library_buttons[key] = button
         row.addStretch()
         column.addLayout(row)
+        # emulated systems (shown when they have games in Emulation/roms/<system>)
+        from gamingcrypt.emulation.systems import SYSTEMS
+        from gamingcrypt.ui.widgets import FlowLayout
+
+        systems_heading = QLabel("Emulators")
+        systems_heading.setObjectName("cardMeta")
+        column.addWidget(systems_heading)
+        flow_box = QWidget()
+        flow = FlowLayout(flow_box)
+        for system in SYSTEMS:
+            key = f"emu:{system.id}"
+            button = big_button("", checkable=True)
+            button.setChecked(key not in hidden)
+            self._library_text(button, system.name)
+            button.toggled.connect(lambda on, k=key, b=button, n=system.name: self._library_toggled(k, on, b, n))
+            flow.addWidget(button)
+            self.library_buttons[key] = button
+        column.addWidget(flow_box)
         return box
 
     @staticmethod

@@ -1022,7 +1022,9 @@ def default_pages(config: dict) -> dict[str, QWidget]:
     from gamingcrypt.ui.downloads_tab import DownloadsTab
 
     libraries = config.setdefault("libraries", {"hidden": []})
-    return {"Games": GamesTab(service, library_path=library_path, library_settings=libraries),
+    emulation_root = os.path.join(mount_point, "Emulation") if mount_point else ""
+    return {"Games": GamesTab(service, library_path=library_path, library_settings=libraries,
+                              emulation_root=emulation_root),
             "Downloads": DownloadsTab(service)}
 
 
