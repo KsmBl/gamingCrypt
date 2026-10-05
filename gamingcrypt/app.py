@@ -473,6 +473,8 @@ class MainWindow(QMainWindow):
     def game_ended(self, appid: int | None = None) -> None:
         from gamingcrypt.emulation.library import EMU_APPID_BASE
 
+        self.end_game_refresh()  # the screen's own refresh rate again
+
         games = self.shell.pages.get("Games") if self.shell is not None else None
         play_log = getattr(games, "play_log", None)
         if appid is not None and appid >= EMU_APPID_BASE and play_log is not None:
@@ -693,6 +695,7 @@ class MainWindow(QMainWindow):
                                        memory_card=profile.get("memory_card"),
                                        widescreen=profile.get("widescreen"))
         if ok:
+            self.follow_game_refresh(config_mod.cache_dir() / "logs" / retroarch.LOG_NAME)
             self.speed_mode = "normal"  # RetroArch starts at normal speed
             self.disc_index = retroarch.current_disc(paths, game, retroarch.find_core(paths, game.system, core))
         return self._rom_started(game, games, ok, message, "RetroArch")
@@ -715,6 +718,53 @@ class MainWindow(QMainWindow):
         fast, slow = profile.get("fast_speed"), profile.get("slow_speed")
         return (fast if fast in retroarch.FAST_SPEEDS else retroarch.DEFAULT_FAST,
                 slow if slow in retroarch.SLOW_SPEEDS else retroarch.DEFAULT_SLOW)
+
+    def follow_game_refresh(self, log) -> None:
+        """Gaming mode: the screen at the game's own rate (50 Hz PAL games on a 60 Hz screen
+        stutter). Needs a panel gamescope knows refresh rates for (install.sh adds some)."""
+        from gamingcrypt.session.mode import in_gaming_session
+
+        if not in_gaming_session():
+            return
+        timer = getattr(self, "_refresh_timer", None)
+        if timer is None:
+            timer = self._refresh_timer = QTimer(self)
+            timer.timeout.connect(self._check_game_refresh)
+        self._refresh_log, self._refresh_set = log, 0
+        timer.start(1000)
+
+    def _check_game_refresh(self) -> None:
+        from gamingcrypt.emulation import retroarch
+        from gamingcrypt.system import gamescope_ctl
+
+        if not self.game_watcher.active:
+            return
+        game_log, current = self._refresh_log, self._refresh_set
+
+        def work():
+            if current and gamescope_ctl.dynamic_refresh() != current:
+                return None  # changed in the quick menu: that wins
+            return retroarch.refresh_for(retroarch.content_fps(game_log))
+
+        def done(hz) -> None:
+            if hz is None:
+                self._refresh_timer.stop()
+            elif hz != self._refresh_set:
+                log.info("screen at %s Hz for the game", hz or "the default")
+                self._refresh_set = hz
+                run_async(lambda: gamescope_ctl.set_dynamic_refresh(hz), owner=self)
+
+        run_async(work, done, owner=self)
+
+    def end_game_refresh(self) -> None:
+        from gamingcrypt.system import gamescope_ctl
+
+        timer = getattr(self, "_refresh_timer", None)
+        if timer is not None:
+            timer.stop()
+        if getattr(self, "_refresh_set", 0):
+            self._refresh_set = 0
+            run_async(lambda: gamescope_ctl.set_dynamic_refresh(0), owner=self)
 
     def set_disc(self, index: int) -> None:
         """Quick menu: change discs - open the tray, step to the disc, close it."""

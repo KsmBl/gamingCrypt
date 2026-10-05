@@ -9,6 +9,7 @@ Force quit work unchanged.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -197,7 +198,7 @@ def current_disc(paths: EmulationPaths, game: RomGame, core: Path | None) -> int
 
 def command(game: RomGame, core: Path, config: Path, reaper_path: Path) -> list[str]:
     return [str(reaper_path), "SteamLaunch", f"AppId={game.appid}", "--",
-            "retroarch", "--appendconfig", str(config), "-L", str(core), str(game.path)]
+            "retroarch", "--verbose", "--appendconfig", str(config), "-L", str(core), str(game.path)]
 
 
 def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, core_name: str | None = None,
@@ -228,12 +229,34 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
     layouts.write_remap(paths.config / "remaps", core.name, game.system.id, layout or {})  # the system's layout
     log_dir.mkdir(parents=True, exist_ok=True)
     try:
-        with open(log_dir / "retroarch.log", "ab") as log:
+        with open(log_dir / LOG_NAME, "wb") as log:  # this game's log (its frame rate is read from it)
             popen(command(game, core, config, reaper(data_dir)), stdin=subprocess.DEVNULL, stdout=log,
                   stderr=subprocess.STDOUT, start_new_session=True, env=dict(os.environ))
     except OSError as exc:
         return False, f"RetroArch didn't start: {exc}"
     return True, f"Starting {game.name}…"
+
+
+LOG_NAME = "retroarch.log"
+_FPS = re.compile(r"(?:SET_SYSTEM_AV_INFO|\[Core\] Geometry):.*?FPS: ([0-9.]+)")
+
+
+def content_fps(log: Path) -> float | None:
+    """The frame rate the running game asked for last (from RetroArch's log), e.g. 50 for PAL."""
+    try:
+        with open(log, "rb") as fh:
+            fh.seek(0, 2)
+            fh.seek(max(0, fh.tell() - 512 * 1024))
+            text = fh.read().decode(errors="replace")
+    except OSError:
+        return None
+    found = _FPS.findall(text)
+    return float(found[-1]) if found else None
+
+
+def refresh_for(fps: float | None) -> int:
+    """The screen refresh that shows the game evenly: 50 Hz for 50 fps games, else the default (0)."""
+    return 50 if fps is not None and abs(fps - 50) < 0.5 else 0
 
 
 def send(command_text: str, port: int = COMMAND_PORT) -> bool:

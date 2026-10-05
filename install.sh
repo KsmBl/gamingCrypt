@@ -430,6 +430,14 @@ Categories=Game;
 ENTRY
 }
 
+install_gamescope_displays() {
+    # refresh rates for panels gamescope has no profile for (games at 50 Hz); read when gaming mode starts
+    local dir="${XDG_CONFIG_HOME:-$HOME/.config}/gamescope"
+    mkdir -p "$dir"
+    cp "$SRC_DIR/gamingcrypt/session/gamescope/gamingcrypt-displays.lua" "$dir/"
+}
+install_gamescope_displays
+
 if [[ $WITH_SUDO -eq 1 ]]; then
     install_helper
     install_input_rules
