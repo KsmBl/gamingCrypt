@@ -76,6 +76,7 @@ from gamingcrypt.unlock.veracrypt import VeraCryptUnlocker
 
 class SettingsTab(QStackedWidget):
     libraries_changed = Signal()  # Games tab: show / hide libraries
+    hotkeys_changed = Signal()  # device buttons (quick menu / lock) recorded
 
     def __init__(
         self,
@@ -159,6 +160,11 @@ class SettingsTab(QStackedWidget):
         layout = page("Controller")
         self.controller_page = ControllerPage(self.input)
         layout.addWidget(self.controller_page)
+        from gamingcrypt.ui.device_buttons import DeviceButtonsSection
+
+        self.device_buttons = DeviceButtonsSection(config, save)
+        self.device_buttons.changed.connect(self.hotkeys_changed.emit)
+        layout.addWidget(self.device_buttons)
         layout.addStretch()
 
         # Steam

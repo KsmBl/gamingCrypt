@@ -37,6 +37,11 @@ def set_paused(paused: bool) -> None:
     _paused = paused
 
 
+# Pages that want raw controller input (button recording, controller test) register
+# here: called first with every event, returning True keeps it from navigating.
+LISTENERS: list[Callable[[int, int, int], bool]] = []
+
+
 class _Bridge(QObject):
     event = Signal(int, int, int)
 
@@ -56,6 +61,7 @@ class GamepadNavigator(QObject):
         self.repeat.timeout.connect(self._repeat)
         self._scroll_anims: dict[int, QPropertyAnimation] = {}
         self._scroll_targets: dict[int, int] = {}
+        self.hotkey_filter: Callable[[int, int, int], bool] | None = None
 
     # input -------------------------------------------------------------------
     @property
@@ -63,6 +69,11 @@ class GamepadNavigator(QObject):
         return not _paused and self.window.isVisible() and not self.window.isMinimized()
 
     def on_event(self, ev_type: int, code: int, value: int) -> None:
+        for listener in list(LISTENERS):
+            if listener(ev_type, code, value):
+                return
+        if self.hotkey_filter is not None and self.hotkey_filter(ev_type, code, value):
+            return
         if not self.active:
             self._release()
             return

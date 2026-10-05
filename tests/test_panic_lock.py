@@ -54,7 +54,9 @@ def test_reader_reports_the_combo_only_while_windows_is_held():
     while time.time() < deadline and len(got) < 3:
         time.sleep(0.01)
     keys.stop()
-    assert got == [e.KEY_LEFTMETA, e.PANIC_COMBO, e.KEY_VOLUMEDOWN]
+    from gamingcrypt.input import hotkeys
+
+    assert got == [hotkeys.ACTION_CODES["quick_menu"], e.PANIC_COMBO, e.KEY_VOLUMEDOWN]
 
 
 class Unlocker:

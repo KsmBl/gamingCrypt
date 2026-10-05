@@ -12,20 +12,24 @@ import threading
 from typing import Callable
 
 from gamingcrypt.input import evdev as e
+from gamingcrypt.input import hotkeys
 
-PRESS, REPEAT = 1, 2
+RELEASE, PRESS, REPEAT = 0, 1, 2
 
 
 class VolumeKeys:
     def __init__(self, on_key: Callable[[int], None],
                  finder: Callable[[], list[e.DeviceInfo]] = e.find_volume_key_devices,
-                 open_device: Callable[[str], e.InputDevice] = e.InputDevice):
+                 open_device: Callable[[str], e.InputDevice] = e.InputDevice,
+                 bindings: dict | None = None):
         self.on_key = on_key
         self.finder = finder
         self.open_device = open_device
         self.devices: list = []
         self.errors: list[str] = []
-        self.held: set[int] = set()  # Windows button currently down (for the panic combo)
+        # device buttons (quick menu, lock now) on keyboard-like devices - see input/hotkeys
+        self.tracker = hotkeys.Tracker(bindings if bindings is not None else dict(hotkeys.WINDOWS), hotkeys.KEY)
+        self.consumed: set[int] = set()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -51,21 +55,31 @@ class VolumeKeys:
                     self.devices.remove(device)  # unplugged
                     continue
                 for ev_type, code, value in events:
-                    if ev_type == e.EV_KEY and code in e.MENU_KEYS:
-                        (self.held.add if value in (PRESS, REPEAT) else self.held.discard)(code)
-                    if ev_type != e.EV_KEY or value not in (PRESS, REPEAT):
-                        continue
-                    if code == e.KEY_VOLUMEDOWN and value == PRESS and self.held:
-                        self.on_key(e.PANIC_COMBO)  # Windows + Volume Down: lock now
-                        continue
-                    if code in e.VOLUME_KEYS:
-                        if code == e.KEY_MUTE and value == REPEAT:
-                            continue  # holding mute must not flicker
-                        self.on_key(code)
-                    elif (code in e.MENU_KEYS or code == e.KEY_POWER) and value == PRESS:
-                        self.on_key(code)  # quick menu / sleep - once per press
+                    if ev_type == e.EV_KEY:
+                        self._key(code, value)
             if not self.devices:
                 return
+
+    def _key(self, code: int, value: int) -> None:
+        if value == RELEASE:
+            self.tracker.feed(code, False)
+            self.consumed.discard(code)
+            return
+        if value == PRESS:
+            actions, consumed = self.tracker.feed(code, True)
+            for action in actions:
+                self.on_key(hotkeys.ACTION_CODES[action])  # quick menu / lock now
+            if consumed:
+                self.consumed.add(code)  # e.g. Volume Down of "Windows + Volume Down"
+                return
+        if code in self.consumed:
+            return  # its key repeats belong to the combination too
+        if code in e.VOLUME_KEYS:
+            if code == e.KEY_MUTE and value == REPEAT:
+                return  # holding mute must not flicker
+            self.on_key(code)
+        elif code == e.KEY_POWER and value == PRESS:
+            self.on_key(code)  # once per press
 
     def stop(self) -> None:
         self._stop.set()

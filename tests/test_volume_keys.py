@@ -151,7 +151,7 @@ def test_only_active_in_gaming_mode(qtbot, monkeypatch):
     started = []
 
     class Keys:
-        def __init__(self, on_key):
+        def __init__(self, on_key, finder=None, bindings=None):
             self.devices = ["dev"]
             self.errors = []
 

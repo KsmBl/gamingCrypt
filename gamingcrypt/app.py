@@ -114,6 +114,7 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
         self.check_failed_sleep()
+        self.reload_hotkeys()
         self.shell: Shell | None = None
         unlock = config["unlock"]
         if not unlock.get("method") or not unlock.get("volume"):
@@ -199,7 +200,8 @@ class MainWindow(QMainWindow):
         # volume -> VolumeController, Windows button -> quick menu; keys arrive from a thread
         self.key_bridge = _KeyBridge(self)
         self.key_bridge.key.connect(self.hardware_key)
-        keys = VolumeKeys(self.key_bridge.key.emit)
+        keys = VolumeKeys(self.key_bridge.key.emit, finder=self.key_devices, bindings=self.hotkeys)
+        self.volume_keys = keys
         if not keys.start():
             log.warning("volume buttons not readable: %s - run install.sh --session",
                         "; ".join(keys.errors) or "none found")
@@ -207,12 +209,44 @@ class MainWindow(QMainWindow):
         log.info("volume buttons: %d device(s)", len(keys.devices))
         return keys
 
-    def hardware_key(self, code: int) -> None:
+    def key_devices(self):
+        """Volume / power buttons plus the devices of recorded device buttons."""
         from gamingcrypt.input import evdev as e
 
-        if code == e.PANIC_COMBO:
+        names = {b.device for b in self.hotkeys.values() if b.source == "key" and b.device}
+        found = e.find_volume_key_devices()
+        known = {d.path for d in found}
+        return found + [d for d in e.list_devices() if d.name in names and d.path not in known]
+
+    def reload_hotkeys(self) -> None:
+        """Settings -> Controller -> Device buttons changed."""
+        from gamingcrypt.input import hotkeys
+
+        self.hotkeys = hotkeys.load(self.config)
+        self.pad_tracker = hotkeys.Tracker(self.hotkeys, hotkeys.PAD)
+        keys = getattr(self, "volume_keys", None)
+        if keys is not None:
+            keys.tracker.bindings = self.hotkeys
+
+    def pad_hotkey(self, ev_type: int, code: int, value: int) -> bool:
+        """Controller buttons bound as device buttons (e.g. Guide = quick menu); also in a game."""
+        from gamingcrypt.input import evdev as e
+        from gamingcrypt.input import hotkeys
+
+        if ev_type != e.EV_KEY or value == 2:
+            return False
+        actions, consumed = self.pad_tracker.feed(code, value == 1)
+        for action in actions:
+            self.hardware_key(hotkeys.ACTION_CODES[action])
+        return consumed
+
+    def hardware_key(self, code: int) -> None:
+        from gamingcrypt.input import evdev as e
+        from gamingcrypt.input import hotkeys
+
+        if code == hotkeys.ACTION_CODES["lock"]:
             self.panic_lock()
-        elif code in e.MENU_KEYS:
+        elif code == hotkeys.ACTION_CODES["quick_menu"]:
             self.toggle_quick_menu()
         elif code == e.KEY_POWER:
             self.power_button()
@@ -852,6 +886,8 @@ class MainWindow(QMainWindow):
         settings = pages.get("Settings")
         if hasattr(settings, "libraries_changed") and hasattr(games, "home"):
             settings.libraries_changed.connect(games.home.apply_libraries)
+        if hasattr(settings, "hotkeys_changed"):
+            settings.hotkeys_changed.connect(self.reload_hotkeys)
         self.shell.power_menu.sleep_button.setVisible(self.sleep_allowed())
         self.load_other_systems(self.shell.power_menu)
         self._replace(self.shell)
@@ -1050,7 +1086,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.volume_key_devices:  # used by install.sh for its udev rule
         from gamingcrypt.input.evdev import find_volume_key_devices
 
-        for name in dict.fromkeys(device.name for device in find_volume_key_devices()):
+        from gamingcrypt.input import hotkeys
+
+        names = [device.name for device in find_volume_key_devices()]
+        names += [b.device for b in hotkeys.load(cfg).values() if b.source == hotkeys.KEY and b.device]
+        for name in dict.fromkeys(names):
             print(name)
         return 0
     if args.gaming_mode:
@@ -1098,6 +1138,7 @@ def main(argv: list[str] | None = None) -> int:
     volume_keys = window.start_volume_keys()
     power_key = window.start_power_key()  # noqa: F841 - holds logind's power button
     navigator = GamepadNavigator(window, tab_switch=window.switch_tab)
+    navigator.hotkey_filter = window.pad_hotkey  # e.g. Guide = quick menu, also in a game
     nav_source = NavSource(input_service, navigator.bridge.event.emit)
     nav_source.start()
     server = listen_for_activation(window.bring_to_front)  # noqa: F841 - keep alive

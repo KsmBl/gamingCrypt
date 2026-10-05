@@ -6,6 +6,7 @@ import time
 import pytest
 
 from gamingcrypt.input import evdev as e
+from gamingcrypt.input import hotkeys
 from gamingcrypt.system import gamescope_ctl
 from gamingcrypt.system.audio import Device
 from gamingcrypt.system.controls import SystemControls
@@ -86,7 +87,7 @@ def test_reader_reports_windows_button_once_per_press():
     while time.time() < deadline and len(got) < 2:
         time.sleep(0.01)
     keys.stop()
-    assert got == [e.KEY_LEFTMETA, e.KEY_RIGHTMETA]
+    assert got == [hotkeys.ACTION_CODES["quick_menu"]] * 2  # either Windows key, once per press
 
 
 # --- menu ----------------------------------------------------------------------------------
@@ -221,7 +222,7 @@ def test_windows_button_mid_game(qtbot, monkeypatch):
     w.poll()
     assert w.phase == "playing" and calls == ["aside"]
     monkeypatch.setattr(window, "isVisible", lambda: False)  # hidden: the game is in front
-    window.hardware_key(e.KEY_LEFTMETA)
+    window.hardware_key(hotkeys.ACTION_CODES["quick_menu"])  # Windows button (see input/hotkeys)
     assert calls == ["aside", "back"]  # GamingCrypt came to the front ...
     menu = window.quick_menu
     assert menu.title.text() == "Portal 2" and not menu.quit_button.isHidden()
@@ -231,7 +232,7 @@ def test_windows_button_mid_game(qtbot, monkeypatch):
     menu.quit_button.click()
     menu.quit_button.click()
     qtbot.waitUntil(lambda: quit_ == [620])
-    window.hardware_key(e.KEY_LEFTMETA)  # Windows button again: back to the game
+    window.hardware_key(hotkeys.ACTION_CODES["quick_menu"])  # Windows button again: back to the game
     assert calls == ["aside", "back", "aside"] and not menu.isVisible()
 
 
