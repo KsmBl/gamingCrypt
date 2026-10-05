@@ -384,7 +384,8 @@ class MainWindow(QMainWindow):
         games = self.shell.pages.get("Games") if self.shell is not None else None
         service = getattr(games, "service", None)
         unlocker = self.unlocker_factory(self.config["unlock"])
-        for overlay in (getattr(self, "quick_menu", None), self.sleep_lock, self.battery_warning):
+        for overlay in (getattr(self, "quick_menu", None), getattr(self, "controls_overlay", None), self.sleep_lock,
+                        self.battery_warning):
             if overlay is not None:
                 overlay.hide()
         self.sleep_lock = None
@@ -511,6 +512,7 @@ class MainWindow(QMainWindow):
             menu.fps_chosen.connect(self.quick_fps)
             menu.screenshot.connect(self.take_screenshot)
             menu.emulator_command.connect(self.emulator_command)
+            menu.controls_requested.connect(self.open_running_controls)
         watcher = self.game_watcher
         appid = watcher.appid if watcher.active and watcher.phase in ("starting", "playing") else None
         if not self.isVisible() or self.isMinimized():
@@ -704,6 +706,38 @@ class MainWindow(QMainWindow):
         run_async(lambda: fetch(paths, game.system, core), done, lambda _e: done(None), owner=self)
         return True, f"Downloading the RetroArch core for {system}…"
 
+    def open_running_controls(self) -> None:
+        """Quick menu: the running emulated game's button layout, over the game."""
+        from gamingcrypt.emulation import layouts
+        from gamingcrypt.ui import theme
+        from gamingcrypt.ui.controls_page import ControlsPage
+
+        games = self.shell.pages.get("Games") if self.shell else None
+        appid = self.game_watcher.appid if self.game_watcher.active else None
+        game = getattr(games, "rom_games", {}).get(appid) if appid is not None else None
+        if game is None:
+            self._quick_menu_closed()
+            return
+        old = getattr(self, "controls_overlay", None)
+        if old is not None:
+            old.deleteLater()
+        page = self.controls_overlay = ControlsPage(
+            layouts.Store(self.config, self.save), game.system.id, parent=self,
+            note=f"Changes apply the next time {game.name} starts - save your state, quit and start it again.")
+        page.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        page.setStyleSheet(f"ControlsPage {{ background: {theme.BG}; }}")
+        page.closed.connect(self._running_controls_closed)
+        page.setGeometry(self.rect())
+        page.raise_()
+        page.show()
+
+    def _running_controls_closed(self) -> None:
+        page, self.controls_overlay = getattr(self, "controls_overlay", None), None
+        if page is not None:
+            page.hide()
+            page.deleteLater()
+        self._quick_menu_closed()  # back to the game
+
     def emulator_command(self, text: str) -> None:
         """Quick menu: save / load state of the running emulated game."""
         from gamingcrypt.emulation import retroarch
@@ -882,6 +916,9 @@ class MainWindow(QMainWindow):
         menu = getattr(self, "quick_menu", None)
         if menu is not None and menu.isVisible():
             return menu
+        controls = getattr(self, "controls_overlay", None)
+        if controls is not None and controls.isVisible():
+            return controls
         if self.launch_overlay.isVisible():
             return self.launch_overlay
         menu = getattr(self.shell, "power_menu", None) if self.shell is not None else None
@@ -953,6 +990,10 @@ class MainWindow(QMainWindow):
             service.on_big_picture = self.big_picture_opened
             if hasattr(games, "rom_launcher"):
                 games.rom_launcher = self.launch_rom
+            if hasattr(games, "layout_store"):
+                from gamingcrypt.emulation import layouts
+
+                games.layout_store = layouts.Store(self.config, self.save)  # emulator controls
             if self.download_notifier is None and hasattr(service, "downloads"):
                 from gamingcrypt.ui.download_notifier import DownloadNotifier
 

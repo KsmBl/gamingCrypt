@@ -162,7 +162,13 @@ class SettingsTab(QStackedWidget):
         layout.addWidget(self.controller_page)
         self.controller_test_button = big_button("🎮  Controller test")
         self.controller_test_button.clicked.connect(self.open_controller_test)
-        layout.addWidget(self.controller_test_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.emulator_controls_button = big_button("🕹  Emulator controls")
+        self.emulator_controls_button.clicked.connect(self.open_emulator_controls)
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.controller_test_button)
+        buttons.addWidget(self.emulator_controls_button)
+        buttons.addStretch()
+        layout.addLayout(buttons)
         from gamingcrypt.ui.device_buttons import DeviceButtonsSection
 
         self.device_buttons = DeviceButtonsSection(config, save)
@@ -260,36 +266,25 @@ class SettingsTab(QStackedWidget):
         self.addWidget(page)
         self.setCurrentWidget(page)
 
+    def open_emulator_controls(self, system_id: str | None = None) -> None:
+        """What each controller button is in every emulated system - and changing it."""
+        from gamingcrypt.emulation import layouts
+        from gamingcrypt.emulation.systems import SYSTEMS
+        from gamingcrypt.ui.controls_page import ControlsPage
+
+        page = ControlsPage(layouts.Store(self.config, self.save), system_id or SYSTEMS[0].id,
+                            systems=[s.id for s in SYSTEMS])
+        page.closed.connect(lambda: self.close_page(""))
+        self.addWidget(page)
+        self.setCurrentWidget(page)
+
     def controller_test_options(self) -> dict:
         """Per-system button meanings and layouts (emulated systems)."""
         from gamingcrypt.emulation import layouts
         from gamingcrypt.emulation.systems import SYSTEMS
 
-        config, save = self.config, self.save
-
-        class Store:
-            def choices(self, system: str) -> list[str]:
-                return list(layouts.console(system))
-
-            def get(self, system: str) -> dict:
-                return layouts.load(config, system)
-
-            def set(self, system: str, button: str, name: str | None) -> None:
-                custom = layouts.load(config, system)
-                default = layouts.labels(system).get(button)
-                if name is None or name == default:
-                    custom.pop(button, None)
-                else:
-                    custom[button] = name
-                layouts.save(config, system, custom)
-                save(config)
-
-            def reset(self, system: str) -> None:
-                layouts.save(config, system, {})
-                save(config)
-
-        return {"labels_for": lambda system: layouts.labels(system, layouts.load(config, system)),
-                "systems": [(s.id, s.name) for s in SYSTEMS], "layout_store": Store()}
+        store = layouts.Store(self.config, self.save)
+        return {"labels_for": store.labels, "systems": [(s.id, s.name) for s in SYSTEMS], "layout_store": store}
 
     def _libraries_section(self) -> QWidget:
         """Which libraries the Games tab shows."""

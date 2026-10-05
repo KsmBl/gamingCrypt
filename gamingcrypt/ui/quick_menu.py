@@ -38,6 +38,7 @@ class QuickMenu(QWidget):
     fps_chosen = Signal(int)
     screenshot = Signal()
     emulator_command = Signal(str)  # RetroArch: SAVE_STATE / LOAD_STATE
+    controls_requested = Signal()  # emulated game: its button layout
 
     def __init__(self, parent: QWidget, system: SystemControls,
                  refresh_get: Callable[[], int] = gamescope_ctl.dynamic_refresh,
@@ -157,8 +158,11 @@ class QuickMenu(QWidget):
         self.save_state_button.clicked.connect(lambda: self._emulator("SAVE_STATE"))
         self.load_state_button = big_button("↺  Load state")
         self.load_state_button.clicked.connect(lambda: self._emulator("LOAD_STATE"))
+        self.controls_button = big_button("🕹  Controls")
+        self.controls_button.clicked.connect(self._controls)
         line.addWidget(self.save_state_button, 1)
         line.addWidget(self.load_state_button, 1)
+        line.addWidget(self.controls_button, 1)
         self.box.addWidget(row)
         self.state_row = row
         row.hide()
@@ -224,6 +228,13 @@ class QuickMenu(QWidget):
     def _emulator(self, command: str) -> None:
         self.close_menu()  # back into the game; RetroArch saves / loads right away
         self.emulator_command.emit(command)
+
+    def _controls(self) -> None:
+        if self.countdown.isActive():
+            self.revert_refresh()
+        self.battery_timer.stop()
+        self.hide()  # not close_menu: GamingCrypt stays in front for the controls page
+        self.controls_requested.emit()
 
     def _overlay_toggled(self, on: bool) -> None:
         from gamingcrypt.system import gamescope_ctl

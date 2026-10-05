@@ -324,6 +324,7 @@ class GamesTab(QStackedWidget):
         self.core_fetcher = None  # (paths, system, wanted) -> core path: downloads missing RetroArch cores
         self._fetching_cores = False
         self.upload_page_factory = None  # tests: a stand-in upload page
+        self.layout_store = None  # set by the app: emulator controls (emulation/layouts.Store)
         self.games: dict[int, SteamGame] = {}
         self._came_from: list = []
         from gamingcrypt.game_profiles import GameProfiles
@@ -462,6 +463,15 @@ class GamesTab(QStackedWidget):
             return
         page = (self.upload_page_factory or UploadPage)(self.emulation)
         page.closed.connect(self._upload_closed)
+        self.push(page)
+
+    def open_controls(self, system_id: str) -> None:
+        from gamingcrypt.ui.controls_page import ControlsPage
+
+        if self.layout_store is None:
+            return
+        page = ControlsPage(self.layout_store, system_id)
+        page.closed.connect(self.back)
         self.push(page)
 
     def _upload_closed(self) -> None:

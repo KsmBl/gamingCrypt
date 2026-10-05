@@ -121,3 +121,36 @@ def save(config: dict, system_id: str, custom: dict[str, str]) -> None:
         layouts[system_id] = dict(custom)
     else:
         layouts.pop(system_id, None)
+
+
+XBOX_NAMES = {"a": "A", "b": "B", "x": "X", "y": "Y", "lb": "LB", "rb": "RB", "lt": "LT", "rt": "RT",
+              "back": "View", "start": "Menu", "l3": "L3", "r3": "R3"}
+
+
+class Store:
+    """The layouts in the config: what the controls page and the controller test change."""
+
+    def __init__(self, config: dict, save):
+        self.config, self.save_config = config, save
+
+    def choices(self, system: str) -> list[str]:
+        return list(console(system))
+
+    def get(self, system: str) -> dict:
+        return load(self.config, system)
+
+    def labels(self, system: str) -> dict[str, str]:
+        return labels(system, load(self.config, system))
+
+    def set(self, system: str, button: str, name: str | None) -> None:
+        custom = load(self.config, system)
+        if name is None or name == labels(system).get(button):
+            custom.pop(button, None)  # the default again
+        else:
+            custom[button] = name
+        save(self.config, system, custom)
+        self.save_config(self.config)
+
+    def reset(self, system: str) -> None:
+        save(self.config, system, {})
+        self.save_config(self.config)
