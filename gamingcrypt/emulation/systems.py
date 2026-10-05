@@ -12,6 +12,7 @@ class System:
     extensions: tuple[str, ...]
     cores: tuple[str, ...]  # RetroArch core names (file "<name>_libretro.so"), preferred first
     bios: tuple[str, ...] = ()  # files the cores need in bios/ (checked, never shipped)
+    emulator: str = "retroarch"  # or a standalone one (see emulation/standalone)
 
     @property
     def folder(self) -> str:
@@ -40,20 +41,22 @@ SYSTEMS: tuple[System, ...] = (
     System("saturn", "Sega Saturn", (".cue", ".chd", ".m3u"), ("mednafen_saturn", "yabasanshiro"),
            ("sega_101.bin", "mpr-17933.bin")),
     System("dreamcast", "Sega Dreamcast", (".cdi", ".gdi", ".chd", ".m3u"), ("flycast",)),
-    System("psx", "PlayStation", DISCS, ("swanstation", "mednafen_psx_hw", "pcsx_rearmed"),
+    System("psx", "PlayStation (PS1)", DISCS, ("swanstation", "mednafen_psx_hw", "pcsx_rearmed"),
            ("scph5501.bin",)),
+    System("ps2", "PlayStation 2 (PS2)", (".iso", ".chd", ".cso", ".gz", ".m3u"), ("pcsx2",)),
     System("psp", "PlayStation Portable", (".iso", ".cso", ".pbp", ".chd"), ("ppsspp",)),
     System("pce", "PC Engine / TurboGrafx-16", (".pce", ".cue", ".chd") + ARCHIVES, ("mednafen_pce_fast",)),
     System("atari2600", "Atari 2600", (".a26", ".bin") + ARCHIVES, ("stella",)),
     System("arcade", "Arcade", (".zip", ".7z"), ("fbneo", "mame2003_plus")),
+    System("switch", "Nintendo Switch", (".nsp", ".xci", ".nro"), (), emulator="eden"),
 )
 BY_ID = {s.id: s for s in SYSTEMS}
 # short names for the library cards (the full name is on the system's page)
 SHORT = {"nes": "NES", "snes": "SNES", "n64": "N64", "gb": "Game Boy", "gbc": "Game Boy Color",
          "gba": "GBA", "nds": "Nintendo DS", "gc": "GameCube", "mastersystem": "Master System",
          "megadrive": "Mega Drive", "gamegear": "Game Gear", "segacd": "Sega CD", "saturn": "Saturn",
-         "dreamcast": "Dreamcast", "psx": "PlayStation", "psp": "PSP", "pce": "PC Engine",
-         "atari2600": "Atari 2600", "arcade": "Arcade"}
+         "dreamcast": "Dreamcast", "psx": "PS1", "ps2": "PS2", "psp": "PSP", "pce": "PC Engine",
+         "atari2600": "Atari 2600", "arcade": "Arcade", "switch": "Switch"}
 
 
 def short_name(system_id: str) -> str:

@@ -15,9 +15,10 @@ from gamingcrypt.emulation.library import EmulationPaths
 
 @dataclass(frozen=True)
 class Requirement:
-    files: dict[str, str]  # acceptable file name -> MD5 of the known good dump (any one is enough)
+    files: dict[str, str]  # acceptable file name -> MD5 of the known good dump ("": any), one is enough
     required: bool = True
     note: str = ""
+    any_in: str = ""  # or: any file in this folder (inside bios/) - e.g. the many PS2 BIOS versions
 
 
 REQUIREMENTS: dict[str, Requirement] = {
@@ -38,6 +39,9 @@ REQUIREMENTS: dict[str, Requirement] = {
                              note="optional - some games need it"),
     "pce": Requirement({"syscard3.pce": "38179df8f4ac870017db21ebcbf53114"}, required=False,
                        note="only for CD games"),
+    "ps2": Requirement({}, any_in="pcsx2/bios", note="a PS2 BIOS dump, e.g. SCPH-70004.bin"),
+    "switch": Requirement({"switch/prod.keys": ""},
+                          note="your console's keys; the firmware files go into bios/switch/firmware"),
 }
 
 
@@ -58,7 +62,7 @@ class BiosStatus:
             return ", ".join(self.found)
         if self.state == "unverified":
             return f"{', '.join(self.found)} (unknown version - may still work)"
-        names = " or ".join(req.files)
+        names = f"any file in bios/{req.any_in}" if req.any_in else " or ".join(req.files)
         return f"missing: {names}" + (f" ({req.note})" if req.note else "")
 
 
@@ -90,12 +94,22 @@ def check(paths: EmulationPaths, system_id: str) -> BiosStatus | None:
     req = REQUIREMENTS.get(system_id)
     if req is None:
         return None
+    if req.any_in:
+        try:
+            found = sorted(f.name for f in (paths.bios / req.any_in).iterdir()
+                           if f.is_file() and not f.name.startswith("."))
+        except OSError:
+            found = []
+        return BiosStatus(system_id, "ok" if found else "missing", found, req)
     found, good = [], False
     for name, md5 in req.files.items():
         path = _find(paths.bios, name)
         if path is None:
             continue
         found.append(name)
+        if not md5:  # any version
+            good = True
+            continue
         try:
             good = good or _md5(path) == md5
         except OSError:

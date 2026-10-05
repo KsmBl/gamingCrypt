@@ -39,6 +39,8 @@ CONSOLES: dict[str, dict[str, str]] = {
                   "Start": "start"},
     "psx": {"Cross": "b", "Circle": "a", "Square": "y", "Triangle": "x", "L1": "l", "R1": "r", "L2": "l2",
             "R2": "r2", "L3": "l3", "R3": "r3", "Select": "select", "Start": "start"},
+    "ps2": {"Cross": "b", "Circle": "a", "Square": "y", "Triangle": "x", "L1": "l", "R1": "r", "L2": "l2",
+            "R2": "r2", "L3": "l3", "R3": "r3", "Select": "select", "Start": "start"},
     "psp": {"Cross": "b", "Circle": "a", "Square": "y", "Triangle": "x", "L": "l", "R": "r", "Select": "select",
             "Start": "start"},
     "pce": {"II": "b", "I": "a", "Select": "select", "Run": "start"},
@@ -57,7 +59,7 @@ CORE_NAMES = {"snes9x": "Snes9x", "bsnes": "bsnes", "mupen64plus_next": "Mupen64
               "vba_next": "VBA Next", "melonds": "melonDS", "desmume": "DeSmuME", "dolphin": "dolphin-emu",
               "genesis_plus_gx": "Genesis Plus GX", "picodrive": "PicoDrive", "mednafen_saturn": "Beetle Saturn",
               "yabasanshiro": "YabaSanshiro", "flycast": "Flycast", "swanstation": "SwanStation",
-              "mednafen_psx_hw": "Beetle PSX HW", "pcsx_rearmed": "PCSX-ReARMed", "ppsspp": "PPSSPP",
+              "mednafen_psx_hw": "Beetle PSX HW", "pcsx_rearmed": "PCSX-ReARMed", "ppsspp": "PPSSPP", "pcsx2": "LRPS2",
               "mednafen_pce_fast": "Beetle PCE Fast", "stella": "Stella", "fbneo": "FinalBurn Neo",
               "mame2003_plus": "MAME 2003-Plus", "mesen": "Mesen", "nestopia": "Nestopia", "fceumm": "FCEUmm"}
 INFO_DIR = Path("/usr/share/libretro/info")

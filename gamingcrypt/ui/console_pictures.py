@@ -105,6 +105,7 @@ PICTURES: dict[str, Picture] = {
                           ("#c8323c", "#d6b52a", "#2e9b4f", "#3b5fd0", "#c86fae", "#e08a2e"), 1)}),
 }
 PICTURES["gbc"] = PICTURES["gb"]
+PICTURES["ps2"] = PICTURES["psx"]
 PICTURES["segacd"] = PICTURES["megadrive"]
 GENERIC = Picture("pad", {**_face("X", "Y", "A", "B"), "L": (250, 115, "shoulder"), "R": (750, 115, "shoulder"),
                           "L2": (250, 55, "shoulder"), "R2": (750, 55, "shoulder"), "L3": (390, 440, "face"),

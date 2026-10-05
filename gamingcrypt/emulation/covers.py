@@ -24,7 +24,8 @@ PLAYLISTS = {
     "gba": "Nintendo - Game Boy Advance", "nds": "Nintendo - Nintendo DS", "gc": "Nintendo - GameCube",
     "mastersystem": "Sega - Master System - Mark III", "megadrive": "Sega - Mega Drive - Genesis",
     "gamegear": "Sega - Game Gear", "segacd": "Sega - Mega-CD - Sega CD", "saturn": "Sega - Saturn",
-    "dreamcast": "Sega - Dreamcast", "psx": "Sony - PlayStation", "psp": "Sony - PlayStation Portable",
+    "dreamcast": "Sega - Dreamcast", "psx": "Sony - PlayStation", "ps2": "Sony - PlayStation 2",
+    "psp": "Sony - PlayStation Portable", "switch": "Nintendo - Nintendo Switch",
     "pce": "NEC - PC Engine - TurboGrafx 16", "atari2600": "Atari - 2600", "arcade": "MAME",
 }
 REGIONS = ("(USA)", "(Europe)", "(World)", "(USA, Europe)", "(Japan)")

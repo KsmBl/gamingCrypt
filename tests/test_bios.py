@@ -42,7 +42,8 @@ def test_optional_subfolders_and_systems_without_bios(paths):
 
 def test_known_hashes_look_right():
     for system_id, req in bios.REQUIREMENTS.items():
-        assert req.files and all(len(md5) == 32 and int(md5, 16) >= 0 for md5 in req.files.values()), system_id
+        assert req.files or req.any_in, system_id
+        assert all(md5 == "" or (len(md5) == 32 and int(md5, 16) >= 0) for md5 in req.files.values()), system_id
 
 
 def test_health_only_checks_systems_with_games(paths):
@@ -54,7 +55,7 @@ def test_health_only_checks_systems_with_games(paths):
     assert health.bios().ok
     (paths.roms / "psx" / "Crash.chd").write_text("x")
     check = health.bios()
-    assert not check.ok and check.detail.startswith("PlayStation: missing: scph5501.bin") and "Add ROMs" in check.fix
+    assert not check.ok and check.detail.startswith("PS1: missing: scph5501.bin") and "Add ROMs" in check.fix
     assert Health(emulation_root=str(paths.root.parent / "nowhere")).bios().optional
 
 
@@ -74,3 +75,21 @@ def test_system_page_names_the_missing_bios(qtbot, paths):
     assert not psx.bios_note.isHidden() and "scph5501.bin" in psx.bios_note.text()
     assert psx.bios_note.property("error") is True
     assert SystemPage(tab, BY_ID["snes"], []).bios_note.isHidden()  # SNES needs none
+
+
+def test_ps2_any_bios_in_its_folder_and_switch_keys(tmp_path):
+    from gamingcrypt.emulation import bios
+    from gamingcrypt.emulation.library import EmulationPaths
+
+    paths = EmulationPaths(tmp_path / "Emulation")
+    paths.ensure()
+    status = bios.check(paths, "ps2")
+    assert status.problem and status.describe().startswith("missing: any file in bios/pcsx2/bios")
+    (paths.bios / "pcsx2" / "bios").mkdir(parents=True)
+    (paths.bios / "pcsx2" / "bios" / "SCPH-70004.bin").write_bytes(b"x")
+    status = bios.check(paths, "ps2")
+    assert status.state == "ok" and status.found == ["SCPH-70004.bin"]
+    assert bios.check(paths, "switch").problem
+    (paths.bios / "switch").mkdir()
+    (paths.bios / "switch" / "prod.keys").write_text("header_key = 00")
+    assert bios.check(paths, "switch").state == "ok"  # keys are per console: no MD5

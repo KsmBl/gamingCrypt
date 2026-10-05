@@ -61,7 +61,7 @@ def test_select_then_press_assigns(qtbot, store):
     qtbot.addWidget(page)
     page.resize(1280, 800)
     page.show()
-    assert page.title.text() == "Controls · PlayStation" and page.buttons["Cross"].text() == "✕"
+    assert page.title.text() == "Controls · PlayStation (PS1)" and page.buttons["Cross"].text() == "✕"
     assert page.picture.captions["Cross"].text() == "A" and not page.reset_button.isVisible()
     page.buttons["Cross"].click()
     assert page.scanning == "Cross" and page.scan_box.isVisible()
