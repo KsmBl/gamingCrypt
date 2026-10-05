@@ -20,6 +20,9 @@ import sys
 import tempfile
 
 VERACRYPT = "/usr/bin/veracrypt"  # replaced by install.sh
+# Raised whenever the helper learns something new: GamingCrypt compares it with the
+# installed helper ("helper version") and asks to finish the update when it's older.
+HELPER_VERSION = 2
 RYZENADJ = "/usr/bin/ryzenadj"
 EFIBOOTMGR = ["/usr/bin/efibootmgr", "/usr/sbin/efibootmgr"]
 SYS = "/sys"
@@ -505,6 +508,9 @@ def smb_start(args: list[str], password: str, user_home: str | None, user_name: 
 
 
 def main(argv: list[str]) -> int:
+    if argv == ["version"]:
+        print(HELPER_VERSION)
+        return 0
     if argv[:1] == ["power-limit"]:
         return set_power_limit(argv[1:])
     if argv[:1] == ["boot-next"]:

@@ -9,7 +9,11 @@ from gamingcrypt.system.power import PowerLimit
 
 
 def ok_runner(outputs=None, codes=None):
+    from gamingcrypt.helper.veracrypt_helper import HELPER_VERSION
+
     def run(cmd, **kw):
+        if cmd[-1] == "version":
+            return subprocess.CompletedProcess(cmd, (codes or {}).get("sudo", 0), f"{HELPER_VERSION}\n", "")
         key = cmd[0] if cmd[0] != "sudo" else "sudo"
         return subprocess.CompletedProcess(cmd, (codes or {}).get(key, 0), (outputs or {}).get(key, ""), "")
     return run
@@ -55,7 +59,8 @@ def test_sudo_rule_check_is_harmless():
     seen = []
     h = healthy(runner=lambda cmd, **kw: seen.append(cmd) or subprocess.CompletedProcess(cmd, 0, "", ""))
     h.helper_allowed()
-    assert seen == [["sudo", "-n", "-l", "/h"]]  # only asks whether it's allowed - runs nothing
+    assert seen[0] == ["sudo", "-n", "-l", "/h"]  # only asks whether it's allowed ...
+    assert seen[1] == ["sudo", "-n", "/h", "version"]  # ... and how new it is - runs nothing else
 
 
 def test_steam_mode_outside_gaming_mode_is_fine():

@@ -87,6 +87,8 @@ def test_no_network(repos):
 
 
 class FakeUpdater:
+    source = None
+
     def __init__(self, info, result=(True, "Updated", [])):
         self.info, self.result, self.applied = info, result, 0
 
@@ -104,7 +106,9 @@ def test_updates_page(qtbot):
     restarted = []
     fake = FakeUpdater(UpdateInfo(True, 2, ["Wi-Fi settings", "Bluetooth settings"], "2 update(s) available"),
                        result=(True, "Updated", ["install.sh"]))
-    page = UpdatesPage(fake, restart=lambda: restarted.append(1))
+    finished = []
+    page = UpdatesPage(fake, restart=lambda: restarted.append(1), helper_outdated=lambda: False,
+                       finisher=lambda source, pw: finished.append(pw) or (True, "Update finished"))
     qtbot.addWidget(page)
     page.show()
     assert not page.update_button.isVisible()
@@ -112,14 +116,19 @@ def test_updates_page(qtbot):
     qtbot.waitUntil(lambda: page.update_button.isVisible())
     assert page.changes.text() == "• Wi-Fi settings\n• Bluetooth settings"
     page.update_button.click()
+    qtbot.waitUntil(lambda: page.finish_box.isVisible())  # install.sh changed: needs the password
+    assert fake.applied == 1 and restarted == [] and "password" in page.status.text()
+    page.password.setText("hunter22")
+    page.finish_button.click()
     qtbot.waitUntil(lambda: restarted == [1])
-    assert fake.applied == 1 and "./install.sh" in page.status.text()
+    assert finished == ["hunter22"] and not page.finish_box.isVisible() and page.password.text() == ""
 
 
 def test_updates_page_errors(qtbot):
     from gamingcrypt.ui.updates_page import UpdatesPage
 
-    page = UpdatesPage(FakeUpdater(UpdateInfo(False, message="Could not reach GitHub: no network?")))
+    page = UpdatesPage(FakeUpdater(UpdateInfo(False, message="Could not reach GitHub: no network?")),
+                       helper_outdated=lambda: False)
     qtbot.addWidget(page)
     page.show()
     page.check()
@@ -133,8 +142,14 @@ def test_settings_opens_updates_and_checks(qtbot):
     from gamingcrypt.config import DEFAULTS
     from gamingcrypt.ui.settings_tab import SettingsTab
 
+    from gamingcrypt.system import helper_status
+
     fake = FakeUpdater(UpdateInfo(True, 0, [], "Up to date"))
+    import pytest as _pytest
+    mp = _pytest.MonkeyPatch()
+    mp.setattr(helper_status, "outdated", lambda *a, **k: False)
     tab = SettingsTab(copy.deepcopy(DEFAULTS), lambda c: None, updater=fake)
+    mp.undo()
     qtbot.addWidget(tab)
     tab.sub_buttons["Updates"].click()
     qtbot.waitUntil(lambda: tab.updates_page.status.text() == "Up to date")

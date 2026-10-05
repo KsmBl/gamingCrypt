@@ -112,9 +112,13 @@ def test_helper_main_dispatches_smb(monkeypatch):
 
 
 def test_share_client():
+    from gamingcrypt.helper.veracrypt_helper import HELPER_VERSION
+
     calls = []
 
     def run(cmd, **kw):
+        if cmd[-1] == "version":
+            return subprocess.CompletedProcess(cmd, 0, f"{HELPER_VERSION}\n", "")
         calls.append((cmd, kw.get("input")))
         return subprocess.CompletedProcess(cmd, 0, "", "")
 

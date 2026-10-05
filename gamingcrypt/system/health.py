@@ -61,7 +61,14 @@ class Health:
             return Check("Unlock helper", False, "not installed", REINSTALL)
         result = _run(["sudo", "-n", "-l", self.helper], self.runner)
         ok = result is not None and result.returncode == 0
-        return Check("Unlock helper", ok, "allowed without password" if ok else "sudo rule missing", "" if ok else REINSTALL)
+        if not ok:
+            return Check("Unlock helper", False, "sudo rule missing", REINSTALL)
+        from gamingcrypt.system import helper_status
+
+        if helper_status.outdated(self.helper, self.runner, self.exists):
+            return Check("Unlock helper", False, "outdated - new features (e.g. the network share) need the new one",
+                         "Settings → Updates: finish the update with your password")
+        return Check("Unlock helper", True, "allowed without password, up to date")
 
     def steam(self, root: Callable[[], object] | None = None) -> Check:
         found = root() if root else None

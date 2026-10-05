@@ -95,3 +95,53 @@ class Updater:
             last = (installed.stderr or installed.stdout or "").strip().splitlines()
             return False, "install.sh failed: " + (last[-1] if last else "?"), []
         return True, "Updated", self.needs_terminal(old, new) if old != new else []
+
+
+ASKPASS = '#!/bin/sh\ncat "{password_file}"\n'
+SUDO_WRAPPER = '#!/bin/sh\nexec "{sudo}" -A "$@"\n'
+
+
+def finish_install(source: Path | None, password: str, runner: Runner = subprocess.run,
+                   which=None) -> tuple[bool, str]:
+    """Run the full ./install.sh (helper, session, rules ...) with the user's password.
+
+    The password goes into a file only this user can read, in a private temporary
+    folder that's deleted right after; sudo reads it through SUDO_ASKPASS.
+    """
+    import shutil
+    import tempfile
+
+    if source is None:
+        return False, "Not installed from a git folder - run ./install.sh in a terminal"
+    sudo = (which or shutil.which)("sudo")
+    if sudo is None:
+        return False, "sudo not found"
+    folder = Path(tempfile.mkdtemp(prefix="gamingcrypt-install-"))
+    try:
+        os.chmod(folder, 0o700)
+        password_file = folder / "password"
+        fd = os.open(password_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(password + "\n")
+        askpass = folder / "askpass"
+        askpass.write_text(ASKPASS.format(password_file=password_file))
+        wrappers = folder / "bin"
+        wrappers.mkdir()
+        (wrappers / "sudo").write_text(SUDO_WRAPPER.format(sudo=sudo))
+        for script in (askpass, wrappers / "sudo"):
+            script.chmod(0o700)
+        env = dict(os.environ, SUDO_ASKPASS=str(askpass), PATH=f"{wrappers}:{os.environ.get('PATH', '')}")
+        check = runner([sudo, "-A", "-k", "-v"], env=env, capture_output=True, text=True, timeout=60,
+                       stdin=subprocess.DEVNULL)
+        if check.returncode != 0:
+            return False, "Wrong password"
+        installed = runner([str(source / "install.sh")], env=env, cwd=str(source), capture_output=True, text=True,
+                           timeout=1800, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, str(exc)
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+    if installed.returncode != 0:
+        last = (installed.stderr or installed.stdout or "").strip().splitlines()
+        return False, "install.sh failed: " + (last[-1] if last else "?")
+    return True, "Update finished"

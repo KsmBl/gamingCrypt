@@ -4,22 +4,26 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from gamingcrypt import __version__
-from gamingcrypt.system.updater import Updater
+from gamingcrypt.system import helper_status
+from gamingcrypt.system.updater import Updater, finish_install
 from gamingcrypt.ui.tasks import run_async
-from gamingcrypt.ui.widgets import big_button, set_status
+from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button, set_status
 
 MAX_LINES = 10
 
 
 class UpdatesPage(QWidget):
     def __init__(self, updater: Updater | None = None, restart: Callable[[], None] | None = None,
-                 parent: QWidget | None = None):
+                 parent: QWidget | None = None, helper_outdated: Callable[[], bool] = helper_status.outdated,
+                 finisher: Callable = finish_install):
         super().__init__(parent)
         self.updater = updater or Updater()
         self.restart = restart
+        self.helper_outdated = helper_outdated
+        self.finisher = finisher
         self.info = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -44,6 +48,27 @@ class UpdatesPage(QWidget):
         self.status.setObjectName("status")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
+        # parts that need root (helper, gaming session, rules): finish with the password once
+        self.finish_box = QFrame()
+        self.finish_box.setObjectName("card")
+        box = QVBoxLayout(self.finish_box)
+        box.setContentsMargins(22, 16, 22, 16)
+        self.finish_text = QLabel("To finish the update, GamingCrypt needs your password once (it installs the "
+                                  "helper, the gaming session and device rules). It isn't stored.")
+        self.finish_text.setWordWrap(True)
+        box.addWidget(self.finish_text)
+        self.password = QLineEdit()
+        self.password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password.setPlaceholderText("Your password")
+        box.addWidget(self.password)
+        self.keyboard = OnScreenKeyboard(self.password, compact=True)
+        self.keyboard.submitted.connect(self.finish)
+        box.addWidget(self.keyboard)
+        self.finish_button = big_button("Finish update", "primary")
+        self.finish_button.clicked.connect(self.finish)
+        box.addWidget(self.finish_button)
+        self.finish_box.hide()
+        layout.addWidget(self.finish_box)
         self.busy = False
 
     def check(self) -> None:
@@ -51,6 +76,8 @@ class UpdatesPage(QWidget):
             return
         self._busy(True, "Checking…")
         run_async(self.updater.check, self.show_info, lambda exc: self._failed(str(exc)), owner=self)
+        run_async(self.helper_outdated, lambda old: self.finish_box.setVisible(bool(old) or self.finish_box.isVisible()),
+                  lambda _e: None, owner=self)
 
     def show_info(self, info) -> None:
         self._busy(False, info.message, error=not info.ok)
@@ -78,13 +105,38 @@ class UpdatesPage(QWidget):
         self.update_button.hide()
         text = "Updated."
         if root_parts:
-            text += (" Some parts need administrator rights (" + ", ".join(root_parts) + "): run ./install.sh "
-                     "once in a terminal.")
+            self.finish_box.show()  # helper / session changed: finish with the password, then restart
+            self._busy(False, "Updated - finish it below with your password.")
+            return
         if self.restart is not None:
             self._busy(False, text + " Restarting…")
             self.restart()
         else:
             self._busy(False, text + " Restart GamingCrypt to use the new version.")
+
+    def finish(self) -> None:
+        password = self.password.text()
+        if self.busy or not password:
+            return
+        self._busy(True, "Finishing the update - this takes a minute…")
+        self.finish_button.setEnabled(False)
+        source = self.updater.source
+        run_async(lambda: self.finisher(source, password), self._finished, lambda exc: self._failed(str(exc)),
+                  owner=self)
+
+    def _finished(self, result) -> None:
+        ok, message = result
+        self.finish_button.setEnabled(True)
+        self.password.clear()
+        if not ok:
+            self._failed(message)
+            return
+        self.finish_box.hide()
+        if self.restart is not None:
+            self._busy(False, "Update finished. Restarting…")
+            self.restart()
+        else:
+            self._busy(False, "Update finished. Restart GamingCrypt to use the new version.")
 
     def _failed(self, message: str) -> None:
         self._busy(False, message, error=True)

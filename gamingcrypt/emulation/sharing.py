@@ -30,8 +30,12 @@ class SmbShare:
         self.running = False
 
     def start(self, folder: str) -> tuple[bool, str]:
+        from gamingcrypt.system import helper_status
+
         if not self.exists(self.helper):
             return False, "Run ./install.sh to allow the network share"
+        if helper_status.outdated(self.helper, self.runner, self.exists):
+            return False, helper_status.OUTDATED  # an old helper doesn't know the share yet
         self.password = new_password()
         try:
             result = self.runner(["sudo", "-n", self.helper, "smb-start", folder], input=self.password + "\n",
