@@ -44,8 +44,10 @@ SYSTEMS: tuple[System, ...] = (
     System("dreamcast", "Sega Dreamcast", (".cdi", ".gdi", ".chd", ".m3u"), ("flycast",)),
     System("psx", "PlayStation (PS1)", DISCS, ("swanstation", "mednafen_psx_hw", "pcsx_rearmed"),
            ("scph5501.bin",)),
-    # LRPS2's OpenGL output stays black under gamescope (tested on the handheld) - Vulkan works
-    System("ps2", "PlayStation 2 (PS2)", (".iso", ".chd", ".cso", ".gz", ".m3u"), ("pcsx2",), video="vulkan"),
+    # LRPS2 (tested on the handheld): RetroArch's "gl" driver shows only black under gamescope;
+    # its Vulkan renderer draws NFSU2's light passes dark with ghost images; OpenGL on "glcore"
+    # is right and fast. paraLLEl-GS (an option per game) needs "vulkan" - see retroarch.RENDERERS.
+    System("ps2", "PlayStation 2 (PS2)", (".iso", ".chd", ".cso", ".gz", ".m3u"), ("pcsx2",), video="glcore"),
     System("psp", "PlayStation Portable", (".iso", ".cso", ".pbp", ".chd"), ("ppsspp",)),
     System("pce", "PC Engine / TurboGrafx-16", (".pce", ".cue", ".chd") + ARCHIVES, ("mednafen_pce_fast",)),
     System("atari2600", "Atari 2600", (".a26", ".bin") + ARCHIVES, ("stella",)),

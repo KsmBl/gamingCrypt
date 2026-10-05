@@ -202,7 +202,7 @@ def test_ps2_renderer_option(emu, tmp_path):
     assert 'pcsx2_renderer = "paraLLEl-GS"' in options.read_text()
     assert 'pcsx2_widescreen_hint = "disabled"' in options.read_text()  # explicit: no stale choice
     retroarch.launch(nfs, emu, tmp_path / "d", tmp_path / "l", **run)  # back to the default
-    assert 'pcsx2_renderer = "Auto"' in options.read_text()
+    assert 'pcsx2_renderer = "OpenGL"' in options.read_text()
 
 
 def test_renderer_choice_on_the_page(qtbot, window, emu):
@@ -215,7 +215,7 @@ def test_renderer_choice_on_the_page(qtbot, window, emu):
     qtbot.addWidget(page)
     page.show()
     page.options_button.click()
-    assert page.renderer_combo.isVisible() and page.renderer_combo.currentText() == "GPU (fast)"
+    assert page.renderer_combo.isVisible() and page.renderer_combo.currentText() == "GPU - OpenGL (fast)"
     page.renderer_combo.setCurrentIndex(1)
     assert window.game_profiles.get(nfs.appid)["renderer"] == "accurate"
     window.launch_rom(nfs)
@@ -224,3 +224,21 @@ def test_renderer_choice_on_the_page(qtbot, window, emu):
     page2.show()
     page2.options_button.click()
     assert not page2.renderer_combo.isVisible()  # PS1 cores: not this option
+
+
+
+def test_memory_card_shows_the_cores_default(qtbot, window, emu):
+    """LRPS2 shares one card unless told otherwise - the page must say so (it said "Own card")."""
+    from gamingcrypt.ui.emulation_pages import RomGamePage
+
+    (emu.roms / "ps2").mkdir(exist_ok=True)
+    (emu.roms / "ps2" / "NFSU2.iso").write_text("x")
+    nfs = scan(emu, BY_ID["ps2"])[0]
+    page = RomGamePage(window._games, nfs)
+    qtbot.addWidget(page)
+    assert page.card_combo.currentData() == "shared" and "memory_card" not in window.game_profiles.get(nfs.appid)
+    ff7 = RomGamePage(window._games, window._ff7)
+    qtbot.addWidget(ff7)
+    assert ff7.card_combo.currentData() == "own"  # SwanStation: per game
+    page.card_combo.setCurrentIndex(page.card_combo.findData("own"))
+    assert window.game_profiles.get(nfs.appid)["memory_card"] == "own"

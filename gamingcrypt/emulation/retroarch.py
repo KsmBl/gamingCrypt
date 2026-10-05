@@ -156,7 +156,9 @@ def lag_settings(system_id: str, choice: str | None = None) -> dict[str, str]:
     return settings
 
 
-# Memory card per game or one for all games - the cores' own options (checked in the core files)
+# Memory card per game or one for all games - the cores' own options (checked in the core files);
+# without a choice the core's own default applies
+MEMORY_CARD_DEFAULT = {"swanstation": "own", "pcsx2": "shared"}
 MEMORY_CARDS = {
     "swanstation": {"own": {"swanstation_MemoryCards_Card1Type": "Libretro"},
                     "shared": {"swanstation_MemoryCards_Card1Type": "Shared"}},
@@ -171,9 +173,11 @@ WIDESCREEN = {"pcsx2": {"16:9": {"pcsx2_widescreen_hint": "enabled (16:9)"},
                         None: {"pcsx2_widescreen_hint": "disabled"}}}
 
 
-# Renderer: the GPU one is fast; paraLLEl-GS draws like a real PS2 (NFSU2's light and blur
-# passes come out wrong - dark, ghost images - with the GPU one), at about half the speed
-RENDERERS = {"pcsx2": {"accurate": {"pcsx2_renderer": "paraLLEl-GS"}, None: {"pcsx2_renderer": "Auto"}}}
+# Renderer: the GPU one (OpenGL - its Vulkan one draws NFSU2's light passes dark, with ghost
+# images) or paraLLEl-GS (like a real PS2, about a third as fast; needs RetroArch's Vulkan driver)
+RENDERERS = {"pcsx2": {"accurate": {"pcsx2_renderer": "paraLLEl-GS"}, None: {"pcsx2_renderer": "OpenGL"}}}
+RENDERER_VIDEO = {"accurate": "vulkan"}
+ALWAYS_OPTIONS = {"pcsx2"}  # the renderer has to match the video driver: always written
 
 
 def core_options_file(paths: EmulationPaths, game: RomGame) -> Path:
@@ -238,12 +242,14 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
         return False, (f"No RetroArch core for {game.system.name} yet - add e.g. {wanted}_libretro.so "
                        "to the cores folder (⬆ Add emulator games)")
     extra = {**speed_settings(fast, slow), **lag_settings(game.system.id, input_lag)}
-    if game.system.video:
-        extra["video_driver"] = game.system.video
     short = core.name.removesuffix(".so").removesuffix("_libretro")
+    video = RENDERER_VIDEO.get(renderer or "") if short in RENDERERS else None
+    if video or game.system.video:
+        extra["video_driver"] = video or game.system.video
     options = dict(MEMORY_CARDS.get(short, {}).get(memory_card or "", {}))
     choices = [(table, choice) for table, choice in ((WIDESCREEN, widescreen), (RENDERERS, renderer)) if short in table]
-    if options or core_options_file(paths, game).exists() or any(choice for _t, choice in choices):
+    if (options or short in ALWAYS_OPTIONS or core_options_file(paths, game).exists()
+            or any(choice for _t, choice in choices)):
         for table, choice in choices:  # all of them explicit: an earlier choice is undone
             options.update(table[short].get(choice, table[short][None]))
     if options:  # the game's own core options file

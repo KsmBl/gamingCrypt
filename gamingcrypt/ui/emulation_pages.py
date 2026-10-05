@@ -283,10 +283,19 @@ class RomGamePage(QWidget):
         self.core_combo.setCurrentIndex(max(index, 0))
         row("Core", self.core_combo)
         self.card_combo = QComboBox()
-        self.card_combo.addItem("Own card for this game", None)
+        self.card_combo.addItem("Own card for this game", "own")
         self.card_combo.addItem("One card for all games", "shared")
-        self.card_combo.setCurrentIndex(1 if profile.get("memory_card") == "shared" else 0)
         self.card_caption = row("Memory card", self.card_combo)
+
+        def show_card() -> None:
+            """The choice - or what the core does without one (LRPS2: one card for all)."""
+            core = self.core_combo.currentData() or cores[0]
+            chosen = self.tab.profiles.get(appid).get("memory_card")
+            chosen = chosen or retroarch.MEMORY_CARD_DEFAULT.get(core, "own")
+            self.card_combo.blockSignals(True)
+            self.card_combo.setCurrentIndex(self.card_combo.findData(chosen))
+            self.card_combo.blockSignals(False)
+
         self.card_combo.currentIndexChanged.connect(
             lambda _i: self.tab.profiles.set(appid, "memory_card", self.card_combo.currentData()))
 
@@ -296,6 +305,7 @@ class RomGamePage(QWidget):
             has_cards = (chosen or cores[0]) in retroarch.MEMORY_CARDS
             self.card_combo.setVisible(has_cards)
             self.card_caption.setVisible(has_cards)
+            show_card()
 
         self.screen_combo = QComboBox()
         self.screen_combo.addItem("4:3 (as the console)", None)
@@ -306,7 +316,7 @@ class RomGamePage(QWidget):
             lambda _i: self.tab.profiles.set(appid, "widescreen", self.screen_combo.currentData()))
 
         self.renderer_combo = QComboBox()
-        self.renderer_combo.addItem("GPU (fast)", None)
+        self.renderer_combo.addItem("GPU - OpenGL (fast)", None)
         self.renderer_combo.addItem("paraLLEl-GS (like a PS2, slower)", "accurate")
         self.renderer_combo.setCurrentIndex(1 if profile.get("renderer") == "accurate" else 0)
         self.renderer_caption = row("Renderer", self.renderer_combo)

@@ -164,8 +164,10 @@ def test_config_gives_player_one_the_virtual_controller(emu):
     assert (emu.config / "autoconfig" / "udev" / "Microsoft X-Box 360 pad.cfg").exists()
 
 
-def test_ps2_uses_vulkan(tmp_path):
-    """LRPS2 with RetroArch's OpenGL driver showed only black under gamescope; Vulkan works."""
+def test_ps2_video_driver_follows_the_renderer(tmp_path):
+    """Tested on the handheld: RetroArch's "gl" driver showed black under gamescope, the core's Vulkan
+    renderer drew NFSU2 dark with ghost images - OpenGL on "glcore" is right (and ~134 fps uncapped);
+    paraLLEl-GS needs Vulkan."""
     paths = EmulationPaths(tmp_path / "Emulation")
     paths.ensure()
     for core in ("pcsx2", "snes9x"):
@@ -174,7 +176,13 @@ def test_ps2_uses_vulkan(tmp_path):
     (paths.roms / "ps2" / "NFSU2.iso").write_text("x")
     (paths.roms / "snes" / "Mario.sfc").write_text("x")
     run = dict(popen=lambda cmd, **k: None, which=lambda n: "/usr/bin/retroarch")
-    retroarch.launch(scan(paths, BY_ID["ps2"])[0], paths, tmp_path / "d", tmp_path / "l", **run)
+    nfs = scan(paths, BY_ID["ps2"])[0]
+    retroarch.launch(nfs, paths, tmp_path / "d", tmp_path / "l", **run)
+    config = (paths.config / "gamingcrypt.cfg").read_text()
+    assert 'video_driver = "glcore"' in config
+    assert 'pcsx2_renderer = "OpenGL"' in retroarch.core_options_file(paths, nfs).read_text()  # always explicit
+    retroarch.launch(nfs, paths, tmp_path / "d", tmp_path / "l", renderer="accurate", **run)
     assert 'video_driver = "vulkan"' in (paths.config / "gamingcrypt.cfg").read_text()
+    assert 'pcsx2_renderer = "paraLLEl-GS"' in retroarch.core_options_file(paths, nfs).read_text()
     retroarch.launch(scan(paths, BY_ID["snes"])[0], paths, tmp_path / "d", tmp_path / "l", **run)
-    assert "video_driver" not in (paths.config / "gamingcrypt.cfg").read_text()  # RetroArch's own choice
+    assert "video_driver = " not in (paths.config / "gamingcrypt.cfg").read_text()  # RetroArch's own choice
