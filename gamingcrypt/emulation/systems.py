@@ -12,7 +12,8 @@ class System:
     extensions: tuple[str, ...]
     cores: tuple[str, ...]  # RetroArch core names (file "<name>_libretro.so"), preferred first
     bios: tuple[str, ...] = ()  # files the cores need in bios/ (checked, never shipped)
-    emulator: str = "retroarch"  # or a standalone one (see emulation/standalone)
+    emulator: str = "retroarch"  # or a standalone one: "eden"
+    video: str = ""  # RetroArch video driver the core needs ("": RetroArch's own choice)
 
     @property
     def folder(self) -> str:
@@ -43,7 +44,8 @@ SYSTEMS: tuple[System, ...] = (
     System("dreamcast", "Sega Dreamcast", (".cdi", ".gdi", ".chd", ".m3u"), ("flycast",)),
     System("psx", "PlayStation (PS1)", DISCS, ("swanstation", "mednafen_psx_hw", "pcsx_rearmed"),
            ("scph5501.bin",)),
-    System("ps2", "PlayStation 2 (PS2)", (".iso", ".chd", ".cso", ".gz", ".m3u"), ("pcsx2",)),
+    # LRPS2's OpenGL output stays black under gamescope (tested on the handheld) - Vulkan works
+    System("ps2", "PlayStation 2 (PS2)", (".iso", ".chd", ".cso", ".gz", ".m3u"), ("pcsx2",), video="vulkan"),
     System("psp", "PlayStation Portable", (".iso", ".cso", ".pbp", ".chd"), ("ppsspp",)),
     System("pce", "PC Engine / TurboGrafx-16", (".pce", ".cue", ".chd") + ARCHIVES, ("mednafen_pce_fast",)),
     System("atari2600", "Atari 2600", (".a26", ".bin") + ARCHIVES, ("stella",)),

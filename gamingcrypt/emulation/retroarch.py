@@ -153,7 +153,10 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
         wanted = game.system.cores[0]
         return False, (f"No RetroArch core for {game.system.name} yet - add e.g. {wanted}_libretro.so "
                        "to the cores folder (⬆ Add emulator games)")
-    config = write_config(paths, speed_settings(fast, slow))
+    extra = speed_settings(fast, slow)
+    if game.system.video:
+        extra["video_driver"] = game.system.video
+    config = write_config(paths, extra)
     from gamingcrypt.emulation import layouts
 
     layouts.write_remap(paths.config / "remaps", core.name, game.system.id, layout or {})  # the system's layout

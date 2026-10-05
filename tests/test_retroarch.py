@@ -162,3 +162,19 @@ def test_config_gives_player_one_the_virtual_controller(emu):
     assert f'input_device = "{evdev.VIRTUAL_NAME}"' in profile and 'input_up_btn = "h0up"' in profile
     assert 'input_b_btn = "0"' in profile and 'input_r2_axis = "+5"' in profile
     assert (emu.config / "autoconfig" / "udev" / "Microsoft X-Box 360 pad.cfg").exists()
+
+
+def test_ps2_uses_vulkan(tmp_path):
+    """LRPS2 with RetroArch's OpenGL driver showed only black under gamescope; Vulkan works."""
+    paths = EmulationPaths(tmp_path / "Emulation")
+    paths.ensure()
+    for core in ("pcsx2", "snes9x"):
+        (paths.cores / f"{core}_libretro.so").write_text("x")
+    (paths.roms / "ps2").mkdir(exist_ok=True)
+    (paths.roms / "ps2" / "NFSU2.iso").write_text("x")
+    (paths.roms / "snes" / "Mario.sfc").write_text("x")
+    run = dict(popen=lambda cmd, **k: None, which=lambda n: "/usr/bin/retroarch")
+    retroarch.launch(scan(paths, BY_ID["ps2"])[0], paths, tmp_path / "d", tmp_path / "l", **run)
+    assert 'video_driver = "vulkan"' in (paths.config / "gamingcrypt.cfg").read_text()
+    retroarch.launch(scan(paths, BY_ID["snes"])[0], paths, tmp_path / "d", tmp_path / "l", **run)
+    assert "video_driver" not in (paths.config / "gamingcrypt.cfg").read_text()  # RetroArch's own choice
