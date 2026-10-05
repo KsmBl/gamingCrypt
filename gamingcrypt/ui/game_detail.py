@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from gamingcrypt.steam.installer import InstallResult
 from gamingcrypt.steam.models import SteamGame
 from gamingcrypt.steam.webapi import format_price
 from gamingcrypt.ui.game_widgets import format_date, format_playtime, format_size, load_cover, placeholder_cover
 from gamingcrypt.ui.tasks import run_async
-from gamingcrypt.ui.widgets import big_button, set_status
+from gamingcrypt.ui.widgets import big_button, enable_touch_scroll, set_status
 
 PROGRESS_INTERVAL_MS = 2000
 
@@ -75,26 +75,29 @@ class GameDetailPage(QWidget):
         self.options_panel = QFrame()
         self.options_panel.setObjectName("card")
         options = QVBoxLayout(self.options_panel)
-        proton_row = QHBoxLayout()
-        proton_row.addWidget(QLabel("Proton"))
+        options.setContentsMargins(22, 18, 22, 18)
+        options.setSpacing(12)
+        # one caption column: the boxes line up
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(18)
+        grid.setVerticalSpacing(10)
+        grid.setColumnStretch(1, 1)
         self.proton_combo = QComboBox()
-        self.proton_combo.setMinimumWidth(360)
         self.proton_combo.currentIndexChanged.connect(self.proton_chosen)
-        proton_row.addWidget(self.proton_combo, 1)
-        options.addLayout(proton_row)
         # while this game runs: own power limit / frame limit (applied by the main window)
-        power_row = QHBoxLayout()
-        power_row.addWidget(QLabel("Power limit"))
         self.power_combo = QComboBox()
         self.power_combo.currentIndexChanged.connect(lambda _i: self._profile_chosen("power_w", self.power_combo))
-        power_row.addWidget(self.power_combo, 1)
-        options.addLayout(power_row)
-        fps_row = QHBoxLayout()
-        fps_row.addWidget(QLabel("FPS limit"))
         self.fps_combo = QComboBox()
         self.fps_combo.currentIndexChanged.connect(lambda _i: self._profile_chosen("fps", self.fps_combo))
-        fps_row.addWidget(self.fps_combo, 1)
-        options.addLayout(fps_row)
+        for row, (caption, combo) in enumerate((("Proton", self.proton_combo), ("Power limit", self.power_combo),
+                                                ("FPS limit", self.fps_combo))):
+            label = QLabel(caption)
+            label.setMinimumWidth(130)
+            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(10)
+            grid.addWidget(label, row, 0)
+            grid.addWidget(combo, row, 1)
+        options.addLayout(grid)
         self.uninstall_button = big_button("🗑 Uninstall", "danger")
         self.uninstall_button.clicked.connect(self.uninstall_tapped)
         options.addWidget(self.uninstall_button, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -105,7 +108,15 @@ class GameDetailPage(QWidget):
         self.status.setObjectName("status")
         info.addWidget(self.status)
         body.addLayout(info, 1)
-        layout.addLayout(body, 1)
+        # scrolls when the options don't fit (handheld screens are only 800 px high)
+        content = QWidget()
+        content.setLayout(body)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll.setWidget(content)
+        enable_touch_scroll(self.scroll)
+        layout.addWidget(self.scroll, 1)
 
         self._disarm_timer = QTimer(self)
         self._disarm_timer.setSingleShot(True)
@@ -373,7 +384,10 @@ class GameDetailPage(QWidget):
             self.fill_proton_choices()
             self.fill_profile_choices()
         self.options_panel.setVisible(visible)
-        if not visible:
+        if visible:
+            # bring the opened panel into view (it's below the screen edge on a handheld)
+            QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(self.options_panel, 0, 20))
+        else:
             self._disarm_uninstall()
 
     def uninstall_tapped(self) -> None:
