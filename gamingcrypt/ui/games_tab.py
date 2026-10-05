@@ -321,6 +321,8 @@ class GamesTab(QStackedWidget):
         self.play_log = PlayLog(self.emulation) if self.emulation is not None else None
         self.roms: dict = {}  # system id -> games
         self.rom_launcher = None  # set by the app: RomGame -> (ok, message)
+        self.core_fetcher = None  # (paths, system, wanted) -> core path: downloads missing RetroArch cores
+        self._fetching_cores = False
         self.upload_page_factory = None  # tests: a stand-in upload page
         self.games: dict[int, SteamGame] = {}
         self._came_from: list = []
@@ -415,6 +417,31 @@ class GamesTab(QStackedWidget):
                 self.rom_games[game.appid] = game
         self.home.set_systems(found)
         self.home.update_continue()
+        self.fetch_missing_cores(found)
+
+    def fetch_missing_cores(self, found: dict) -> None:
+        """Systems with games get their RetroArch core in the background (see emulation/cores)."""
+        fetch, paths = self.core_fetcher, self.emulation
+        if fetch is None or paths is None or self._fetching_cores:
+            return  # (the next reload catches what a running fetch didn't know about)
+        self._fetching_cores = True
+        from gamingcrypt.emulation.systems import BY_ID
+
+        systems = [BY_ID[sid] for sid, games in found.items() if games and sid in BY_ID]
+
+        def work():
+            from gamingcrypt.emulation import cores
+
+            return [s.id for s in cores.missing(paths, systems) if fetch(paths, s, None) is not None]
+
+        run_async(work, self._cores_fetched, lambda _e: self._cores_fetched([]), owner=self)
+
+    def _cores_fetched(self, system_ids: list) -> None:
+        self._fetching_cores = False
+        if system_ids:
+            from gamingcrypt.emulation.systems import short_name
+
+            self.home.show_notice("RetroArch cores downloaded for " + ", ".join(short_name(i) for i in system_ids))
 
     @property
     def rom_games(self) -> dict:

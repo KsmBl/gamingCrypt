@@ -665,6 +665,9 @@ class MainWindow(QMainWindow):
         from gamingcrypt.emulation import layouts
 
         core = self.game_profiles.get(game.appid).get("core")
+        fetch = getattr(games, "core_fetcher", None)
+        if fetch is not None and retroarch.available() and retroarch.find_core(paths, game.system, core) is None:
+            return self.download_core_then_launch(game, paths, core, fetch)
         ok, message = retroarch.launch(game, paths, data_dir(), config_mod.cache_dir() / "logs", core,
                                        layout=layouts.load(self.config, game.system.id))
         if ok:
@@ -675,6 +678,31 @@ class MainWindow(QMainWindow):
         else:
             log.warning("RetroArch: %s", message)
         return ok, message
+
+    def download_core_then_launch(self, game, paths, core, fetch) -> tuple[bool, str]:
+        """No core for the system yet: download it (libretro buildbot), then start the game."""
+        from gamingcrypt.emulation.systems import short_name
+
+        system = short_name(game.system.id)
+        self.launch_overlay.show_for(game.name)
+        self.launch_overlay.set_phase(f"Downloading the RetroArch core for {system}…")
+
+        def done(path) -> None:
+            if not self.launch_overlay.isVisible():
+                return  # cancelled meanwhile
+            if path is None:
+                self.launch_overlay.hide()
+                self.notify(f"Couldn't download a RetroArch core for {system} - no network? You can also add "
+                            "one with ⬆ Add ROMs (cores folder)", "⚠")
+                return
+            log.info("downloaded RetroArch core %s", path.name)
+            ok, message = self.launch_rom(game)
+            if not ok:
+                self.launch_overlay.hide()
+                self.notify(message, "⚠")
+
+        run_async(lambda: fetch(paths, game.system, core), done, lambda _e: done(None), owner=self)
+        return True, f"Downloading the RetroArch core for {system}…"
 
     def emulator_command(self, text: str) -> None:
         """Quick menu: save / load state of the running emulated game."""
@@ -1076,9 +1104,12 @@ def default_pages(config: dict) -> dict[str, QWidget]:
 
     libraries = config.setdefault("libraries", {"hidden": []})
     emulation_root = os.path.join(mount_point, "Emulation") if mount_point else ""
-    return {"Games": GamesTab(service, library_path=library_path, library_settings=libraries,
-                              emulation_root=emulation_root),
-            "Downloads": DownloadsTab(service)}
+    games = GamesTab(service, library_path=library_path, library_settings=libraries, emulation_root=emulation_root)
+    from gamingcrypt.emulation import cores, retroarch
+
+    if retroarch.available():
+        games.core_fetcher = cores.ensure  # missing cores come from the libretro buildbot
+    return {"Games": games, "Downloads": DownloadsTab(service)}
 
 
 SECRET_FORMAT_HINT = {
