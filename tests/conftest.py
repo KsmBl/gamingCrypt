@@ -1,6 +1,8 @@
 import os
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# Always offscreen: a desktop session's own QT_QPA_PLATFORM (e.g. "wayland;xcb") would open real
+# windows that steal focus while the tests run - and make focus-dependent tests flaky.
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 from pathlib import Path  # noqa: E402
 
