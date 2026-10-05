@@ -98,9 +98,11 @@ def test_client_uris():
     client.install(620)
     client.uninstall(620)
     client.open_store(620)
-    assert [c[1] for c in rec.calls] == [
+    assert [c[-1] for c in rec.calls] == [
         "steam://rungameid/620", "steam://install/620", "steam://uninstall/620", "steam://store/620",
     ]
+    assert rec.calls[0] == ["steam", "-silent", "steam://rungameid/620"]  # no Steam window on a cold start
+    assert rec.calls[1] == ["steam", "steam://install/620"]
 
 
 def test_client_string_command_and_failure():

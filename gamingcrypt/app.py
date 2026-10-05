@@ -51,7 +51,7 @@ class MainWindow(QMainWindow):
         self.game_watcher = GameWatcher(parent=self)
         self.launch_overlay = LaunchOverlay(self)
         self.launch_overlay.cancelled.connect(self.stop_watching_game)
-        self.game_watcher.visible.connect(lambda _appid: self.step_aside())
+        self.game_watcher.visible.connect(lambda _appid: self.step_aside("game"))
         self.game_watcher.phase_text.connect(self.launch_overlay.set_phase)
         # Steam may wait for a click (license agreement …) in a window behind us.
         self.game_watcher.stalled.connect(lambda _appid: self.step_aside())
@@ -94,18 +94,45 @@ class MainWindow(QMainWindow):
         self.save(self.config)
         return True
 
-    def step_aside(self) -> None:
+    def step_aside(self, front: str = "steam") -> None:
         """Make room for a game or a Steam window.
+
+        ``front`` tells gamescope what to show instead: "game" (the running game),
+        "big_picture" (opened on purpose) or "steam" (a Steam window - let gamescope pick).
 
         Hidden, not minimised: on Wayland an app may minimise itself but is not
         allowed to un-minimise itself later - showing a hidden window again
         creates a fresh one, which the compositor puts on top.
         """
-        log.info("stepping aside")
+        log.info("stepping aside (%s)", front)
         self.hide()
+        self.gamescope_focus(front)
 
     # Steam windows (store, Steam's own dialogs) would open behind the launcher.
-    minimize_for_steam = step_aside
+    def minimize_for_steam(self) -> None:
+        self.step_aside("steam")
+
+    def showEvent(self, event) -> None:  # noqa: N802 - Qt API
+        super().showEvent(event)
+        self.gamescope_focus("launcher")
+
+    def gamescope_focus(self, front: str) -> None:
+        """Gaming mode: tell gamescope what belongs on screen (see gamescope_ctl)."""
+        from gamingcrypt.session.mode import in_gaming_session
+        from gamingcrypt.system import gamescope_ctl as gs
+
+        if not in_gaming_session():
+            return
+        watcher = self.game_watcher
+        game = watcher.appid if watcher.active else None
+        order = {"launcher": [gs.LAUNCHER_APPID],
+                 "game": [game, gs.LAUNCHER_APPID],
+                 "big_picture": [gs.BIG_PICTURE_APPID, gs.LAUNCHER_APPID]}.get(front, [])
+        log.info("gamescope focus: %s %s", front, order)
+        # right away (a few ms): a hide + show in quick succession must not swap the order
+        if front == "launcher":
+            gs.set_window_appid(int(self.winId()))
+        gs.set_focus_order(order)
 
     def start_volume_keys(self):
         """Gaming mode only: on a desktop the compositor already handles the volume buttons."""
@@ -159,7 +186,7 @@ class MainWindow(QMainWindow):
 
     def _quick_menu_closed(self) -> None:
         if self.game_watcher.active and self.game_watcher.phase == "playing":
-            self.step_aside()  # back to the game
+            self.step_aside("game")  # back to the game
 
     def _force_quit(self, appid: int) -> None:
         from gamingcrypt.steam.running import force_quit
@@ -174,7 +201,7 @@ class MainWindow(QMainWindow):
         if getattr(self, "big_picture", None) is None:
             self.big_picture = BigPictureWatcher(parent=self)
             self.big_picture.closed.connect(self.bring_to_front)
-        self.step_aside()
+        self.step_aside("big_picture")
         self.big_picture.watch()
 
     def game_launched(self, appid: int) -> None:

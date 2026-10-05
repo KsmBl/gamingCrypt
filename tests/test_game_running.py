@@ -220,7 +220,7 @@ def make_window(qtbot, monkeypatch):
     window.show_shell()
     window.shell.pages["Games"].games.update({g.appid: g for g in service.games})
     calls = []
-    monkeypatch.setattr(window, "step_aside", lambda: calls.append("aside"))
+    monkeypatch.setattr(window, "step_aside", lambda *a: calls.append("aside"))
     monkeypatch.setattr(window, "bring_to_front", lambda: calls.append("back"))
     return window, service, calls
 
@@ -284,7 +284,8 @@ def test_step_aside_hides_and_comes_back_without_unminimising(qtbot):
     window.showMinimized()
     window.bring_to_front()
     assert window.isVisible() and not window.isMinimized()
-    assert window.minimize_for_steam == window.step_aside
+    window.minimize_for_steam()
+    assert window.isHidden()
 
 
 def test_log_file(tmp_path):
@@ -395,3 +396,53 @@ def test_quick_starts_never_stall(qtbot, monkeypatch):
     clock.now += game_watcher.STALL_S * 2  # game running but not drawing yet: no stall
     w.poll()
     assert calls == [] and w.stall_reported is False
+
+
+def test_gamescope_focus_order(qtbot, monkeypatch):
+    """Gaming mode: GamingCrypt first, the game while playing, Big Picture only on purpose."""
+    import copy as _copy
+
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.config import DEFAULTS
+    from gamingcrypt.system import gamescope_ctl as gs
+
+    calls = []
+    monkeypatch.setattr(gs, "set_focus_order", lambda order: calls.append(order))
+    monkeypatch.setattr(gs, "set_window_appid", lambda wid: calls.append("appid"))
+    window = MainWindow(_copy.deepcopy(DEFAULTS), lambda c: None)
+    qtbot.addWidget(window)
+    window.windowed = True
+    window.show()
+    assert calls == []  # not in gaming mode: nothing to steer
+    monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
+    window.hide()
+    window.show()
+    assert calls == ["appid", [gs.LAUNCHER_APPID]]
+    window.game_watcher.appid = 620
+    window.step_aside("game")
+    assert calls[-1] == [620, gs.LAUNCHER_APPID]
+    window.bring_to_front()  # e.g. the quick menu
+    assert calls[-1] == [gs.LAUNCHER_APPID]
+    window.big_picture_opened()
+    assert calls[-1] == [gs.BIG_PICTURE_APPID, gs.LAUNCHER_APPID]
+    window.big_picture.stop()
+    window.minimize_for_steam()
+    assert calls[-1] == []  # a Steam dialog: gamescope picks
+
+
+def test_focus_order_xprop():
+    import subprocess
+
+    from gamingcrypt.system import gamescope_ctl as gs
+
+    seen = []
+
+    def run(cmd, **kw):
+        seen.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    assert gs.set_focus_order([620, None, 620, gs.LAUNCHER_APPID], run)
+    assert seen[-1][-1] == f"620,{gs.LAUNCHER_APPID}" and "-root" in seen[-1]
+    assert gs.set_focus_order([], run) and seen[-1][-2:] == ["-remove", gs.FOCUS_ORDER]
+    assert gs.set_window_appid(0x1200007, runner=run)
+    assert seen[-1][:3] == ["xprop", "-id", str(0x1200007)] and seen[-1][-1] == str(gs.LAUNCHER_APPID)

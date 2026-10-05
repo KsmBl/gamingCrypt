@@ -131,7 +131,7 @@ def test_button_on_steam_page_and_launcher_steps_aside(qtbot, monkeypatch):
     window.show()
     window.show_shell()
     calls = []
-    monkeypatch.setattr(window, "step_aside", lambda: calls.append("aside"))
+    monkeypatch.setattr(window, "step_aside", lambda *a: calls.append("aside"))
     monkeypatch.setattr(window, "bring_to_front", lambda: calls.append("back"))
     games = window.shell.pages["Games"]
     games.open_steam()

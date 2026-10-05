@@ -41,10 +41,12 @@ class SteamClient:
             self.on_ui()
         return ok
 
-    def open_uri(self, uri: str) -> bool:
+    def open_uri(self, uri: str, silent: bool = False) -> bool:
+        # -silent: if Steam has to start first, it starts without any window of its own
+        extra = ["-silent"] if silent and self.command != ["xdg-open"] else []
         try:
             self.launcher(
-                [*self.command, uri],
+                [*self.command, *extra, uri],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -55,7 +57,7 @@ class SteamClient:
         return True
 
     def play(self, appid: int) -> bool:
-        ok = self.open_uri(f"steam://rungameid/{int(appid)}")
+        ok = self.open_uri(f"steam://rungameid/{int(appid)}", silent=True)
         if ok and self.on_play is not None:
             self.on_play(int(appid))
         return ok
