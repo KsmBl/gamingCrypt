@@ -21,7 +21,7 @@ from gamingcrypt.ui.system_settings import AudioSection, DisplaySection, PowerSe
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button, enable_touch_scroll, set_status
 
-SUB_TABS = ["Device", "Controller", "Steam", "Security", "Health", "Updates"]
+SUB_TABS = ["Device", "Network", "Controller", "Steam", "Security", "Health", "Updates"]
 LOCK_AFTER_SLEEP = [("Never", None), ("Right away", 0), ("After 5 minutes", 5), ("After 15 minutes", 15),
                     ("After 1 hour", 60)]
 API_KEY_RE = re.compile(r"^[0-9A-Fa-f]{32}$")
@@ -87,6 +87,7 @@ class SettingsTab(QStackedWidget):
         parent: QWidget | None = None,
         health=None,
         updater=None,
+        wifi=None,
     ):
         super().__init__(parent)
         self.config = config
@@ -139,6 +140,14 @@ class SettingsTab(QStackedWidget):
         self.audio_section = AudioSection(self.system, config, save)
         for section in (self.display_section, self.power_section, self.audio_section):
             layout.addWidget(section)
+        layout.addStretch()
+
+        # Network (Wi-Fi, Bluetooth)
+        from gamingcrypt.ui.network_page import WifiSection
+
+        layout = page("Network")
+        self.wifi_section = WifiSection(self, wifi)
+        layout.addWidget(self.wifi_section)
         layout.addStretch()
 
         # Controller
@@ -266,6 +275,9 @@ class SettingsTab(QStackedWidget):
             if self.wizard.cancel_button.isEnabled():
                 self.wizard.cancel_button.click()
             return True
+        if page is getattr(self.wifi_section, "password_page", None):
+            self.wifi_section.close_password("")
+            return True
         self.close_page("")
         return True
 
@@ -276,6 +288,8 @@ class SettingsTab(QStackedWidget):
             button.setChecked(tab == name)
         if name == "Health" and not self.health_page.checks:
             self.health_page.refresh()  # first visit: check now
+        if name == "Network":
+            self.wifi_section.refresh()
         if name == "Updates" and self.updates_page.info is None:
             self.updates_page.check()
 
