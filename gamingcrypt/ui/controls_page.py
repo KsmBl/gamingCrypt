@@ -23,6 +23,7 @@ from gamingcrypt.ui.widgets import FlowLayout, big_button
 SCAN_S = 10
 CODES = {code: xbox for xbox, _label, code, *_rest in BUTTONS if xbox in layouts.XBOX_RETROPAD}
 TRIGGERS = {e.ABS_Z: "lt", e.ABS_RZ: "rt"}
+HATS = {(e.ABS_HAT0X, -1): "left", (e.ABS_HAT0X, 1): "right", (e.ABS_HAT0Y, -1): "up", (e.ABS_HAT0Y, 1): "down"}
 HINT = "Select a button of the {name} controller, then press the button on your controller that should be it."
 
 
@@ -196,7 +197,7 @@ class ControlsPage(QWidget):
         holders, custom = self.store.holders(system), self.store.get(system)
         for console_name, caption in self.picture.captions.items():
             pressed_by = holders.get(console_name, [])
-            caption.setText(" / ".join(layouts.XBOX_NAMES[x] for x in pressed_by) or "–")
+            caption.setText(" / ".join(layouts.CAPTIONS[x] for x in pressed_by) or "–")
             changed = any(x in custom for x in pressed_by)
             caption.setStyleSheet(f"color: {theme.ACCENT_HI if changed else theme.TEXT_DIM};")
         self.reset_button.setVisible(bool(custom))
@@ -243,6 +244,8 @@ class ControlsPage(QWidget):
             self.assign(CODES[code])
         elif ev_type == e.EV_ABS and code in TRIGGERS and value >= TRIGGER_PICK:
             self.assign(TRIGGERS[code])
+        elif ev_type == e.EV_ABS and (code, value) in HATS:
+            self.assign(HATS[(code, value)])
         return True  # nothing navigates while waiting for the button
 
     # page ---------------------------------------------------------------------------------------

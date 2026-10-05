@@ -211,3 +211,19 @@ def test_controls_without_an_emulated_game_go_back_to_the_game(window, monkeypat
     monkeypatch.setattr(type(window.game_watcher), "active", property(lambda self: True))
     window.open_running_controls()
     assert getattr(window, "controls_overlay", None) is None and asides == ["game"]
+
+
+def test_dpad_can_be_changed(qtbot, store):
+    from gamingcrypt.input import evdev as e
+    from gamingcrypt.ui.controls_page import ControlsPage
+
+    assert "Up" in layouts.console("snes") and store.labels("snes")["up"] == "Up"
+    page = ControlsPage(store, "snes")
+    qtbot.addWidget(page)
+    page.resize(1280, 800)
+    page.show()
+    assert page.buttons["Up"].text() == "▲" and page.picture.captions["Up"].text() == "↑"
+    page.buttons["Up"].click()
+    assert page.on_event(e.EV_ABS, e.ABS_HAT0Y, 1)  # D-pad down on the controller
+    assert store.get("snes") == {"down": "Up", "up": "Down"}
+    assert 'input_player1_btn_down = "4"' in layouts.remap_lines("snes", store.get("snes"))

@@ -16,7 +16,7 @@ from gamingcrypt.ui import theme
 
 W, H = 1000, 560
 # button kinds: size in the drawing
-SIZES = {"face": (68, 68), "big": (84, 84), "c": (50, 50), "small": (96, 36), "shoulder": (160, 46)}
+SIZES = {"dir": (50, 50), "face": (68, 68), "big": (84, 84), "c": (50, 50), "small": (96, 36), "shoulder": (160, 46)}
 
 
 @dataclass(frozen=True)
@@ -109,13 +109,21 @@ PICTURES["segacd"] = PICTURES["megadrive"]
 GENERIC = Picture("pad", {**_face("X", "Y", "A", "B"), "L": (250, 115, "shoulder"), "R": (750, 115, "shoulder"),
                           "L2": (250, 55, "shoulder"), "R2": (750, 55, "shoulder"), "L3": (390, 440, "face"),
                           "R3": (610, 440, "face"), **SELECT_START})
-SHORT_TEXT = {"Triangle": "△", "Circle": "○", "Square": "□", "Cross": "✕", "C-buttons (stick)": "C-stick",
+SHORT_TEXT = {"C-Left": "C◀", "C-Down": "C▼", "Up": "▲", "Down": "▼", "Left": "◀", "Right": "▶", "Triangle": "△", "Circle": "○", "Square": "□", "Cross": "✕", "C-buttons (stick)": "C-stick",
               "Touch / Mic": "Touch", "L trigger": "L", "R trigger": "R", "Turbo B": "Turbo B",
               **{f"Button {i}": str(i) for i in range(1, 7)}}
 
 
+def dpad_buttons(pic: Picture) -> dict[str, tuple[int, int, str]]:
+    """The four directions on the D-pad (or the stick, without one)."""
+    x, y = pic.dpad or pic.sticks[0]
+    return {"Up": (x, y - 50, "dir"), "Down": (x, y + 50, "dir"), "Left": (x - 50, y, "dir"),
+            "Right": (x + 50, y, "dir")}
+
+
 def picture(system_id: str) -> Picture:
-    return PICTURES.get(system_id, GENERIC)
+    pic = PICTURES.get(system_id, GENERIC)
+    return Picture(pic.body, {**dpad_buttons(pic), **pic.buttons}, pic.dpad, pic.sticks, pic.screen, pic.colors)
 
 
 def button_text(name: str) -> str:
@@ -123,26 +131,41 @@ def button_text(name: str) -> str:
 
 
 def _body(shape: str) -> QPainterPath:
-    path = QPainterPath()
+    """The outline: the parts united into one shape."""
+    parts: list[QPainterPath] = []
+
+    def rounded(x, y, w, h, r):
+        part = QPainterPath()
+        part.addRoundedRect(QRectF(x, y, w, h), r, r)
+        parts.append(part)
+
+    def circle(x, y, r):
+        part = QPainterPath()
+        part.addEllipse(QPointF(x, y), r, r)
+        parts.append(part)
+
     if shape == "pad":  # two grips joined in the middle
-        path.addRoundedRect(QRectF(170, 140, 660, 260), 120, 120)
-        path.addEllipse(QPointF(250, 320), 175, 175)
-        path.addEllipse(QPointF(750, 320), 175, 175)
+        rounded(170, 140, 660, 260, 120)
+        circle(250, 320, 175)
+        circle(750, 320, 175)
     elif shape == "rect":
-        path.addRoundedRect(QRectF(110, 160, 780, 300), 30, 30)
+        rounded(110, 160, 780, 300, 30)
     elif shape == "trident":
-        path.addRoundedRect(QRectF(90, 130, 820, 230), 110, 110)
+        rounded(90, 130, 820, 230, 110)
         for x in (220, 500, 780):
-            path.addRoundedRect(QRectF(x - 95, 200, 190, 330), 90, 90)
+            rounded(x - 95, 200, 190, 330, 90)
     elif shape == "portrait":
-        path.addRoundedRect(QRectF(320, 20, 360, 530), 40, 40)
+        rounded(320, 20, 360, 530, 40)
     elif shape == "landscape":
-        path.addRoundedRect(QRectF(80, 110, 840, 400), 150, 150)
+        rounded(80, 110, 840, 400, 150)
     elif shape == "stick":
-        path.addRoundedRect(QRectF(300, 110, 400, 420), 40, 40)
+        rounded(300, 110, 400, 420, 40)
     elif shape == "panel":
-        path.addRoundedRect(QRectF(70, 140, 860, 330), 24, 24)
-    return path.simplified()
+        rounded(70, 140, 860, 330, 24)
+    body = QPainterPath()
+    for part in parts:
+        body = body.united(part)
+    return body
 
 
 def paint(painter: QPainter, pic: Picture) -> None:

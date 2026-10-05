@@ -12,7 +12,8 @@ from pathlib import Path
 
 # Xbox button (controller test ids) -> RetroPad button RetroArch's Xbox profile gives it
 XBOX_RETROPAD = {"a": "b", "b": "a", "x": "y", "y": "x", "lb": "l", "rb": "r", "lt": "l2", "rt": "r2",
-                 "back": "select", "start": "start", "l3": "l3", "r3": "r3"}
+                 "back": "select", "start": "start", "l3": "l3", "r3": "r3",
+                 "up": "up", "down": "down", "left": "left", "right": "right"}
 RETROPAD_IDS = {"b": 0, "y": 1, "select": 2, "start": 3, "up": 4, "down": 5, "left": 6, "right": 7, "a": 8,
                 "x": 9, "l": 10, "r": 11, "l2": 12, "r2": 13, "l3": 14, "r3": 15}
 
@@ -45,7 +46,10 @@ CONSOLES: dict[str, dict[str, str]] = {
     "arcade": {"Button 1": "b", "Button 2": "a", "Button 3": "y", "Button 4": "x", "Button 5": "l",
                "Button 6": "r", "Coin": "select", "Start": "start"},
 }
-GENERIC = {"B": "b", "A": "a", "Y": "y", "X": "x", "L": "l", "R": "r", "L2": "l2", "R2": "r2", "L3": "l3",
+DPAD = {"Up": "up", "Down": "down", "Left": "left", "Right": "right"}
+for _buttons in CONSOLES.values():
+    _buttons.update(DPAD)  # every system has its D-pad (or stick) - changeable too
+GENERIC = {**DPAD, "B": "b", "A": "a", "Y": "y", "X": "x", "L": "l", "R": "r", "L2": "l2", "R2": "r2", "L3": "l3",
            "R3": "r3", "Select": "select", "Start": "start"}
 # RetroArch's core names (remap folder); the core's .info file wins when installed
 CORE_NAMES = {"snes9x": "Snes9x", "bsnes": "bsnes", "mupen64plus_next": "Mupen64Plus-Next",
@@ -124,7 +128,12 @@ def save(config: dict, system_id: str, custom: dict[str, str]) -> None:
 
 
 XBOX_NAMES = {"a": "A", "b": "B", "x": "X", "y": "Y", "lb": "LB", "rb": "RB", "lt": "LT", "rt": "RT",
-              "back": "View", "start": "Menu", "l3": "L3", "r3": "R3"}
+              "back": "View", "start": "Menu", "l3": "L3", "r3": "R3",
+              "up": "D-pad ↑", "down": "D-pad ↓", "left": "D-pad ←", "right": "D-pad →"}
+
+
+# shorter, under the buttons of the controller picture
+CAPTIONS = {**XBOX_NAMES, "up": "↑", "down": "↓", "left": "←", "right": "→"}
 
 
 class Store:
