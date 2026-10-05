@@ -192,15 +192,15 @@ def test_audio_switch_device_and_volume(qtbot):
 
 def test_settings_sub_tabs(qtbot):
     tab, *_ = make(qtbot, display=FakeDisplay(), audio=FakeAudio())
-    assert list(tab.sub_buttons) == ["Device", "Network", "Controller", "Steam", "Storage", "Security", "Health", "Updates"]
+    assert list(tab.sub_buttons) == ["Device", "Network", "Controller", "Games", "Storage", "Security", "Health", "Updates"]
     assert tab.current_sub_tab == "Device"
     page = tab.sub_pages["Security"].widget()
     assert not tab.reset_button.isVisibleTo(tab.sub_stack)
     tab.sub_buttons["Security"].click()
     assert tab.sub_stack.currentWidget() is tab.sub_pages["Security"]
     assert tab.reset_button.isVisibleTo(page) and tab.sub_buttons["Security"].isChecked()
-    tab.sub_buttons["Steam"].click()
-    assert tab.api_key_button.isVisibleTo(tab.sub_pages["Steam"].widget())
+    tab.sub_buttons["Games"].click()
+    assert tab.api_key_button.isVisibleTo(tab.sub_pages["Games"].widget())
 
 
 def test_volume_button_step_setting(qtbot):

@@ -6,7 +6,7 @@ from typing import Callable
 
 import re
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QStackedWidget, QVBoxLayout,
                                QWidget)
 
@@ -21,7 +21,7 @@ from gamingcrypt.ui.system_settings import AudioSection, DisplaySection, PowerSe
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button, enable_touch_scroll, set_status
 
-SUB_TABS = ["Device", "Network", "Controller", "Steam", "Storage", "Security", "Health", "Updates"]
+SUB_TABS = ["Device", "Network", "Controller", "Games", "Storage", "Security", "Health", "Updates"]
 LOCK_AFTER_SLEEP = [("Never", None), ("Right away", 0), ("After 5 minutes", 5), ("After 15 minutes", 15),
                     ("After 1 hour", 60)]
 API_KEY_RE = re.compile(r"^[0-9A-Fa-f]{32}$")
@@ -75,6 +75,8 @@ from gamingcrypt.unlock.veracrypt import VeraCryptUnlocker
 
 
 class SettingsTab(QStackedWidget):
+    libraries_changed = Signal()  # Games tab: show / hide libraries
+
     def __init__(
         self,
         config: dict,
@@ -160,7 +162,11 @@ class SettingsTab(QStackedWidget):
         layout.addStretch()
 
         # Steam
-        layout = page("Steam")
+        layout = page("Games")
+        layout.addWidget(self._libraries_section())
+        steam_heading = QLabel("Steam")
+        steam_heading.setObjectName("section")
+        layout.addWidget(steam_heading)
         self.account_label = QLabel()
         self.account_label.setObjectName("detailMeta")
         layout.addWidget(self.account_label)
@@ -236,6 +242,47 @@ class SettingsTab(QStackedWidget):
         self.show_sub_tab(SUB_TABS[0])
         self.addWidget(self.overview)
         self.refresh()
+
+    def _libraries_section(self) -> QWidget:
+        """Which libraries the Games tab shows."""
+        from gamingcrypt.ui.games_tab import LIBRARIES
+
+        box = QWidget()
+        column = QVBoxLayout(box)
+        column.setContentsMargins(0, 0, 0, 0)
+        heading = QLabel("Libraries")
+        heading.setObjectName("section")
+        column.addWidget(heading)
+        hint = QLabel("Shown on the Games tab")
+        hint.setObjectName("cardMeta")
+        column.addWidget(hint)
+        row = QHBoxLayout()
+        hidden = set(self.config.setdefault("libraries", {"hidden": []}).setdefault("hidden", []))
+        self.library_buttons = {}
+        for key, name in LIBRARIES.items():
+            button = big_button("", checkable=True)
+            button.setChecked(key not in hidden)
+            self._library_text(button, name)
+            button.toggled.connect(lambda on, k=key, b=button, n=name: self._library_toggled(k, on, b, n))
+            row.addWidget(button)
+            self.library_buttons[key] = button
+        row.addStretch()
+        column.addLayout(row)
+        return box
+
+    @staticmethod
+    def _library_text(button, name: str) -> None:
+        button.setText(f"✓  {name}" if button.isChecked() else name)
+
+    def _library_toggled(self, key: str, shown: bool, button, name: str) -> None:
+        self._library_text(button, name)
+        hidden = self.config["libraries"]["hidden"]
+        if shown and key in hidden:
+            hidden.remove(key)
+        elif not shown and key not in hidden:
+            hidden.append(key)
+        self.save(self.config)
+        self.libraries_changed.emit()
 
     def _sleep_lock_chosen(self, _index: int) -> None:
         self.config["system"]["lock_after_sleep_min"] = self.sleep_lock.currentData()

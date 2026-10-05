@@ -48,6 +48,10 @@ DEFAULTS: dict[str, Any] = {
         # boot entry like "0000", "none", or None = every system found.
         "other_os": None,
     },
+    "libraries": {
+        # Libraries not shown on the Games tab (Settings -> Games -> Libraries).
+        "hidden": [],
+    },
     "input": {
         # Apply calibration + button mapping through a virtual controller.
         "enabled": False,

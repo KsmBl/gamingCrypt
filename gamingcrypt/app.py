@@ -849,6 +849,9 @@ class MainWindow(QMainWindow):
         self.shell = Shell(pages, show_hints=in_gaming_session())
         self.shell.exit_requested.connect(self.desktop_mode)
         self.shell.power_requested.connect(self.power_action)
+        settings = pages.get("Settings")
+        if hasattr(settings, "libraries_changed") and hasattr(games, "home"):
+            settings.libraries_changed.connect(games.home.apply_libraries)
         self.shell.power_menu.sleep_button.setVisible(self.sleep_allowed())
         self.load_other_systems(self.shell.power_menu)
         self._replace(self.shell)
@@ -982,7 +985,9 @@ def default_pages(config: dict) -> dict[str, QWidget]:
     library_path = mount_point if config["steam"].get("auto_library", True) else ""
     from gamingcrypt.ui.downloads_tab import DownloadsTab
 
-    return {"Games": GamesTab(service, library_path=library_path), "Downloads": DownloadsTab(service)}
+    libraries = config.setdefault("libraries", {"hidden": []})
+    return {"Games": GamesTab(service, library_path=library_path, library_settings=libraries),
+            "Downloads": DownloadsTab(service)}
 
 
 SECRET_FORMAT_HINT = {

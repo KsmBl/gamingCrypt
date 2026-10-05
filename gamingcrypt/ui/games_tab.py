@@ -24,6 +24,10 @@ from gamingcrypt.ui.widgets import (
 )
 
 
+# Libraries on the Games tab: id -> name (Settings -> Games -> Libraries hides them)
+LIBRARIES = {"favorites": "Favorites", "steam": "Steam", "recent": "Recently played"}
+
+
 def heading(text: str) -> QLabel:
     label = QLabel(text)
     label.setObjectName("cardTitle")
@@ -166,6 +170,19 @@ class GamesHome(QWidget):
         self._focus_filter.watch(self.search)
         layout.addWidget(self.keyboard)
 
+    def library_cards(self) -> dict:
+        return {"favorites": self.favorites_card, "steam": self.steam_card, "recent": self.recent_card}
+
+    def apply_libraries(self) -> None:
+        """Only the libraries chosen in Settings; no heading when none is left."""
+        hidden = set(self.tab.library_settings.get("hidden", []))
+        for key, card in self.library_cards().items():
+            card.setVisible(key not in hidden)
+        any_shown = any(key not in hidden for key in self.library_cards())
+        searching = bool(self.search.text().strip())
+        self.sources.setVisible(any_shown and not searching)
+        self.sources_heading.setVisible(any_shown and not searching)
+
     def update_favorites(self) -> None:
         count = len(self.tab.profiles.favorites())
         self.favorites_card.subtitle.setText(f"{count} game{'s' if count != 1 else ''}" if count
@@ -187,8 +204,7 @@ class GamesHome(QWidget):
     def refresh_results(self) -> None:
         query = self.search.text()
         searching = bool(query.strip())
-        self.sources.setVisible(not searching)
-        self.sources_heading.setVisible(not searching)
+        self.apply_libraries()
         self.continue_card.setVisible(not searching and self.continue_card.game is not None)
         self.results_heading.setText(f'Results for "{query.strip()}"' if searching else "Installed games")
         matches = filter_games(self.installed, query, installed_only=True)
@@ -224,9 +240,12 @@ class GamesHome(QWidget):
 class GamesTab(QStackedWidget):
     """Navigation stack: home -> Steam library -> game details / store."""
 
-    def __init__(self, service, library_path: str = "", parent: QWidget | None = None):
+    def __init__(self, service, library_path: str = "", parent: QWidget | None = None,
+                 library_settings: dict | None = None):
         super().__init__(parent)
         self.service = service
+        # shared with the config: Settings changes it, apply_libraries() shows it
+        self.library_settings = library_settings if library_settings is not None else {"hidden": []}
         self.games: dict[int, SteamGame] = {}
         self._came_from: list = []
         from gamingcrypt.game_profiles import GameProfiles

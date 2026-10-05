@@ -242,14 +242,16 @@ def test_default_pages_pass_mount_point_to_games(monkeypatch):
     seen = {}
 
     class Probe:
-        def __init__(self, service, library_path=""):
+        def __init__(self, service, library_path="", library_settings=None):
             seen["path"] = library_path
+            seen["libraries"] = library_settings
 
     monkeypatch.setattr(games_tab, "GamesTab", Probe)
     cfg = configured()
     cfg["unlock"]["mount_point"] = "~/GamingCrypt"
     app.default_pages(cfg)
     assert seen["path"].endswith("/GamingCrypt") and not seen["path"].startswith("~")
+    assert seen["libraries"] is cfg["libraries"]  # shared: Settings changes reach the Games tab
     cfg["steam"]["auto_library"] = False
     app.default_pages(cfg)
     assert seen["path"] == ""
