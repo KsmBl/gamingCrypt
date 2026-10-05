@@ -8,11 +8,8 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollAre
 
 from gamingcrypt.emulation.library import RomGame
 from gamingcrypt.emulation.systems import System
-from gamingcrypt.ui.game_widgets import format_size, placeholder_cover
+from gamingcrypt.ui.game_widgets import COVER_H, COVER_W, format_size, placeholder_cover
 from gamingcrypt.ui.widgets import FlowLayout, big_button, enable_touch_scroll, set_status
-
-COVER_W, COVER_H = 150, 200
-
 
 def load_rom_cover(label: QLabel, game: RomGame, covers, w: int, h: int) -> None:
     """Placeholder first; the box art from the drive's cache or libretro-thumbnails when it comes."""
@@ -48,9 +45,10 @@ class RomCard(QFrame):
         self.game = game
         self.setObjectName("card")
         self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
-        self.setFixedWidth(COVER_W + 24)
+        self.setFixedWidth(COVER_W + 20)  # the same size as a Steam game's card
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(10, 10, 10, 12)
+        layout.setSpacing(6)
         self.cover = QLabel()
         self.cover.setFixedSize(COVER_W, COVER_H)
         self.cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -59,6 +57,8 @@ class RomCard(QFrame):
         title = QLabel(game.name)
         title.setObjectName("cardTitle")
         title.setWordWrap(True)
+        title.setFixedHeight(58)
+        title.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(title)
         self.meta = QLabel(format_size(game.size))
         self.meta.setObjectName("cardMeta")

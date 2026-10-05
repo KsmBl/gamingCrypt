@@ -149,7 +149,8 @@ class SourceCard(Tappable):
     def __init__(self, name: str, subtitle: str = "", parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("card")
-        self.setFixedSize(320, 180)
+        self.setFixedHeight(180)
+        self.setMinimumWidth(320)  # wider when the row has room (FlowLayout stretch)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
         self.title = QLabel(name)

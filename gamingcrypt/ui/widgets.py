@@ -56,10 +56,13 @@ class ComingSoon(QWidget):
 class FlowLayout(QLayout):
     """Lays out children left to right and wraps - used for the game grids."""
 
-    def __init__(self, parent: QWidget | None = None, spacing: int = 20):
+    def __init__(self, parent: QWidget | None = None, spacing: int = 20, stretch: bool = False):
         super().__init__(parent)
         self._items = []
         self._spacing = spacing
+        # stretch: as many (equally wide) items per row as fit, widened to fill the row exactly -
+        # the same gap left and right
+        self._stretch = stretch
         # Qt asks heightForWidth() constantly (every resize / animation frame); with
         # hundreds of game cards recomputing it each time makes scrolling choppy.
         self._height_cache: dict[int, int] = {}
@@ -124,6 +127,8 @@ class FlowLayout(QLayout):
     def _do_layout(self, rect: QRect, apply: bool) -> int:
         m = self.contentsMargins()
         area = rect.adjusted(m.left(), m.top(), -m.right(), -m.bottom())
+        if self._stretch:
+            return self._do_stretched(area, apply) - rect.y() + m.bottom()
         x, y, line_height = area.x(), area.y(), 0
         for item in self._items:
             if item.widget() and item.widget().isHidden():
@@ -138,6 +143,25 @@ class FlowLayout(QLayout):
             x += hint.width() + self._spacing
             line_height = max(line_height, hint.height())
         return y + line_height - rect.y() + m.bottom()
+
+    def _do_stretched(self, area: QRect, apply: bool) -> int:
+        items = [i for i in self._items if not (i.widget() and i.widget().isHidden())]
+        if not items:
+            return area.y()
+        base = max(max(i.sizeHint().width(), i.minimumSize().width()) for i in items)
+        height = max(i.sizeHint().height() for i in items)
+        spacing, width = self._spacing, max(area.width(), 1)
+        # fewer items than fit in a row: they keep (about) their size and start left
+        columns = max(1, (width + spacing) // (base + spacing))
+        item_w = max(1, (width - spacing * (columns - 1)) // columns)
+        for index, item in enumerate(items):
+            row, column = divmod(index, columns)
+            if apply:
+                x = area.x() + column * (item_w + spacing)
+                w = item_w if column < columns - 1 else area.right() + 1 - x  # last one ends at the edge
+                item.setGeometry(QRect(x, area.y() + row * (height + spacing), w, height))
+        rows = (len(items) + columns - 1) // columns
+        return area.y() + rows * height + (rows - 1) * spacing
 
 
 class OnScreenKeyboard(QWidget):

@@ -165,7 +165,7 @@ class GamesHome(QWidget):
         self.sources_heading = heading("Libraries")
         self.content_layout.addWidget(self.sources_heading)
         self.sources = QWidget()
-        sources = FlowLayout(self.sources)  # wraps: one card per emulated system can be many
+        sources = FlowLayout(self.sources, stretch=True)  # wraps: one card per emulated system can be many
         self.favorites_card = SourceCard("Favorites", "Your starred games")
         self.favorites_card.tapped.connect(tab.open_favorites)
         sources.addWidget(self.favorites_card)
