@@ -604,3 +604,58 @@ def test_up_without_anything_above_still_scrolls_to_the_top(qtbot):
     nav = GamepadNavigator(window)
     nav.move(0, -1)
     qtbot.waitUntil(lambda: bar.value() == 0)
+
+
+def test_quick_menu_moves_as_it_looks(qtbot):
+    """Down / up stay in the column and pick the button under the current one; left / right walk
+    the row and cross to the other column at the same height; the edges stop."""
+    from PySide6.QtWidgets import QMainWindow
+
+    from gamingcrypt.system.battery import BatteryState
+    from gamingcrypt.system.controls import SystemControls
+    from gamingcrypt.system.power import PowerLimit
+    from gamingcrypt.ui import theme
+    from gamingcrypt.ui.quick_menu import QuickMenu
+    from tests.test_quick_menu import Brightness
+
+    window = QMainWindow()
+    window.setStyleSheet(theme.STYLESHEET)
+    qtbot.addWidget(window)
+    window.resize(1280, 800)
+    window.show()
+    menu = QuickMenu(window, SystemControls(audio=LongNamesAudio(), brightness=Brightness()),
+                     refresh_get=lambda: 0, refresh_set=lambda hz: True,
+                     battery_reader=lambda: BatteryState(64, False, False))
+    window.nav_root = lambda: menu
+    menu.set_performance(limit=PowerLimit(15, 5, 28, "test"), fps=0, overlay=False, in_game=True)
+    menu.set_emulated(True, (2.0, 0.5, "normal"))
+    menu.set_discs(3, 1)
+    menu.open_menu(0x70000001, "Final Fantasy VII")
+    qtbot.waitExposed(window)
+    qtbot.wait(50)
+    nav = GamepadNavigator(window)
+
+    def go(dx, dy):
+        nav.move(dx, dy)
+        return nav.focused()
+
+    nav.focus(menu.screenshot_button)
+    assert go(0, 1) is menu.load_state_button  # straight down: the right one under the right one
+    assert go(0, 1) is menu.controls_button
+    assert go(0, 1) is menu.speed_buttons["normal"]  # the middle one under the wide button
+    assert go(1, 0) is menu.speed_buttons["fast"]
+    assert go(1, 0) is menu.speed_buttons["fast"]  # the right edge: stays
+    assert go(0, 1) is menu.disc_next
+    assert go(-1, 0) is menu.disc_prev
+    assert go(0, 1) is menu.quit_button
+    assert go(0, 1) is menu.lock_button
+    assert go(0, 1) is menu.lock_button  # the bottom: stays
+    nav.focus(menu.save_state_button)
+    target = go(-1, 0)  # over to the settings, at the same height
+    assert target in (menu.refresh, menu.brightness, menu.volume, menu.power)
+    nav.focus(menu.output)
+    assert go(1, 0) is menu.back_button  # level with Output: Back to the game
+    nav.focus(menu.fps)
+    assert go(0, 1) is menu.fps and go(0, -1) is menu.power
+    value = menu.power.value()
+    assert go(1, 0) is menu.power and menu.power.value() > value  # a slider takes left / right itself

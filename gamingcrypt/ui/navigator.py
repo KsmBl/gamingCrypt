@@ -2,6 +2,7 @@
 
 Widgets can take over input with optional hooks:
 ``gamepad_direction(dx, dy) -> bool``, ``gamepad_activate() -> bool``,
+``gamepad_navigate(current, dx, dy) -> QWidget | None`` (on an ancestor: its own layout's order),
 ``gamepad_back() -> bool`` (also on ancestors), ``gamepad_start() -> bool``.
 """
 
@@ -255,6 +256,18 @@ class GamepadNavigator(QObject):
                 step = max(1, (current.maximum() - current.minimum()) // 20)
                 current.setValue(current.value() + dx * step)
                 return
+        node = current.parentWidget() if current is not None else None
+        while node is not None:  # a container that knows its own order (e.g. the quick menu's grid)
+            navigate = getattr(node, "gamepad_navigate", None)
+            if callable(navigate):
+                target = navigate(current, dx, dy)
+                if target is not None:
+                    self.focus(target)
+                    return
+                if getattr(node, "navigation_complete", False):
+                    return  # its edge: stay
+                break
+            node = node.parentWidget()
         target = self.nearest(current, dx, dy)
         if target is not None:
             self.focus(target)

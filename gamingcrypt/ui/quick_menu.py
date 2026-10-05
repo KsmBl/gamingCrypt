@@ -239,6 +239,52 @@ class QuickMenu(QWidget):
         self.box.addStretch()
         self.hide()
 
+    # controller: the grid as it looks ------------------------------------------------------
+    navigation_complete = True  # never jump outside the menu
+
+    def _rows(self) -> tuple[list[list[QWidget]], list[list[QWidget]]]:
+        """(left column, right column): rows of what can be selected, top to bottom."""
+        def usable(row):
+            return [w for w in row if w.isVisibleTo(self) and w.isEnabled()]
+
+        left = [[self.output], [self.input], [self.volume], [self.brightness], [self.refresh],
+                [self.keep_button, self.revert_button], [self.power], [self.fps]]
+        right = [[self.back_button], [self.overlay_button, self.screenshot_button],
+                 [self.save_state_button, self.load_state_button], [self.controls_button],
+                 list(self.speed_buttons.values()), [self.disc_prev, self.disc_next], [self.quit_button],
+                 [self.lock_button]]
+        return [r for r in map(usable, left) if r], [r for r in map(usable, right) if r]
+
+    def gamepad_navigate(self, current: QWidget | None, dx: int, dy: int) -> QWidget | None:
+        """Up / down: the row above / below in the same column (the button under it);
+        left / right: the neighbour in the row, past its end over to the other column."""
+        columns = self._rows()
+        place = next(((c, r, i) for c, rows in enumerate(columns) for r, row in enumerate(rows)
+                      for i, w in enumerate(row) if w is current), None)
+        if place is None:
+            return self.back_button if self.back_button.isVisibleTo(self) else None
+        column, row_index, index = place
+        rows = columns[column]
+        row = rows[row_index]
+        if dy:
+            target = row_index + dy
+            if not 0 <= target < len(rows):
+                return None  # the column's end
+            return self._closest_in(rows[target], current)
+        target = index + dx
+        if 0 <= target < len(row):
+            return row[target]
+        other = columns[1 - column] if (dx > 0) == (column == 0) else None
+        if not other:
+            return None
+        y = current.mapTo(self, current.rect().center()).y()
+        nearest = min(other, key=lambda r: abs(r[0].mapTo(self, r[0].rect().center()).y() - y))
+        return nearest[0] if dx > 0 else nearest[-1]
+
+    def _closest_in(self, row: list[QWidget], current: QWidget) -> QWidget:
+        x = current.mapTo(self, current.rect().center()).x()
+        return min(row, key=lambda w: abs(w.mapTo(self, w.rect().center()).x() - x))
+
     def _row(self, caption: str, widget: QWidget, value: QLabel | None) -> QWidget:
         row = QWidget()
         row.setObjectName("menuRow")  # transparent on the card (theme.py)
