@@ -163,4 +163,4 @@ def test_app_downloads_eden_then_starts_the_game(qtbot, emu, monkeypatch, tmp_pa
     window.game_watcher.phase = "playing"
     window.toggle_quick_menu()
     menu = window.quick_menu
-    assert not menu.state_row.isVisibleTo(menu)  # RetroArch only
+    assert not menu.state_row.isVisibleTo(menu) and not menu.speed_row.isVisibleTo(menu)  # RetroArch only

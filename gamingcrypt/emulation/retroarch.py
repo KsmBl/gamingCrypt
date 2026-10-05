@@ -86,7 +86,7 @@ def write_config(paths: EmulationPaths, extra: dict[str, str] | None = None) -> 
         "savefile_directory": paths.saves, "savestate_directory": paths.states,
         "screenshot_directory": paths.screenshots, "libretro_info_path": "/usr/share/libretro/info",
         "video_fullscreen": "true", "pause_nonactive": "false", "config_save_on_exit": "false",
-        "network_cmd_enable": "true", "network_cmd_port": str(COMMAND_PORT),
+        "network_cmd_enable": "true", "quit_press_twice": "false", "state_slot": "0", "network_cmd_port": str(COMMAND_PORT),
         "input_autodetect_enable": "true", "input_menu_toggle_gamepad_combo": "2",  # L3 + R3: RetroArch menu
         "savestate_auto_index": "false", "menu_driver": "ozone", "auto_remaps_enable": "true",
         "input_remapping_directory": paths.config / "remaps",
@@ -110,14 +110,33 @@ def reaper(data_dir: Path) -> Path:
     return path
 
 
-def command(game: RomGame, core: Path, config: Path, reaper_path: Path) -> list[str]:
+SPEEDS = (0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0)
+RESTART_SLOT = 9  # the state a speed change restarts from (Save / Load state use slot 0)
+
+
+def speed_settings(speed: float) -> dict[str, str]:
+    """Faster: the fast-forward rate; slower: the slow-motion rate (toggled on once the game runs)."""
+    if speed > 1:
+        return {"fastforward_ratio": f"{speed:g}"}
+    if speed < 1:
+        return {"slowmotion_ratio": f"{1 / speed:g}"}
+    return {}
+
+
+def speed_toggle(speed: float) -> str | None:
+    return "FAST_FORWARD" if speed > 1 else "SLOWMOTION" if speed < 1 else None
+
+
+def command(game: RomGame, core: Path, config: Path, reaper_path: Path, entry_slot: int | None = None) -> list[str]:
+    extra = ["-e", str(entry_slot)] if entry_slot is not None else []
     return [str(reaper_path), "SteamLaunch", f"AppId={game.appid}", "--",
-            "retroarch", "--appendconfig", str(config), "-L", str(core), str(game.path)]
+            "retroarch", "--appendconfig", str(config), *extra, "-L", str(core), str(game.path)]
 
 
 def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, core_name: str | None = None,
            popen=subprocess.Popen, which: Callable[[str], str | None] = shutil.which,
-           layout: dict[str, str] | None = None) -> tuple[bool, str]:
+           layout: dict[str, str] | None = None, speed: float = 1.0,
+           entry_slot: int | None = None) -> tuple[bool, str]:
     if not available(which):
         return False, "RetroArch isn't installed - run ./install.sh"
     core = find_core(paths, game.system, core_name)
@@ -125,18 +144,36 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
         wanted = game.system.cores[0]
         return False, (f"No RetroArch core for {game.system.name} yet - add e.g. {wanted}_libretro.so "
                        "to the cores folder (⬆ Add emulator games)")
-    config = write_config(paths)
+    config = write_config(paths, speed_settings(speed))
     from gamingcrypt.emulation import layouts
 
     layouts.write_remap(paths.config / "remaps", core.name, game.system.id, layout or {})  # the system's layout
     log_dir.mkdir(parents=True, exist_ok=True)
     try:
         with open(log_dir / "retroarch.log", "ab") as log:
-            popen(command(game, core, config, reaper(data_dir)), stdin=subprocess.DEVNULL, stdout=log,
+            popen(command(game, core, config, reaper(data_dir), entry_slot), stdin=subprocess.DEVNULL, stdout=log,
                   stderr=subprocess.STDOUT, start_new_session=True, env=dict(os.environ))
     except OSError as exc:
         return False, f"RetroArch didn't start: {exc}"
     return True, f"Starting {game.name}…"
+
+
+def query(command_text: str, port: int = COMMAND_PORT, timeout: float = 0.5) -> str | None:
+    """A command with an answer (GET_STATUS …); None: no RetroArch listening."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(timeout)
+    try:
+        sock.sendto(command_text.encode(), ("127.0.0.1", port))
+        return sock.recv(4096).decode(errors="replace").strip()
+    except OSError:
+        return None
+    finally:
+        sock.close()
+
+
+def playing(port: int = COMMAND_PORT) -> bool:
+    answer = query("GET_STATUS", port)
+    return bool(answer) and "PLAYING" in answer
 
 
 def send(command_text: str, port: int = COMMAND_PORT) -> bool:

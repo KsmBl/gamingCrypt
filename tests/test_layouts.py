@@ -120,7 +120,7 @@ def test_launch_uses_the_saved_layout(qtbot, tmp_path, monkeypatch):
     cfg = copy.deepcopy(DEFAULTS)
     layouts.save(cfg, "snes", {"a": "A"})
     seen = []
-    monkeypatch.setattr(retroarch, "launch", lambda game, paths, data, logs, core=None, layout=None:
+    monkeypatch.setattr(retroarch, "launch", lambda game, paths, data, logs, core=None, layout=None, **_k:
                         seen.append(layout) or (False, "x"))
     window = MainWindow(cfg, lambda c: None, page_factory=lambda c: {
         "Games": GamesTab(FakeService(), library_settings=c["libraries"], emulation_root=str(tmp_path))})
