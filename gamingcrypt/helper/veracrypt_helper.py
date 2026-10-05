@@ -11,6 +11,8 @@ Must stay self-contained (runs as root, no imports from user-writable paths).
 
 import os
 import pwd
+import struct
+import time
 import re
 import signal
 import subprocess
@@ -215,16 +217,153 @@ def power_targets(sys_root: str = SYS) -> list[tuple[str, int, int]]:
     return targets
 
 
+# --- AMD APUs without a power1_cap file (e.g. Ryzen 4800U): the SMU mailbox, like
+# RyzenAdj does it (github.com/FlyGoat/RyzenAdj, lib/nb_smu_ops.c + api.c). SMN
+# registers are reached through the root complex's PCI config space (0xB8 index,
+# 0xBC data). Keep this table in sync with gamingcrypt/system/power.py.
+PCI_ROOT = "bus/pci/devices/0000:00:00.0/config"
+SMN_INDEX, SMN_DATA = 0xB8, 0xBC
+MAILBOXES = {1: (0x3B10528, 0x3B10564, 0x3B10998), 2: (0x3B10528, 0x3B10578, 0x3B10998)}
+LIMIT_MSGS = {"raven": (0x1A, 0x1B, 0x1C), "renoir": (0x14, 0x15, 0x16)}
+SMU_FAMILIES = {  # (cpu family, model) -> (name, mailbox, messages)
+    (0x17, 17): ("Raven", 1, "raven"), (0x17, 24): ("Picasso", 1, "raven"), (0x17, 32): ("Dali", 1, "raven"),
+    (0x17, 96): ("Renoir", 1, "renoir"), (0x17, 104): ("Lucienne", 1, "renoir"),
+    (0x17, 144): ("Van Gogh", 2, "renoir"), (0x17, 145): ("Van Gogh", 2, "renoir"),
+    (0x17, 160): ("Mendocino", 2, "renoir"), (0x19, 80): ("Cezanne", 1, "renoir"),
+    (0x19, 64): ("Rembrandt", 2, "renoir"), (0x19, 68): ("Rembrandt", 2, "renoir"),
+    (0x19, 116): ("Phoenix", 2, "renoir"), (0x19, 120): ("Phoenix", 2, "renoir"),
+    (0x19, 117): ("Hawk Point", 2, "renoir"),
+}
+SMU_MIN_W = 5
+SMU_TEST_MSG, SMU_OK = 0x1, 0x1
+STATE_FILE = "/run/gamingcrypt-power-limit"
+
+
+def cpu_info(text: str) -> tuple[int, int, str] | None:
+    """(family, model, model name) of an AMD CPU from /proc/cpuinfo."""
+    fields = {}
+    for line in text.splitlines():
+        if ":" in line:
+            key, value = (part.strip() for part in line.split(":", 1))
+            fields.setdefault(key, value)
+        elif fields:
+            break  # first CPU is enough
+    if fields.get("vendor_id") != "AuthenticAMD":
+        return None
+    try:
+        return int(fields["cpu family"]), int(fields["model"]), fields.get("model name", "")
+    except (KeyError, ValueError):
+        return None
+
+
+def smu_range(family: int, model: int, name: str) -> tuple[int, int] | None:
+    """Allowed watts: U chips (handhelds, thin laptops) up to 28 W, Steam Deck-class 20 W, others 45 W."""
+    if (family, model) not in SMU_FAMILIES:
+        return None
+    word = name.split(" with ")[0].split()[-1] if name else ""
+    if SMU_FAMILIES[(family, model)][0] == "Van Gogh":
+        return SMU_MIN_W, 20
+    if word.upper().endswith("U"):
+        return SMU_MIN_W, 28
+    return SMU_MIN_W, 45
+
+
+class Smu:
+    def __init__(self, family: int, model: int, sys_root: str = SYS, timeout: float = 1.0):
+        _name, box, msgs = SMU_FAMILIES[(family, model)]
+        self.msg_addr, self.rep_addr, self.arg_addr = MAILBOXES[box]
+        self.limit_msgs = LIMIT_MSGS[msgs]
+        self.timeout = timeout
+        self.fd = os.open(os.path.join(sys_root, PCI_ROOT), os.O_RDWR)
+
+    def close(self) -> None:
+        os.close(self.fd)
+
+    def write(self, addr: int, value: int) -> None:
+        os.pwrite(self.fd, struct.pack("<I", addr), SMN_INDEX)
+        os.pwrite(self.fd, struct.pack("<I", value & 0xFFFFFFFF), SMN_DATA)
+
+    def read(self, addr: int) -> int:
+        os.pwrite(self.fd, struct.pack("<I", addr & ~0x3), SMN_INDEX)
+        return struct.unpack("<I", os.pread(self.fd, 4, SMN_DATA))[0]
+
+    def send(self, msg: int, arg: int = 0) -> int:
+        self.write(self.rep_addr, 0)
+        for i in range(6):
+            self.write(self.arg_addr + 4 * i, arg if i == 0 else 0)
+        self.write(self.msg_addr, msg)
+        deadline = time.monotonic() + self.timeout
+        while time.monotonic() < deadline:  # RyzenAdj waits forever - we don't
+            response = self.read(self.rep_addr)
+            if response:
+                return response
+            time.sleep(0.001)
+        return 0
+
+    def check(self) -> str | None:
+        self.write(self.rep_addr, 0)
+        self.write(self.arg_addr, 0x47)
+        if self.read(self.arg_addr) != 0x47:
+            return "the CPU's power controller isn't writable (Secure Boot lockdown?)"
+        if self.send(SMU_TEST_MSG) != SMU_OK:
+            return "the CPU's power controller didn't answer"
+        return None
+
+    def set_limit(self, watts: int) -> str | None:
+        error = self.check()
+        if error:
+            return error
+        for msg in self.limit_msgs:  # sustained (STAPM), fast, slow - in mW
+            response = self.send(msg, watts * 1000)
+            if response != SMU_OK:
+                return f"the CPU's power controller refused the limit (0x{response:x})"
+        return None
+
+
+def set_smu_power_limit(watts: int, sys_root: str = SYS, cpuinfo: str | None = None,
+                        smu_factory=Smu, state_file: str | None = STATE_FILE) -> int:
+    if cpuinfo is None:
+        with open("/proc/cpuinfo") as fh:
+            cpuinfo = fh.read()
+    cpu = cpu_info(cpuinfo)
+    limits = smu_range(*cpu) if cpu else None
+    if limits is None:
+        print("Error: gamingcrypt helper: no adjustable power limit found", file=sys.stderr)
+        return 2
+    if not limits[0] <= watts <= limits[1]:
+        print(f"Error: gamingcrypt helper: {watts} W is outside {limits[0]}-{limits[1]} W", file=sys.stderr)
+        return 2
+    import fcntl
+
+    with open(state_file + ".lock" if state_file else os.devnull, "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)  # one mailbox conversation at a time
+        try:
+            smu = smu_factory(cpu[0], cpu[1], sys_root)
+        except OSError as exc:
+            print(f"Error: gamingcrypt helper: can't reach the CPU's power controller: {exc}", file=sys.stderr)
+            return 2
+        try:
+            error = smu.set_limit(watts)
+        finally:
+            smu.close()
+    if error:
+        print(f"Error: gamingcrypt helper: {error}", file=sys.stderr)
+        return 2
+    if state_file:
+        with open(state_file, "w") as fh:  # readable: the UI shows the current value
+            fh.write(f"{watts}\n")
+    return 0
+
+
 def set_power_limit(args: list[str], sys_root: str = SYS, run=subprocess.run,
-                    ryzenadj: str | None = None) -> int:
+                    ryzenadj: str | None = None, smu=set_smu_power_limit) -> int:
     if len(args) != 1 or not args[0].isdigit():
         print("Error: gamingcrypt helper: usage: power-limit <watts>", file=sys.stderr)
         return 2
     watts = int(args[0])
     targets = power_targets(sys_root)
     if not targets:
-        print("Error: gamingcrypt helper: no adjustable power limit found", file=sys.stderr)
-        return 2
+        return smu(watts, sys_root)
     uw = watts * 1_000_000
     for path, low, high in targets:
         if not low <= uw <= high:

@@ -232,7 +232,10 @@ def test_helper_power_limit_intel_and_none(tmp_path):
     root, path = intel_sys(tmp_path / "i")
     assert veracrypt_helper.set_power_limit(["10"], sys_root=str(root), ryzenadj="") == 0
     assert path.read_text() == str(10 * 10**6)
-    assert veracrypt_helper.set_power_limit(["10"], sys_root=str(tmp_path / "none"), ryzenadj="") == 2
+    smu_calls = []
+    assert veracrypt_helper.set_power_limit(["10"], sys_root=str(tmp_path / "none"), ryzenadj="",
+                                            smu=lambda w, root: smu_calls.append(w) or 2) == 2
+    assert smu_calls == [10]  # no sysfs limit: the SMU path is tried
 
 
 def test_helper_main_dispatches_power_limit(monkeypatch):

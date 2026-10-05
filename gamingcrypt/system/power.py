@@ -6,6 +6,8 @@ only accepts values inside the range the hardware reports.
 
 * AMD: ``/sys/class/drm/card*/device/hwmon/hwmon*/power1_cap`` (+ ryzenadj if installed)
 * Intel: ``/sys/class/powercap/intel-rapl:0/constraint_0_power_limit_uw``
+* AMD APUs without power1_cap (e.g. Ryzen 4800U handhelds): the CPU's power
+  controller (SMU), the way RyzenAdj does it - done by the helper itself.
 """
 
 from __future__ import annotations
@@ -37,7 +39,32 @@ def _read_uw(path: Path) -> int | None:
         return None
 
 
-def read_limit(sys_root: Path = Path("/sys")) -> PowerLimit | None:
+SMU_STATE = Path("/run/gamingcrypt-power-limit")
+
+
+def smu_limit(cpuinfo: str | None = None, state: Path = SMU_STATE) -> PowerLimit | None:
+    """Range from the helper's table (same CPU detection); current = what was last set."""
+    from gamingcrypt.helper import veracrypt_helper as helper
+
+    if cpuinfo is None:
+        try:
+            cpuinfo = Path("/proc/cpuinfo").read_text()
+        except OSError:
+            return None
+    cpu = helper.cpu_info(cpuinfo)
+    limits = helper.smu_range(*cpu) if cpu else None
+    if limits is None:
+        return None
+    try:
+        current = int(state.read_text().strip())
+    except (OSError, ValueError):
+        current = 15 if limits[1] <= 28 else 25  # typical default TDP until set once
+    current = max(limits[0], min(limits[1], current))
+    return PowerLimit(current, limits[0], limits[1], f"AMD {helper.SMU_FAMILIES[cpu[:2]][0]} SMU")
+
+
+def read_limit(sys_root: Path = Path("/sys"), cpuinfo: str | None = None,
+               state: Path = SMU_STATE) -> PowerLimit | None:
     for cap in sorted(sys_root.glob("class/drm/card*/device/hwmon/hwmon*/power1_cap")):
         current = _read_uw(cap)
         if current is None:
@@ -53,7 +80,9 @@ def read_limit(sys_root: Path = Path("/sys")) -> PowerLimit | None:
         # The rated TDP can be below what the firmware already allows; never offer less than that.
         high = max(rated, current) or current
         return PowerLimit(round(current / 1e6), MIN_WATTS, max(round(high / 1e6), MIN_WATTS), "intel-rapl")
-    return None
+    if sys_root != Path("/sys") and cpuinfo is None:
+        return None  # tests with a fake /sys: no real CPU
+    return smu_limit(cpuinfo, state)
 
 
 class PowerControl:
