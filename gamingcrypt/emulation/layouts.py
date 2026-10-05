@@ -154,3 +154,32 @@ class Store:
     def reset(self, system: str) -> None:
         save(self.config, system, {})
         self.save_config(self.config)
+
+    def holders(self, system: str) -> dict[str, list[str]]:
+        """Console button -> the controller buttons that press it."""
+        result: dict[str, list[str]] = {}
+        for xbox, name in self.labels(system).items():
+            result.setdefault(name, []).append(xbox)
+        return result
+
+    def assign(self, system: str, name: str, xbox: str) -> None:
+        """Controller button <xbox> presses console button <name> now.
+
+        Swapped: the button that pressed <name> before gets what <xbox> did, so no
+        console button gets lost.
+        """
+        if xbox not in XBOX_RETROPAD or name not in console(system):
+            return
+        current = self.labels(system)
+        before = current.get(xbox)
+        if before == name:
+            return
+        custom = load(self.config, system)
+        defaults = labels(system)
+        custom[xbox] = name
+        if before is not None:
+            for other, meaning in current.items():
+                if meaning == name and other != xbox:
+                    custom[other] = before
+        save(self.config, system, {k: v for k, v in custom.items() if defaults.get(k) != v})
+        self.save_config(self.config)

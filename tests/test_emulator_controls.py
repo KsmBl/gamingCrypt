@@ -39,41 +39,53 @@ def test_store(store):
     assert store.get("snes") == {}
 
 
-def test_page_shows_and_changes_the_layout(qtbot, store):
-    from gamingcrypt.ui.controls_page import ControlsPage
-
-    page = ControlsPage(store, "snes")
-    qtbot.addWidget(page)
-    page.show()
-    assert page.title.text() == "Controls · Super Nintendo" and not page.system_combo.isVisible()
-    assert page.buttons["a"].text() == "B" and page.buttons["lb"].text() == "L"
-    assert not page.reset_button.isVisible() and page.focusWidget() is page.buttons["a"]
-    page.buttons["a"].click()
-    assert page.choices_box.isVisible() and page.choices_heading.text() == "A should be:"
-    choices = [page.choices.itemAt(i).widget() for i in range(page.choices.count())]
-    assert [c.text() for c in choices] == store.choices("snes") and page.focusWidget() is choices[0]
-    next(c for c in choices if c.text() == "A").click()
-    assert store.get("snes") == {"a": "A"} and page.buttons["a"].text() == "A  ✎"
-    assert not page.choices_box.isVisible() and page.reset_button.isVisible() and page.focusWidget() is page.buttons["a"]
-    page.reset_button.click()
-    assert store.get("snes") == {} and page.buttons["a"].text() == "B"
+def test_assign_swaps(store):
+    store.assign("psx", "Cross", "x")  # X presses Cross now, A gets X's Square
+    assert store.get("psx") == {"x": "Cross", "a": "Square"}
+    store.assign("psx", "Cross", "a")
+    assert store.get("psx") == {}
 
 
-def test_back_closes_the_choices_first(qtbot, store):
+def test_every_console_button_is_in_its_picture():
+    from gamingcrypt.ui import console_pictures
+
+    for sid, buttons in layouts.CONSOLES.items():
+        assert set(buttons) <= set(console_pictures.picture(sid).buttons), sid
+
+
+def test_select_then_press_assigns(qtbot, store):
+    from gamingcrypt.input import evdev as e
     from gamingcrypt.ui.controls_page import ControlsPage
 
     page = ControlsPage(store, "psx", systems=["snes", "psx"])
     qtbot.addWidget(page)
+    page.resize(1280, 800)
     page.show()
-    assert page.system_combo.isVisible() and page.buttons["a"].text() == "Cross"
+    assert page.title.text() == "Controls · PlayStation" and page.buttons["Cross"].text() == "✕"
+    assert page.picture.captions["Cross"].text() == "A" and not page.reset_button.isVisible()
+    page.buttons["Cross"].click()
+    assert page.scanning == "Cross" and page.scan_box.isVisible()
+    assert page.on_event(e.EV_KEY, e.BTN_NORTH, 1)  # X on the controller (evdev NORTH)
+    assert page.scanning is None and store.get("psx") == {"x": "Cross", "a": "Square"}
+    assert page.picture.captions["Cross"].text() == "X" and page.picture.captions["Square"].text() == "A"
+    assert page.on_event(e.EV_KEY, e.BTN_NORTH, 0)  # its release is swallowed
+    assert not page.on_event(e.EV_KEY, e.BTN_SOUTH, 1)  # not scanning: navigation as usual
+    page.buttons["L2"].click()
+    page.on_event(e.EV_ABS, e.ABS_RZ, 255)
+    assert store.labels("psx")["rt"] == "L2"
+    page.buttons["Circle"].click()
+    page.tap_buttons["lb"].click()  # touch instead of a press
+    assert store.labels("psx")["lb"] == "Circle"
+    page.buttons["Square"].click()
+    assert page.gamepad_back() and page.scanning == "Square"  # B is scanned, not back
+    page.cancel_button.click()
+    assert page.scanning is None
+    page.reset_button.click()
+    assert store.get("psx") == {}
     page.system_combo.setCurrentIndex(0)
-    assert page.title.text() == "Controls · Super Nintendo" and page.buttons["a"].text() == "B"
-    page.pick("x")
-    with qtbot.assertNotEmitted(page.closed):
-        assert page.gamepad_back()
-    assert not page.choices_box.isVisible() and page.focusWidget() is page.buttons["x"]
+    assert "B" in page.buttons and page.picture.captions["B"].text() == "A"
     with qtbot.waitSignal(page.closed):
-        assert page.gamepad_back()
+        page.gamepad_back()
 
 
 def test_settings_opens_emulator_controls(qtbot):
@@ -86,9 +98,9 @@ def test_settings_opens_emulator_controls(qtbot):
     tab.emulator_controls_button.click()
     page = tab.currentWidget()
     assert isinstance(page, ControlsPage) and page.system_combo.count() > 10
-    page.pick("a")
-    page.choose(store_choice := layouts.console(page.system).__iter__().__next__())
-    assert layouts.load(config, page.system).get("a", store_choice) == store_choice
+    page.start_scan("A")
+    page.assign("x")
+    assert layouts.load(config, page.system) == {"x": "A", "b": "Turbo B"}
     page.done_button.click()
     assert tab.currentWidget() is tab.overview
 
@@ -185,9 +197,9 @@ def test_quick_menu_opens_the_running_games_controls(qtbot, window, emu, monkeyp
     assert isinstance(page, ControlsPage) and page.isVisible() and not menu.isVisible()
     assert page.system == "psx" and "Crash Bandicoot" in page.note.text() and asides == []
     assert window.nav_root() is page  # the controller stays on the page
-    page.pick("a")
-    page.choose("Circle")
-    assert layouts.load(window.config, "psx") == {"a": "Circle"}
+    page.start_scan("Circle")
+    page.assign("a")
+    assert layouts.load(window.config, "psx") == {"a": "Circle", "b": "Cross"}
     page.gamepad_back()
     assert window.controls_overlay is None and asides == ["game"]  # back to the game
 
