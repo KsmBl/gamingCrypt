@@ -737,6 +737,20 @@ class MainWindow(QMainWindow):
         self.screen_name = "shell"
         if self.welcome_enabled:
             QTimer.singleShot(0, self.show_welcome)
+        if self.update_check_enabled and not getattr(self, "_update_checked", False):
+            self._update_checked = True
+            QTimer.singleShot(60_000, self.check_for_update)  # once per start, after things settled
+
+    update_check_enabled = True  # tests switch it off
+
+    def check_for_update(self) -> None:
+        from gamingcrypt.system.updater import Updater
+
+        def done(info) -> None:
+            if info.available:
+                self.notify(f"Update available ({info.behind} changes) - Settings → Updates", "⬇")
+
+        run_async(Updater().check, done, lambda _e: None, owner=self)
 
     # first start: tour; after an update: what's new ---------------------------------------
     welcome_enabled = True  # tests switch it off

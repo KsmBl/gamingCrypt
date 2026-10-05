@@ -115,6 +115,7 @@ install_app() {
     info "Installing GamingCrypt and its dependencies"
     "$VENV/bin/python" -m pip install --quiet --upgrade "$SRC_DIR"
     record_whats_new
+    echo "$SRC_DIR" > "$APP_DIR/source-dir"  # in-app updates pull here
 
     info "Creating launcher $LAUNCHER"
     mkdir -p "$BIN_DIR"

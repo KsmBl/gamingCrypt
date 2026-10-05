@@ -108,3 +108,11 @@ def no_welcome_screens(monkeypatch):
     from gamingcrypt.app import MainWindow
 
     monkeypatch.setattr(MainWindow, "welcome_enabled", False)
+
+
+@pytest.fixture(autouse=True)
+def no_update_check(monkeypatch):
+    """No GitHub access from UI tests."""
+    from gamingcrypt.app import MainWindow
+
+    monkeypatch.setattr(MainWindow, "update_check_enabled", False)
