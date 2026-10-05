@@ -138,6 +138,24 @@ def mode_commands(old: str, new: str) -> list[str]:
     return commands
 
 
+# Input lag. Light systems: preemptive frames (when a button changes, RetroArch re-runs the
+# last frame with it - one frame less delay, cheap for these cores) and a short display queue.
+# Heavy ones (PS1/PS2/N64/GameCube ...) would lose speed: only the input is read late.
+LOW_LAG_SYSTEMS = {"nes", "snes", "gb", "gbc", "gba", "megadrive", "mastersystem", "gamegear", "pce", "atari2600"}
+LOW_LAG = {"preemptive_frames_enable": "true", "run_ahead_frames": "1", "run_ahead_enabled": "false",
+           "video_hard_sync": "true", "video_hard_sync_frames": "0", "video_max_swapchain_images": "2"}
+NORMAL_LAG = {"preemptive_frames_enable": "false", "run_ahead_enabled": "false", "video_hard_sync": "false",
+              "video_max_swapchain_images": "3"}
+
+
+def lag_settings(system_id: str, choice: str | None = None) -> dict[str, str]:
+    """choice: None = automatic (reduced on light systems), "normal" = off."""
+    settings = {"input_poll_type_behavior": "2"}  # late: the input as fresh as possible
+    reduced = system_id in LOW_LAG_SYSTEMS and choice != "normal"
+    settings.update(LOW_LAG if reduced else NORMAL_LAG)
+    return settings
+
+
 # Memory card per game or one for all games - the cores' own options (checked in the core files)
 MEMORY_CARDS = {
     "swanstation": {"own": {"swanstation_MemoryCards_Card1Type": "Libretro"},
@@ -205,7 +223,7 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
            popen=subprocess.Popen, which: Callable[[str], str | None] = shutil.which,
            layout: dict[str, str] | None = None, fast: float = DEFAULT_FAST,
            slow: float = DEFAULT_SLOW, memory_card: str | None = None,
-           widescreen: str | None = None) -> tuple[bool, str]:
+           widescreen: str | None = None, input_lag: str | None = None) -> tuple[bool, str]:
     if not available(which):
         return False, "RetroArch isn't installed - run ./install.sh"
     core = find_core(paths, game.system, core_name)
@@ -213,7 +231,7 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
         wanted = game.system.cores[0]
         return False, (f"No RetroArch core for {game.system.name} yet - add e.g. {wanted}_libretro.so "
                        "to the cores folder (⬆ Add emulator games)")
-    extra = speed_settings(fast, slow)
+    extra = {**speed_settings(fast, slow), **lag_settings(game.system.id, input_lag)}
     if game.system.video:
         extra["video_driver"] = game.system.video
     short = core.name.removesuffix(".so").removesuffix("_libretro")

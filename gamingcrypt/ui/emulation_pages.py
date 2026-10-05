@@ -310,6 +310,16 @@ class RomGamePage(QWidget):
             self.screen_combo.setVisible(wide)
             self.screen_caption.setVisible(wide)
 
+        if self.game.system.id in retroarch.LOW_LAG_SYSTEMS:
+            self.lag_combo = QComboBox()
+            self.lag_combo.addItem("Reduced (preemptive frames)", None)
+            self.lag_combo.addItem("Normal - if the game acts up", "normal")
+            self.lag_combo.setCurrentIndex(1 if profile.get("input_lag") == "normal" else 0)
+            row("Input lag", self.lag_combo)
+            self.lag_combo.currentIndexChanged.connect(
+                lambda _i: self.tab.profiles.set(appid, "input_lag", self.lag_combo.currentData()))
+        else:
+            self.lag_combo = None  # heavy systems: it would cost speed
         self.core_combo.currentIndexChanged.connect(core_chosen)
         self.core_combo.currentIndexChanged.connect(lambda _i: core_chosen_screen())
         core_chosen()

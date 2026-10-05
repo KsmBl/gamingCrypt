@@ -155,3 +155,37 @@ def test_no_disc_row_for_one_disc(qtbot, window, emu):
     window.game_watcher.phase = "playing"
     window.toggle_quick_menu()
     assert not window.quick_menu.disc_row.isVisibleTo(window.quick_menu)
+
+
+def test_input_lag_settings():
+    snes = retroarch.lag_settings("snes")
+    assert snes["preemptive_frames_enable"] == "true" and snes["run_ahead_frames"] == "1"
+    assert snes["video_max_swapchain_images"] == "2" and snes["input_poll_type_behavior"] == "2"
+    assert retroarch.lag_settings("snes", "normal")["preemptive_frames_enable"] == "false"
+    ps2 = retroarch.lag_settings("ps2")  # heavy: no extra work, but late input
+    assert ps2["preemptive_frames_enable"] == "false" and ps2["input_poll_type_behavior"] == "2"
+
+
+def test_launch_writes_the_lag_settings(emu, tmp_path):
+    (emu.cores / "snes9x_libretro.so").write_text("x")
+    (emu.roms / "snes" / "Mario.sfc").write_text("x")
+    mario = scan(emu, BY_ID["snes"])[0]
+    run = dict(popen=lambda cmd, **k: None, which=lambda n: "/usr/bin/retroarch")
+    retroarch.launch(mario, emu, tmp_path / "d", tmp_path / "l", **run)
+    assert 'preemptive_frames_enable = "true"' in (emu.config / "gamingcrypt.cfg").read_text()
+    retroarch.launch(mario, emu, tmp_path / "d", tmp_path / "l", input_lag="normal", **run)
+    assert 'preemptive_frames_enable = "false"' in (emu.config / "gamingcrypt.cfg").read_text()
+
+
+def test_input_lag_option_on_the_game_page(qtbot, window, emu):
+    from gamingcrypt.ui.emulation_pages import RomGamePage
+
+    page = RomGamePage(window._games, window._ff7)
+    qtbot.addWidget(page)
+    assert page.lag_combo is None  # PS1: heavy - not offered
+    (emu.roms / "snes" / "Mario.sfc").write_text("x")
+    mario = scan(emu, BY_ID["snes"])[0]
+    page = RomGamePage(window._games, mario)
+    qtbot.addWidget(page)
+    page.lag_combo.setCurrentIndex(1)
+    assert window.game_profiles.get(mario.appid)["input_lag"] == "normal"
