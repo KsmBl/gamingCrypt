@@ -65,19 +65,34 @@ class ContinueCard(QFrame):
         self.play_button.setMinimumWidth(220)
         self.play_button.clicked.connect(self.play)
         self.details_button = big_button("Details")
-        self.details_button.clicked.connect(lambda: self.game and tab.open_game(self.game.appid))
+        self.details_button.clicked.connect(self.details)
         buttons.addWidget(self.play_button)
         buttons.addWidget(self.details_button)
         buttons.addStretch()
         text.addLayout(buttons)
         row.addLayout(text, 1)
 
-    def set_game(self, game: SteamGame | None) -> None:
+    @property
+    def emulated(self) -> bool:
+        from gamingcrypt.emulation.library import RomGame
+
+        return isinstance(self.game, RomGame)
+
+    def set_game(self, game) -> None:
+        """A Steam game or an emulated one (RomGame)."""
         self.game = game
         self.setVisible(game is not None)
         if game is None:
             return
         self.title.setText(game.name)
+        if self.emulated:
+            from gamingcrypt.emulation.systems import short_name
+            from gamingcrypt.ui.emulation_pages import load_rom_cover
+
+            self.meta.setText(f"{short_name(game.system.id)} · last played {format_date(game.last_played)} · "
+                              f"{format_playtime(game.minutes)}")
+            load_rom_cover(self.cover, game, self.tab.covers, 150, 225)
+            return
         self.meta.setText(f"Last played {format_date(game.last_played)} · {format_playtime(game.playtime_minutes)}")
         self.cover.setPixmap(placeholder_cover(game.name, 150, 225))
         load_cover(self.tab.service, game.appid, self.cover, 150, 225)
@@ -85,13 +100,28 @@ class ContinueCard(QFrame):
     def play(self) -> None:
         if self.game is None:
             return
+        if self.emulated:
+            launcher = self.tab.rom_launcher
+            ok, message = launcher(self.game) if launcher else (False, "RetroArch isn't set up yet")
+            if not ok:
+                self.tab.home.show_notice(message, error=True)
+            return
         ok = self.tab.service.client.play(self.game.appid)
         if not ok:
             self.tab.home.show_notice("Could not reach Steam - is it installed?", error=True)
 
+    def details(self) -> None:
+        if self.game is None:
+            return
+        if self.emulated:
+            self.tab.open_rom(self.game)
+        else:
+            self.tab.open_game(self.game.appid)
 
-def last_played(games: list[SteamGame]) -> SteamGame | None:
-    played = [g for g in games if g.installed and g.last_played]
+
+def last_played(games: list[SteamGame], roms: list | None = None):
+    """The game played last: installed Steam games and emulated ones."""
+    played = [g for g in games if g.installed and g.last_played] + [r for r in roms or [] if r.last_played]
     return max(played, key=lambda g: g.last_played) if played else None
 
 
@@ -174,6 +204,10 @@ class GamesHome(QWidget):
         self._focus_filter.watch(self.search)
         layout.addWidget(self.keyboard)
 
+    def update_continue(self) -> None:
+        roms = [game for games in self.tab.roms.values() for game in games]
+        self.continue_card.set_game(last_played(self.installed, roms))
+
     def library_cards(self) -> dict:
         cards = {"favorites": self.favorites_card, "steam": self.steam_card, "recent": self.recent_card}
         cards.update({f"emu:{sid}": card for sid, card in self.system_cards.items()})
@@ -227,7 +261,7 @@ class GamesHome(QWidget):
 
     def set_installed(self, games: list[SteamGame]) -> None:
         self.installed = sort_games([g for g in games if g.installed], "name")
-        self.continue_card.set_game(last_played(self.installed))
+        self.update_continue()
         self.update_favorites()
         self.refresh_results()
 
@@ -282,6 +316,9 @@ class GamesTab(QStackedWidget):
         from gamingcrypt.emulation.covers import Covers
 
         self.covers = Covers(self.emulation) if self.emulation is not None else None  # box art
+        from gamingcrypt.emulation.playtime import PlayLog
+
+        self.play_log = PlayLog(self.emulation) if self.emulation is not None else None
         self.roms: dict = {}  # system id -> games
         self.rom_launcher = None  # set by the app: RomGame -> (ok, message)
         self.upload_page_factory = None  # tests: a stand-in upload page
@@ -372,9 +409,12 @@ class GamesTab(QStackedWidget):
     def _roms_loaded(self, found: dict) -> None:
         self.roms = found
         for games in found.values():
+            if self.play_log is not None:
+                self.play_log.apply(games)
             for game in games:
                 self.rom_games[game.appid] = game
         self.home.set_systems(found)
+        self.home.update_continue()
 
     @property
     def rom_games(self) -> dict:

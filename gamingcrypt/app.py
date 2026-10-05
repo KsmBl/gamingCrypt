@@ -465,6 +465,13 @@ class MainWindow(QMainWindow):
         self.apply_fps_limit(profile.get("fps", 0))
 
     def game_ended(self, appid: int | None = None) -> None:
+        from gamingcrypt.emulation.library import EMU_APPID_BASE
+
+        games = self.shell.pages.get("Games") if self.shell is not None else None
+        play_log = getattr(games, "play_log", None)
+        if appid is not None and appid >= EMU_APPID_BASE and play_log is not None:
+            play_log.finish(appid)  # play time of an emulated game
+            games.reload_roms()  # Continue playing / Recently played
         if appid is not None and self.game_profiles.get(appid).get("power_w"):
             self.apply_power_profile()  # the watcher is idle again: the Settings value
         self._power_before_game = None
@@ -662,6 +669,8 @@ class MainWindow(QMainWindow):
                                        layout=layouts.load(self.config, game.system.id))
         if ok:
             log.info("starting %s (%s) with RetroArch", game.name, game.system.id)
+            if getattr(games, "play_log", None) is not None:
+                games.play_log.start(game)  # Continue / Recently played, play time
             self.game_launched(game.appid)
         else:
             log.warning("RetroArch: %s", message)

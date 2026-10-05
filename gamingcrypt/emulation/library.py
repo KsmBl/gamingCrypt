@@ -42,6 +42,8 @@ class RomGame:
     path: Path
     name: str
     size: int
+    last_played: int | None = None  # from the play log (emulation/playtime)
+    minutes: int = 0
 
     @property
     def appid(self) -> int:

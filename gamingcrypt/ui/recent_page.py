@@ -53,16 +53,30 @@ class RecentPage(QWidget):
 
     def _loaded(self, games: list[SteamGame]) -> None:
         self.loading = False
-        recent = recently_played(games)
+        roms = [r for rs in getattr(self.tab, "roms", {}).values() for r in rs if r.last_played]
+        recent = recently_played(list(games) + roms)  # Steam and emulated games together
         self.order = [g.appid for g in recent]
         for game in recent:
-            self.tab.games[game.appid] = game  # so the game page can open
-            card = GameCard(game, self.service)
-            card.meta.setText(("● " if game.installed else "") + f"Played {format_date(game.last_played)}")
-            card.clicked.connect(self.tab.open_game)
+            card = self._card(game)
+            card.meta.setText(("● " if getattr(game, "installed", True) else "") + f"Played {format_date(game.last_played)}")
             self.cards[game.appid] = card
             self.grid.addWidget(card)
         self.status.setText("" if recent else "You haven't played any game yet")
+
+    def _card(self, game):
+        """GameCard for Steam games, RomCard for emulated ones."""
+        from gamingcrypt.emulation.library import RomGame
+
+        if isinstance(game, RomGame):
+            from gamingcrypt.ui.emulation_pages import RomCard
+
+            card = RomCard(game, covers=getattr(self.tab, "covers", None))
+            card.clicked.connect(self.tab.open_rom)
+            return card
+        self.tab.games[game.appid] = game  # so the game page can open
+        card = GameCard(game, self.service)
+        card.clicked.connect(self.tab.open_game)
+        return card
 
     def _failed(self, exc: Exception) -> None:
         self.loading = False
@@ -77,12 +91,11 @@ class FavoritesPage(RecentPage):
     def _loaded(self, games: list[SteamGame]) -> None:
         self.loading = False
         wanted = set(self.tab.profiles.favorites())
-        favorites = sorted((g for g in games if g.appid in wanted), key=lambda g: g.name.lower())
+        roms = [r for rs in getattr(self.tab, "roms", {}).values() for r in rs]
+        favorites = sorted((g for g in list(games) + roms if g.appid in wanted), key=lambda g: g.name.lower())
         self.order = [g.appid for g in favorites]
         for game in favorites:
-            self.tab.games[game.appid] = game
-            card = GameCard(game, self.service)
-            card.clicked.connect(self.tab.open_game)
+            card = self._card(game)
             self.cards[game.appid] = card
             self.grid.addWidget(card)
         self.status.setText("" if favorites else "No favorites yet - tap ☆ Favorite on a game's page")

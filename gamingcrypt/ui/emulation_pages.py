@@ -145,7 +145,11 @@ class RomGamePage(QWidget):
         self.title.setObjectName("detailTitle")
         self.title.setWordWrap(True)
         info.addWidget(self.title)
-        self.facts = QLabel(f"{game.system.name}\n{game.path.name}\n{format_size(game.size)}")
+        from gamingcrypt.ui.game_widgets import format_date, format_playtime
+
+        played = (f"Last played {format_date(game.last_played)} · {format_playtime(game.minutes)}"
+                  if game.last_played else "Never played")
+        self.facts = QLabel(f"{game.system.name}\n{game.path.name}\n{format_size(game.size)}\n{played}")
         self.facts.setObjectName("detailMeta")
         info.addWidget(self.facts)
         info.addStretch()
