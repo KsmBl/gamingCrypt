@@ -39,6 +39,11 @@ DEFAULTS: dict[str, Any] = {
         # Gaming mode: ask for the unlock code again after sleeping this many
         # minutes (0 = always, None = never).
         "lock_after_sleep_min": None,
+        # Gaming mode, short press of the power button: "menu" (the power menu) or
+        # "sleep". Sleep doesn't wake up again on every device, so it's opt-in.
+        "power_button": "menu",
+        # Set when the device didn't wake up from sleep: sleep is offered no more.
+        "sleep_broken": False,
     },
     "input": {
         # Apply calibration + button mapping through a virtual controller.

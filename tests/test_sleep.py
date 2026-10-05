@@ -127,6 +127,7 @@ def window(qtbot, monkeypatch, tmp_path):
     volume.write_text("")
     cfg["unlock"].update(method="pin", volume=str(volume))
     cfg["system"]["power_limit_w"] = 12
+    cfg["system"]["power_button"] = "sleep"  # opt-in (it doesn't wake up on every device)
     system = SystemControls()
     system.power = Power()
     w = MainWindow(cfg, lambda c: None, FakeUnlocker, system=system)
@@ -211,3 +212,65 @@ def test_lock_after_sleep_setting(qtbot):
     tab.sleep_lock.setCurrentIndex(tab.sleep_lock.findData(0))
     assert saved[-1]["system"]["lock_after_sleep_min"] == 0  # "Right away" is not "Never"
     del DEFAULTS
+
+
+def test_one_press_one_sleep(qtbot, window):
+    """Both 'Power Button' devices report the press - it used to suspend twice."""
+    window.power_button()
+    window.power_button()
+    qtbot.wait(100)
+    assert window._suspends == [1]
+
+
+# --- sleep safety: not every device wakes up again ---------------------------------------
+
+def test_power_button_opens_the_menu_by_default(qtbot, window):
+    window.config["system"]["power_button"] = "menu"
+    unlock(qtbot, window)
+    window.power_button()
+    qtbot.wait(50)
+    assert window._suspends == [] and window.shell.power_menu.isVisible()
+
+
+def test_device_that_never_woke_up_gets_sleep_switched_off(qtbot, window, tmp_path):
+    from gamingcrypt.app import MainWindow
+
+    window.go_to_sleep()
+    marker = window.sleep_marker()
+    assert marker.exists()  # written before sleeping ...
+    qtbot.waitUntil(lambda: window._suspends == [1])
+    # ... the device hangs and is switched off hard: the next start finds the marker
+    saved = []
+    again = MainWindow(copy.deepcopy(window.config), saved.append, window.unlocker_factory, system=window.system)
+    qtbot.addWidget(again)
+    assert not marker.exists() and saved[-1]["system"]["sleep_broken"] is True
+    assert saved[-1]["system"]["power_button"] == "menu"
+    assert any("didn't wake up" in text for _icon, text in again.toasts.queue)
+    again.go_to_sleep()
+    qtbot.wait(50)
+    assert window._suspends == [1]  # sleep stays off
+    unlock(qtbot, again)
+    assert not again.shell.power_menu.sleep_button.isVisibleTo(again.shell.power_menu)
+
+
+def test_waking_up_removes_the_marker(qtbot, window):
+    window.go_to_sleep()
+    window.woke_up(30)
+    assert not window.sleep_marker().exists()
+
+
+def test_power_button_setting(qtbot):
+    from gamingcrypt.system.controls import SystemControls
+    from gamingcrypt.ui.settings_tab import SettingsTab
+    from tests.test_shell import FakeUnlocker, configured
+
+    cfg = configured()
+    cfg["system"]["sleep_broken"] = True
+    saved = []
+    tab = SettingsTab(cfg, saved.append, FakeUnlocker, system=SystemControls())
+    qtbot.addWidget(tab)
+    section = tab.power_section
+    assert section.power_button.currentData() == "menu" and "didn't wake up" in section.sleep_hint.text()
+    section.power_button.setCurrentIndex(section.power_button.findData("sleep"))
+    assert saved[-1]["system"]["power_button"] == "sleep" and saved[-1]["system"]["sleep_broken"] is False
+    assert "10 seconds" in section.sleep_hint.text()

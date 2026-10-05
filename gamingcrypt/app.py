@@ -113,6 +113,7 @@ class MainWindow(QMainWindow):
         self.page_factory = page_factory
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
+        self.check_failed_sleep()
         self.shell: Shell | None = None
         unlock = config["unlock"]
         if not unlock.get("method") or not unlock.get("volume"):
@@ -229,17 +230,68 @@ class MainWindow(QMainWindow):
             log.warning("could not take over the power button (systemd-inhibit missing?)")
         return inhibitor
 
+    POWER_DEBOUNCE_S = 2.0
+
     def power_button(self) -> None:
+        import time
+
         slept = self.sleep_clock.slept()
         if slept:
             self.woke_up(slept)  # the press that woke the device - don't fall asleep again
             return
-        self.go_to_sleep()
+        # Both ACPI "Power Button" devices report the same press: one press, one sleep.
+        now = time.monotonic()
+        if now - getattr(self, "_last_power_press", -1e9) < self.POWER_DEBOUNCE_S:
+            return
+        self._last_power_press = now
+        if self.sleep_allowed() and self.config["system"].get("power_button") == "sleep":
+            self.go_to_sleep()
+            return
+        # default: the power menu (sleep, shut down, restart, Windows, desktop mode)
+        if not self.isVisible():
+            self.bring_to_front()
+        if self.screen_name == "shell" and self.shell is not None:
+            self.shell.open_power_menu()
+
+    def sleep_allowed(self) -> bool:
+        return not self.config.setdefault("system", {}).get("sleep_broken")
+
+    def sleep_marker(self):
+        from gamingcrypt.session.mode import state_dir
+
+        return state_dir() / "sleeping"
+
+    def check_failed_sleep(self) -> bool:
+        """Start-up: a marker left from going to sleep means the device never woke up
+        (it had to be switched off hard). Sleep is switched off then."""
+        marker = self.sleep_marker()
+        if not marker.exists():
+            return False
+        try:
+            marker.unlink()
+        except OSError:
+            pass
+        log.warning("the device didn't wake up from sleep last time - sleep switched off")
+        self.config["system"]["sleep_broken"] = True
+        self.config["system"]["power_button"] = "menu"
+        self.save(self.config)
+        self.notify("The device didn't wake up from sleep last time, so sleep is now off "
+                    "(Settings → Device to try again).", "☾")
+        return True
 
     def go_to_sleep(self) -> None:
         from gamingcrypt.system import sleep
 
+        if not self.sleep_allowed():
+            self.notify("Sleep is off - this device didn't wake up from it last time.", "☾")
+            return
         log.info("going to sleep")
+        try:
+            marker = self.sleep_marker()
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text("1\n")  # gone after waking up - see check_failed_sleep
+        except OSError:
+            pass
         run_async(sleep.suspend, lambda r: None if r[0] else log.warning("suspend failed: %s", r[1]),
                   lambda _e: None, owner=self)
 
@@ -252,6 +304,10 @@ class MainWindow(QMainWindow):
         from gamingcrypt.session.mode import in_gaming_session
 
         log.info("woke up after %.0f s", seconds)
+        try:
+            self.sleep_marker().unlink()
+        except OSError:
+            pass
         self.apply_power_profile()  # the CPU forgets its power limit while asleep
         minutes = self.config.get("system", {}).get("lock_after_sleep_min")
         if (minutes is not None and seconds >= minutes * 60 and in_gaming_session()
@@ -673,6 +729,7 @@ class MainWindow(QMainWindow):
         self.shell = Shell(pages)
         self.shell.exit_requested.connect(self.desktop_mode)
         self.shell.power_requested.connect(self.power_action)
+        self.shell.power_menu.sleep_button.setVisible(self.sleep_allowed())
         self.load_other_systems(self.shell.power_menu)
         self._replace(self.shell)
         self.screen_name = "shell"

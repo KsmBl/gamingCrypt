@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import QPointF, Qt, QTimer, Signal
+from PySide6.QtCore import QPointF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLineEdit, QSizePolicy, QVBoxLayout, QWidget
 
 from gamingcrypt.ui import theme
 from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button
@@ -108,6 +108,9 @@ class PatternWidget(QWidget):
         return False
 
     # geometry ---------------------------------------------------------------
+    def sizeHint(self) -> QSize:  # noqa: N802 - square, not as wide as the screen
+        return QSize(440, 440)
+
     def _cell(self) -> float:
         return min(self.width(), self.height()) / self.SIZE
 
@@ -197,6 +200,7 @@ class DotCanvas(QWidget):
         super().__init__(parent)
         self.size = size
         self.setMinimumSize(400, 400)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self.flash: int | None = None
         self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.pad_cursor = (size * size) // 2
@@ -234,7 +238,7 @@ class DotCanvas(QWidget):
         row, col = divmod(self.pad_cursor, self.size)
         row, col = row + dy, col + dx
         if not (0 <= row < self.size and 0 <= col < self.size):
-            return False  # e.g. down from the last row -> to the ⌫ / ✓ buttons
+            return False  # e.g. left of the first column -> ⌫, right of the last -> ✓
         self.pad_cursor = row * self.size + col
         self.update()
         return True
@@ -266,6 +270,10 @@ class DotCanvas(QWidget):
             painter.drawEllipse(self.node_center(self.pad_cursor), cell * 0.38, cell * 0.38)
 
 
+SIDE_GAP = 56
+SIDE_BUTTON = QSize(120, 96)
+
+
 class DotGridPad(QWidget):
     """5x5 dots: tap them in your secret order, then confirm."""
 
@@ -281,19 +289,24 @@ class DotGridPad(QWidget):
         self.display.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.display.setFixedWidth(340)
         layout.addWidget(self.display, alignment=Qt.AlignmentFlag.AlignCenter)
-        self.canvas = DotCanvas(size)
-        self.canvas.dot_tapped.connect(self.press)
-        layout.addWidget(self.canvas, 1)
+        # ⌫ left and ✓ right of the dots, well away from them: below the grid they sat
+        # right under the last row and caught taps meant for those dots.
         row = QHBoxLayout()
+        row.setSpacing(SIDE_GAP)
         row.addStretch()
         self.back_button = big_button("⌫")
+        self.back_button.setFixedSize(SIDE_BUTTON)
         self.back_button.clicked.connect(self.backspace)
-        row.addWidget(self.back_button)
+        row.addWidget(self.back_button, alignment=Qt.AlignmentFlag.AlignVCenter)
+        self.canvas = DotCanvas(size)
+        self.canvas.dot_tapped.connect(self.press)
+        row.addWidget(self.canvas)
         self.ok_button = big_button("✓", "primary")
+        self.ok_button.setFixedSize(SIDE_BUTTON)
         self.ok_button.clicked.connect(lambda: self.submitted.emit(list(self.nodes)))
-        row.addWidget(self.ok_button)
+        row.addWidget(self.ok_button, alignment=Qt.AlignmentFlag.AlignVCenter)
         row.addStretch()
-        layout.addLayout(row)
+        layout.addLayout(row, 1)
 
     def press(self, index: int) -> None:
         if len(self.nodes) < 64:

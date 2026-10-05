@@ -194,3 +194,26 @@ def test_lock_screen_dot_grid_too_short(qtbot):
     screen.input.widget.ok_button.click()
     assert unlocker.attempts == [] and "at least" in screen.status.text()
     assert screen.input.widget.nodes == []
+
+
+def test_dot_grid_buttons_keep_away_from_the_dots(qtbot):
+    """⌫ / ✓ used to sit right under the last row and caught taps meant for those dots."""
+    from gamingcrypt.ui import theme
+    from gamingcrypt.ui.secret_input import DotGridPad
+
+    pad = DotGridPad()
+    pad.setStyleSheet(theme.STYLESHEET)
+    qtbot.addWidget(pad)
+    pad.resize(1280, 480)  # what's left on an 800 px high screen
+    pad.show()
+    qtbot.waitExposed(pad)
+    canvas = pad.canvas
+    dots = [canvas.mapTo(pad, canvas.node_center(i).toPoint()) for i in range(25)]
+    radius = canvas._cell() * 0.3
+    for button in (pad.back_button, pad.ok_button):
+        rect = button.geometry()
+        for dot in dots:
+            dx = max(rect.left() - dot.x(), 0, dot.x() - rect.right())
+            dy = max(rect.top() - dot.y(), 0, dot.y() - rect.bottom())
+            assert (dx * dx + dy * dy) ** 0.5 - radius >= 40, (button.text(), dot)
+    assert pad.back_button.x() < dots[0].x() < dots[4].x() < pad.ok_button.x()  # left / right of the grid

@@ -209,7 +209,7 @@ def test_dot_grid_with_controller(qtbot):
 
     pad = DotGridPad()
     qtbot.addWidget(pad)
-    pad.resize(500, 650)
+    pad.resize(1000, 650)
     pad.show()
     qtbot.waitExposed(pad)
     nav = GamepadNavigator(pad)
@@ -220,9 +220,14 @@ def test_dot_grid_with_controller(qtbot):
     press(nav, e.BTN_SOUTH)  # dot 7
     press(nav, e.BTN_SOUTH)  # again 7 (repeats allowed)
     assert pad.nodes == [12, 6, 6]
-    for _ in range(4):
-        dpad(nav, dy=1)  # from row 2 down to the last row (5), then out of the grid
-    assert focused() in (pad.back_button, pad.ok_button)
+    for _ in range(2):
+        dpad(nav, dx=-1)  # column 2 -> 1 -> 0 ...
+    dpad(nav, dx=-1)  # ... then out of the grid, left: ⌫
+    assert focused() is pad.back_button
+    pad.canvas.setFocus()
+    pad.canvas.pad_cursor = 4  # last column
+    dpad(nav, dx=1)
+    assert focused() is pad.ok_button
 
 
 def test_swipe_pattern_with_controller(qtbot):
@@ -422,7 +427,7 @@ def test_down_reaches_every_control_of_the_device_settings(qtbot, monkeypatch):
     nav.focus(tab.sub_buttons["Device"])
     d, a = tab.display_section, tab.audio_section
     expected = [tab.sub_buttons["Device"], d.gs_resolution, d.gs_refresh, d.gs_apply, d.brightness_slider,
-                a.combos["output"], a.sliders["output"], a.combos["input"], a.sliders["input"], a.step_slider]
+                tab.power_section.power_button, a.combos["output"], a.sliders["output"], a.combos["input"], a.sliders["input"], a.step_slider]
     assert walk_down(nav, 12) == expected
 
 

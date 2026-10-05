@@ -270,7 +270,36 @@ class PowerSection(Section):
                 hint += " Run install.sh to allow changing it."
                 self.slider.setEnabled(False)
             self.body.addWidget(_label(hint))
+        # power button (gaming mode)
+        system = self.config.setdefault("system", {})
+        self.power_button = QComboBox()
+        self.power_button.addItem("Open the power menu", "menu")
+        self.power_button.addItem("Sleep", "sleep")
+        choice = "menu" if system.get("sleep_broken") else system.get("power_button", "menu")
+        self.power_button.setCurrentIndex(max(0, self.power_button.findData(choice)))
+        self.power_button.currentIndexChanged.connect(self._power_button_chosen)
+        self.row("Power button", self.power_button)
+        self.sleep_hint = _label("")
+        self.body.addWidget(self.sleep_hint)
+        self._update_sleep_hint()
         self.body.addWidget(self.status)
+
+    def _update_sleep_hint(self) -> None:
+        if self.config["system"].get("sleep_broken"):
+            text = ("This device didn't wake up from sleep last time, so sleep is off. Choose Sleep to try "
+                    "again - if it hangs, hold the power button for 10 seconds.")
+        else:
+            text = ("Sleep doesn't wake up again on every device. If it hangs, hold the power button for "
+                    "10 seconds - GamingCrypt notices and switches sleep off.")
+        self.sleep_hint.setText(text)
+
+    def _power_button_chosen(self, _index: int) -> None:
+        system = self.config["system"]
+        system["power_button"] = self.power_button.currentData()
+        if system["power_button"] == "sleep":
+            system["sleep_broken"] = False  # the user wants to try again
+        self.save(self.config)
+        self._update_sleep_hint()
 
     def set_limit(self, watts: int) -> None:
         set_status(self.status, f"Setting {watts} W…")
