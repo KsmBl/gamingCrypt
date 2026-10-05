@@ -466,11 +466,82 @@ class MainWindow(QMainWindow):
             menu.closed.connect(self._quick_menu_closed)
             menu.force_quit.connect(self._force_quit)
             menu.lock_now.connect(self.panic_lock)
+            menu.power_chosen.connect(self.quick_power)
+            menu.fps_chosen.connect(self.quick_fps)
+            menu.screenshot.connect(self.take_screenshot)
         watcher = self.game_watcher
         appid = watcher.appid if watcher.active and watcher.phase in ("starting", "playing") else None
         if not self.isVisible() or self.isMinimized():
             self.bring_to_front()  # the game keeps running behind
+        menu.set_performance(**self.performance_state(appid))
         menu.open_menu(appid, self.game_name(appid) if appid else "")
+
+    def performance_state(self, appid: int | None) -> dict:
+        from gamingcrypt.session.mode import in_gaming_session
+        from gamingcrypt.system import gamescope_ctl
+
+        power = getattr(self.system, "power", None)
+        try:
+            limit = power.read() if power is not None else None
+        except Exception:  # noqa: BLE001 - the menu must open anyway
+            limit = None
+        overlay = None
+        if in_gaming_session() and gamescope_ctl.overlay_available():
+            overlay = gamescope_ctl.overlay_shown()
+        profile = self.game_profiles.get(appid) if appid else {}
+        return {"limit": limit, "watts": self.desired_power_w(), "fps": profile.get("fps", 0), "overlay": overlay,
+                "in_game": appid is not None}
+
+    def quick_power(self, watts: int) -> None:
+        """Quick menu: in a game it's that game's limit, otherwise the one from Settings."""
+        if self.game_watcher.active:
+            self.game_profiles.set(self.game_watcher.appid, "power_w", watts)
+        else:
+            self.config["system"]["power_limit_w"] = watts
+            self.save(self.config)
+        self.apply_power_profile()
+
+    def quick_fps(self, fps: int) -> None:
+        if self.game_watcher.active:
+            self.game_profiles.set(self.game_watcher.appid, "fps", fps)
+            self.apply_fps_limit(fps)
+
+    def take_screenshot(self) -> None:
+        """The quick menu closed and the game is in front again: let gamescope capture it."""
+        import re
+        import shutil
+        import time
+        from datetime import datetime
+        from pathlib import Path
+
+        from gamingcrypt.system import gamescope_ctl
+
+        appid = self.game_watcher.appid
+        name = re.sub(r"[^\w.-]+", "_", self.game_name(appid) if appid else "screen").strip("_") or "screen"
+        target = Path.home() / "Pictures" / "GamingCrypt" / f"{name}_{datetime.now():%Y-%m-%d_%H-%M-%S}.png"
+
+        def work():
+            time.sleep(0.8)  # the game back in front
+            source = Path(gamescope_ctl.SCREENSHOT_FILE)
+            before = source.stat().st_mtime if source.exists() else 0
+            if not gamescope_ctl.request_screenshot():
+                return None
+            deadline = time.monotonic() + 6
+            while time.monotonic() < deadline:
+                time.sleep(0.2)
+                if not gamescope_ctl.screenshot_pending() and source.exists() and source.stat().st_mtime > before:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source, target)
+                    return target
+            return None
+
+        def done(path) -> None:
+            if path is None:
+                self.notify("The screenshot didn't work", "📷")
+            else:
+                self.notify(f"Screenshot saved: {path.name}", "📷")
+
+        run_async(work, done, lambda _e: done(None), owner=self)
 
     def _quick_menu_closed(self) -> None:
         if self.game_watcher.active and self.game_watcher.phase == "playing":

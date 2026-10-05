@@ -21,6 +21,9 @@ Runner = Callable[..., subprocess.CompletedProcess]
 DYNAMIC_REFRESH = "GAMESCOPE_DYNAMIC_REFRESH"
 FOCUS_ORDER = "GAMESCOPECTRL_BASELAYER_APPID"
 FPS_LIMIT = "GAMESCOPE_FPS_LIMIT"
+SCREENSHOT = "GAMESCOPECTRL_REQUEST_SCREENSHOT"
+SCREENSHOT_FILE = "/tmp/gamescope.png"  # where gamescope writes it
+FULL_COMPOSITION = 2  # what's on screen, overlays included
 WINDOW_APPID = "STEAM_GAME"
 BIG_PICTURE_APPID = 769  # Steam's own UI windows
 LAUNCHER_APPID = 4293000000  # GamingCrypt's window - no real Steam app has this id
@@ -80,3 +83,51 @@ def set_fps_limit(fps: int, runner: Runner = subprocess.run) -> bool:
         args = ["-remove", FPS_LIMIT]
     result = _xprop(args, runner)
     return result is not None and result.returncode == 0
+
+
+def request_screenshot(runner: Runner = subprocess.run) -> bool:
+    """gamescope writes SCREENSHOT_FILE and removes the property when it's done."""
+    args = ["-f", SCREENSHOT, "32c", "-set", SCREENSHOT, str(FULL_COMPOSITION)]
+    result = _xprop(args, runner)
+    return result is not None and result.returncode == 0
+
+
+def screenshot_pending(runner: Runner = subprocess.run) -> bool:
+    result = _xprop([SCREENSHOT], runner)
+    return result is not None and result.returncode == 0 and "=" in result.stdout
+
+
+# --- performance overlay (mangoapp, started by the gaming session with --mangoapp) ---------
+
+OVERLAY_ON = "fps\nframetime\ncpu_stats\ncpu_temp\ngpu_stats\ngpu_temp\nram\nbattery\nposition=top-left\n"
+OVERLAY_OFF = "no_display\n"
+
+
+def overlay_config(env: dict | None = None):
+    from gamingcrypt.session.mode import config_dir
+
+    return config_dir(env) / "mangohud.conf"
+
+
+def overlay_available(which=None) -> bool:
+    import shutil
+
+    return bool((which or shutil.which)("mangoapp"))
+
+
+def overlay_shown(env: dict | None = None) -> bool:
+    try:
+        return "no_display" not in overlay_config(env).read_text()
+    except OSError:
+        return False
+
+
+def set_overlay(shown: bool, env: dict | None = None) -> bool:
+    """mangoapp watches its config file: the change shows at once."""
+    path = overlay_config(env)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(OVERLAY_ON if shown else OVERLAY_OFF)
+    except OSError:
+        return False
+    return True

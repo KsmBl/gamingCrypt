@@ -296,6 +296,14 @@ ask_boot_questions() {
     ask_other_os
 }
 
+install_overlay() {
+    # performance overlay in the quick menu (gamescope --mangoapp)
+    command -v mangoapp >/dev/null && return 0
+    if command -v pacman >/dev/null; then
+        sudo pacman -S --needed --noconfirm mangohud >/dev/null || warn "could not install mangohud (performance overlay)"
+    fi
+}
+
 install_bluetooth() {
     # Settings -> Network pairs controllers / headphones through bluetoothctl.
     compgen -G "/sys/class/bluetooth/hci*" >/dev/null || return 0
@@ -408,6 +416,7 @@ if [[ $WITH_SUDO -eq 1 ]]; then
     install_input_rules
     install_fonts
     install_bluetooth
+    install_overlay
     ask_boot_questions
     [[ $SESSION -eq 1 ]] && install_session
 else

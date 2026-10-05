@@ -32,7 +32,7 @@ def run_session(tmp_path, actions, extra_env=None, timeout=30):
                XDG_CONFIG_HOME=str(tmp_path / "config"), FAKE_DIR=str(fake), FAKE_ACTIONS=actions,
                GC_GAMESCOPE=str(gamescope), GC_LAUNCHER="/opt/gamingcrypt",
                GC_DESKTOP_EXEC=f'echo desktop >> "{fake}/calls"', GC_QUICK_EXIT_S="15",
-               GC_XPROP="no-such-xprop")  # no Steam mode (-e) unless a test asks for it
+               GC_XPROP="no-such-xprop", GC_MANGOAPP="no-such-mangoapp")  # no -e / overlay unless asked
     env.update(extra_env or {})
     result = subprocess.run(["sh", str(SCRIPT)], env=env, timeout=timeout, capture_output=True, text=True)
     calls = (fake / "calls").read_text().splitlines()

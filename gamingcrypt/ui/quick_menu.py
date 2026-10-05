@@ -34,6 +34,9 @@ class QuickMenu(QWidget):
     closed = Signal()
     force_quit = Signal(int)
     lock_now = Signal()
+    power_chosen = Signal(int)  # watts: the running game's profile, or Settings without a game
+    fps_chosen = Signal(int)
+    screenshot = Signal()
 
     def __init__(self, parent: QWidget, system: SystemControls,
                  refresh_get: Callable[[], int] = gamescope_ctl.dynamic_refresh,
@@ -119,6 +122,31 @@ class QuickMenu(QWidget):
         self.countdown = QTimer(self)
         self.countdown.timeout.connect(self._tick)
 
+        # performance: power limit, FPS limit (the running game's profile), overlay
+        self.power_value = QLabel()
+        self.power = _slider(5, 28, 15)
+        _on_change(self.power, self.power_chosen.emit, lambda v: self.power_value.setText(f"{v} W"))
+        self.power_row = self._row("Power limit", self.power, self.power_value)
+        self.fps = _combo()
+        from gamingcrypt.game_profiles import FPS_CHOICES
+
+        for fps in FPS_CHOICES:
+            self.fps.addItem(f"{fps} FPS" if fps else "No limit", fps)
+        self.fps.currentIndexChanged.connect(lambda _i: self.fps_chosen.emit(self.fps.currentData() or 0))
+        self.fps_row = self._row("FPS limit", self.fps, None)
+        row = QWidget()
+        row.setObjectName("menuRow")
+        line = QHBoxLayout(row)
+        line.setContentsMargins(0, 0, 0, 0)
+        self.overlay_button = big_button("Performance overlay", checkable=True)
+        self.overlay_button.toggled.connect(self._overlay_toggled)
+        self.screenshot_button = big_button("📷  Screenshot")
+        self.screenshot_button.clicked.connect(self._screenshot)
+        line.addWidget(self.overlay_button, 1)
+        line.addWidget(self.screenshot_button, 1)
+        self.box.addWidget(row)
+        self.tools_row = row
+
         # running game
         self.quit_button = big_button("✕  Force quit", "danger")
         self.quit_button.clicked.connect(self._quit_tapped)
@@ -153,6 +181,37 @@ class QuickMenu(QWidget):
         return row
 
     # open / close -------------------------------------------------------------------
+    def set_performance(self, limit=None, watts: int | None = None, fps: int = 0, overlay: bool | None = None,
+                        in_game: bool = False) -> None:
+        """limit: PowerLimit or None (not adjustable); overlay: None = no mangoapp."""
+        self.power_row.setVisible(limit is not None)
+        if limit is not None:
+            self.power.blockSignals(True)
+            self.power.setRange(limit.min_w, limit.max_w)
+            self.power.setValue(watts or limit.current_w)
+            self.power.blockSignals(False)
+            self.power_value.setText(f"{self.power.value()} W")
+        self.fps_row.setVisible(in_game)
+        self.fps.blockSignals(True)
+        self.fps.setCurrentIndex(max(0, self.fps.findData(fps)))
+        self.fps.blockSignals(False)
+        self.overlay_button.setVisible(overlay is not None)
+        self.overlay_button.blockSignals(True)
+        self.overlay_button.setChecked(bool(overlay))
+        self.overlay_button.blockSignals(False)
+        self.screenshot_button.setVisible(in_game)
+        self.tools_row.setVisible(overlay is not None or in_game)
+
+    def _overlay_toggled(self, on: bool) -> None:
+        from gamingcrypt.system import gamescope_ctl
+
+        if not gamescope_ctl.set_overlay(on):
+            set_status(self.status, "Could not switch the overlay", error=True)
+
+    def _screenshot(self) -> None:
+        self.close_menu()  # the game has to be on screen for it
+        self.screenshot.emit()
+
     def open_menu(self, appid: int | None = None, game_name: str = "") -> None:
         self.appid = appid
         self.title.setText(game_name or "Quick menu")

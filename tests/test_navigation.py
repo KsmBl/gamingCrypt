@@ -450,12 +450,19 @@ def test_down_reaches_every_control_of_the_quick_menu(qtbot):
                      refresh_get=lambda: 0, refresh_set=lambda hz: True,
                      battery_reader=lambda: BatteryState(64, False, False))
     window.nav_root = lambda: menu
+    from gamingcrypt.system.power import PowerLimit
+
+    menu.set_performance(limit=PowerLimit(15, 5, 28, "test"), fps=0, overlay=False, in_game=True)
     menu.open_menu(620, "Portal 2")
     qtbot.waitExposed(window)
     qtbot.wait(50)
     nav = GamepadNavigator(window)
-    assert walk_down(nav, 10) == [menu.back_button, menu.output, menu.input, menu.volume,
-                                  menu.brightness, menu.refresh, menu.quit_button, menu.lock_button]
+    assert walk_down(nav, 14) == [menu.back_button, menu.output, menu.input, menu.volume, menu.brightness,
+                                  menu.refresh, menu.power, menu.fps, menu.screenshot_button, menu.quit_button,
+                                  menu.lock_button]  # right below the FPS box: Screenshot
+    nav.focus(menu.screenshot_button)
+    nav.move(-1, 0)
+    assert nav.focused() is menu.overlay_button  # its neighbour in the row
 
 
 def test_highlighted_slider_is_clearly_visible(qtbot):

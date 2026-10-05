@@ -58,6 +58,12 @@ while :; do
 	*" -e "* | *" --steam "*) ;;
 	*) if command -v "${GC_XPROP:-xprop}" >/dev/null 2>&1; then args="-e $args"; fi ;;
 	esac
+	# performance overlay (quick menu): mangoapp reads $CONFDIR/mangohud.conf, hidden until switched on
+	if command -v "${GC_MANGOAPP:-mangoapp}" >/dev/null 2>&1; then
+		case " $args " in *" --mangoapp "*) ;; *) args="$args --mangoapp" ;; esac
+		[ -f "$CONFDIR/mangohud.conf" ] || { mkdir -p "$CONFDIR"; echo no_display >"$CONFDIR/mangohud.conf"; }
+		export MANGOHUD_CONFIGFILE="$CONFDIR/mangohud.conf"
+	fi
 	echo "$(date) gaming mode: gamescope $args" >>"$log"
 	start=$(date +%s)
 	# shellcheck disable=SC2086 - the args are meant to split
