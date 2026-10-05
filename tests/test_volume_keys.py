@@ -25,7 +25,7 @@ def test_find_volume_key_devices(tmp_path):
     device(3, "BT Keyboard", [e.KEY_VOLUMEUP], bus="0005")
     device(4, e.VIRTUAL_NAME, [e.KEY_VOLUMEUP])
     found = e.find_volume_key_devices(tmp_path / "sys", tmp_path / "dev")
-    assert [d.name for d in found] == ["AT Translated Set 2 keyboard"]
+    assert [d.name for d in found] == ["AT Translated Set 2 keyboard", "Power Button"]  # power: sleep
 
 
 class FakeDevice:

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable
 
 import shiboken6
-from PySide6.QtCore import QObject, QThreadPool, Signal
+from PySide6.QtCore import QObject, Qt, QThreadPool, Signal
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QWidget
 
 import logging
@@ -64,6 +64,18 @@ class MainWindow(QMainWindow):
 
         from gamingcrypt.session.mode import in_gaming_session
 
+        # sleep: notice the wake-up (re-apply the power limit, maybe lock again)
+        from gamingcrypt.session.mode import runtime_dir
+        from gamingcrypt.system.sleep import SleepClock
+        from gamingcrypt.unlock import verifier
+
+        self.verifier_path = runtime_dir() / "verifier"
+        self.verifier = verifier.load(self.verifier_path)
+        self.sleep_clock = SleepClock()
+        self.wake_timer = QTimer(self)
+        self.wake_timer.timeout.connect(self.check_wake)
+        self.wake_timer.start(2000)
+        self.sleep_lock = None
         self.adopt_timer = QTimer(self)
         self.adopt_timer.timeout.connect(self.adopt_running_game)
         if in_gaming_session():
@@ -176,8 +188,106 @@ class MainWindow(QMainWindow):
 
         if code in e.MENU_KEYS:
             self.toggle_quick_menu()
+        elif code == e.KEY_POWER:
+            self.power_button()
         else:
             self.volume.handle(code)
+
+    # sleep -----------------------------------------------------------------------------
+    def start_power_key(self):
+        """Gaming mode: the power button suspends instead of shutting down (logind's default)."""
+        from gamingcrypt.session.mode import in_gaming_session
+        from gamingcrypt.system import sleep
+
+        if not in_gaming_session():
+            return None
+        inhibitor = sleep.inhibit_power_key()
+        if inhibitor is None:
+            log.warning("could not take over the power button (systemd-inhibit missing?)")
+        return inhibitor
+
+    def power_button(self) -> None:
+        slept = self.sleep_clock.slept()
+        if slept:
+            self.woke_up(slept)  # the press that woke the device - don't fall asleep again
+            return
+        self.go_to_sleep()
+
+    def go_to_sleep(self) -> None:
+        from gamingcrypt.system import sleep
+
+        log.info("going to sleep")
+        run_async(sleep.suspend, lambda r: None if r[0] else log.warning("suspend failed: %s", r[1]),
+                  lambda _e: None, owner=self)
+
+    def check_wake(self) -> None:
+        slept = self.sleep_clock.slept()
+        if slept:
+            self.woke_up(slept)
+
+    def woke_up(self, seconds: float) -> None:
+        from gamingcrypt.session.mode import in_gaming_session
+
+        log.info("woke up after %.0f s", seconds)
+        self.apply_power_profile()  # the CPU forgets its power limit while asleep
+        minutes = self.config.get("system", {}).get("lock_after_sleep_min")
+        if (minutes is not None and seconds >= minutes * 60 and in_gaming_session()
+                and self.screen_name == "shell" and self.verifier is not None):
+            self.lock_after_sleep()
+
+    def lock_after_sleep(self) -> None:
+        from gamingcrypt.ui.lock_screen import LockScreen
+        from gamingcrypt.unlock.verifier import VerifyUnlocker
+
+        if self.sleep_lock is not None:
+            return
+        log.info("locking after sleep")
+        lock = self.sleep_lock = LockScreen(VerifyUnlocker(self.verifier), self.config["unlock"]["method"], self)
+        lock.setAutoFillBackground(True)
+        lock.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        lock.setStyleSheet("LockScreen { background: %s; }" % theme.BG)
+        lock.unlocked.connect(self._sleep_unlocked)
+        lock.power_requested.connect(self.power_action)
+        self.load_other_systems(lock)
+        lock.setGeometry(self.rect())
+        lock.raise_()
+        lock.show()
+        if not self.isVisible():
+            self.bring_to_front()  # in front of the game
+
+    def _sleep_unlocked(self) -> None:
+        lock, self.sleep_lock = self.sleep_lock, None
+        if lock is not None:
+            lock.hide()
+            lock.deleteLater()
+        if self.game_watcher.active and self.game_watcher.phase == "playing":
+            self.step_aside("game")  # back to the game
+
+    def remember_code(self, secret: str) -> None:
+        from gamingcrypt.unlock import verifier
+
+        self.verifier = verifier.make(secret)
+        try:
+            verifier.save(self.verifier, self.verifier_path)
+        except OSError as exc:
+            log.warning("could not keep the code check: %s", exc)
+
+    def desired_power_w(self) -> int | None:
+        """The running game's own power limit, otherwise the one from Settings."""
+        watcher = self.game_watcher
+        if watcher.active:
+            profile = self.config.get("games", {}).get(str(watcher.appid), {})
+            if profile.get("power_w"):
+                return int(profile["power_w"])
+        return self.config.get("system", {}).get("power_limit_w")
+
+    def apply_power_profile(self) -> None:
+        watts = self.desired_power_w()
+        power = getattr(self.system, "power", None)
+        if not watts or power is None:
+            return
+        run_async(lambda: power.set(watts), lambda r: log.info("power limit %s W: %s", watts, r[1]),
+                  lambda _e: None, owner=self)
 
     # quick menu (Windows button) ------------------------------------------------------
     def toggle_quick_menu(self) -> None:
@@ -361,6 +471,11 @@ class MainWindow(QMainWindow):
 
     def power_action(self, kind: str) -> None:
         log.info("power action: %s", kind)
+        if kind == "sleep":
+            if self.shell is not None:
+                self.shell.power_menu.close_menu()
+            self.go_to_sleep()
+            return
         if self.input_service is not None:
             self.input_service.stop()  # give the real controller back first
         ok, message = self.power_runner(kind)
@@ -400,6 +515,8 @@ class MainWindow(QMainWindow):
 
     def nav_root(self) -> QWidget:
         """Controller navigation stays inside the loading screen / power menu while shown."""
+        if self.sleep_lock is not None and self.sleep_lock.isVisible():
+            return self.sleep_lock
         confirm = getattr(self, "display_confirm", None)
         if confirm is not None and confirm.isVisible():
             return confirm
@@ -420,6 +537,8 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):  # noqa: N802
         super().resizeEvent(event)
         self.launch_overlay.setGeometry(self.rect())
+        if self.sleep_lock is not None:
+            self.sleep_lock.setGeometry(self.rect())
 
     def closeEvent(self, event):  # noqa: N802
         current = self.stack.currentWidget()
@@ -449,6 +568,7 @@ class MainWindow(QMainWindow):
         lock = LockScreen(self.unlocker_factory(self.config["unlock"]), self.config["unlock"]["method"])
         lock.unlocked.connect(self.show_shell)
         lock.power_requested.connect(self.power_action)
+        lock.accepted.connect(self.remember_code)
         self.load_other_systems(lock)
         self._replace(lock)
         self.screen_name = "lock"
@@ -605,8 +725,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.volume_key_devices:  # used by install.sh for its udev rule
         from gamingcrypt.input.evdev import find_volume_key_devices
 
-        for device in find_volume_key_devices():
-            print(device.name)
+        for name in dict.fromkeys(device.name for device in find_volume_key_devices()):
+            print(name)
         return 0
     if args.gaming_mode:
         from gamingcrypt.session import mode
@@ -651,6 +771,7 @@ def main(argv: list[str] | None = None) -> int:
     from gamingcrypt.ui.navigator import GamepadNavigator
 
     volume_keys = window.start_volume_keys()
+    power_key = window.start_power_key()  # noqa: F841 - holds logind's power button
     navigator = GamepadNavigator(window, tab_switch=window.switch_tab)
     nav_source = NavSource(input_service, navigator.bridge.event.emit)
     nav_source.start()

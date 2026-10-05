@@ -27,6 +27,7 @@ BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT = 0x220, 0x221, 0x222,
 BTN_GAMEPAD = BTN_SOUTH
 KEY_MUTE, KEY_VOLUMEDOWN, KEY_VOLUMEUP = 113, 114, 115
 KEY_LEFTMETA, KEY_RIGHTMETA = 125, 126  # the "Windows" button
+KEY_POWER = 116
 VOLUME_KEYS = {KEY_MUTE, KEY_VOLUMEDOWN, KEY_VOLUMEUP}
 MENU_KEYS = {KEY_LEFTMETA, KEY_RIGHTMETA}
 BUS_BLUETOOTH = 0x05
@@ -144,9 +145,10 @@ def find_gamepads(sys_root: Path = Path("/sys"), dev_root: Path = Path("/dev/inp
 
 
 def find_volume_key_devices(sys_root: Path = Path("/sys"), dev_root: Path = Path("/dev/input")) -> list[DeviceInfo]:
-    """Built-in devices with volume buttons (not Bluetooth keyboards, not our virtual pad)."""
+    """Built-in devices with volume or power buttons (not Bluetooth keyboards, not our virtual pad)."""
     return [d for d in list_devices(sys_root, dev_root)
-            if d.keys & {KEY_VOLUMEUP, KEY_VOLUMEDOWN} and d.bus != BUS_BLUETOOTH and d.name != VIRTUAL_NAME]
+            if d.keys & {KEY_VOLUMEUP, KEY_VOLUMEDOWN, KEY_POWER} and d.bus != BUS_BLUETOOTH
+            and d.name != VIRTUAL_NAME]
 
 
 def pack_event(ev_type: int, code: int, value: int) -> bytes:

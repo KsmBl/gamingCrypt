@@ -1,4 +1,5 @@
-"""Hardware volume buttons and the Windows button (quick menu) in gaming mode.
+"""Hardware volume buttons, the Windows button (quick menu) and the power button
+(sleep) in gaming mode.
 
 gamescope doesn't handle them (on a desktop the compositor does), so GamingCrypt
 reads them straight from the input devices - not grabbed, so they also work while
@@ -55,8 +56,8 @@ class VolumeKeys:
                         if code == e.KEY_MUTE and value == REPEAT:
                             continue  # holding mute must not flicker
                         self.on_key(code)
-                    elif code in e.MENU_KEYS and value == PRESS:
-                        self.on_key(code)  # quick menu - once per press
+                    elif (code in e.MENU_KEYS or code == e.KEY_POWER) and value == PRESS:
+                        self.on_key(code)  # quick menu / sleep - once per press
             if not self.devices:
                 return
 

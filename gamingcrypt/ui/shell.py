@@ -65,6 +65,7 @@ class Shell(QWidget):
         self.power_menu.desktop.connect(self.exit_requested.emit)
         self.power_menu.shutdown.connect(lambda: self.power_requested.emit("shutdown"))
         self.power_menu.restart.connect(lambda: self.power_requested.emit("restart"))
+        self.power_menu.sleep.connect(lambda: self.power_requested.emit("sleep"))
         self.power_menu.boot_into.connect(lambda num: self.power_requested.emit(f"boot:{num}"))
 
     def update_battery(self) -> None:

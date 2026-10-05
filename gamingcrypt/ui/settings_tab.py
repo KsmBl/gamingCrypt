@@ -7,7 +7,8 @@ from typing import Callable
 import re
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QStackedWidget, QVBoxLayout,
+                               QWidget)
 
 from gamingcrypt.steam import accounts, library
 
@@ -21,6 +22,8 @@ from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button, enable_touch_scroll, set_status
 
 SUB_TABS = ["Device", "Controller", "Steam", "Security"]
+LOCK_AFTER_SLEEP = [("Never", None), ("Right away", 0), ("After 5 minutes", 5), ("After 15 minutes", 15),
+                    ("After 1 hour", 60)]
 API_KEY_RE = re.compile(r"^[0-9A-Fa-f]{32}$")
 
 
@@ -174,10 +177,31 @@ class SettingsTab(QStackedWidget):
         self.reset_button = big_button("Reset authentication method", "primary")
         self.reset_button.clicked.connect(self.start_reset)
         layout.addWidget(self.reset_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        # lock after sleep (gaming mode: the power button suspends)
+        row = QHBoxLayout()
+        caption = QLabel("Lock after sleep")
+        caption.setFixedWidth(220)
+        row.addWidget(caption)
+        self.sleep_lock = QComboBox()
+        for label, minutes in LOCK_AFTER_SLEEP:
+            self.sleep_lock.addItem(label, minutes)
+        current = self.config.setdefault("system", {}).get("lock_after_sleep_min")
+        self.sleep_lock.setCurrentIndex(max(0, self.sleep_lock.findData(current)))
+        self.sleep_lock.currentIndexChanged.connect(self._sleep_lock_chosen)
+        row.addWidget(self.sleep_lock, 1)
+        layout.addLayout(row)
+        hint = QLabel("Ask for your code again when the device wakes up. Your games drive stays unlocked.")
+        hint.setObjectName("cardMeta")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
         layout.addStretch()
         self.show_sub_tab(SUB_TABS[0])
         self.addWidget(self.overview)
         self.refresh()
+
+    def _sleep_lock_chosen(self, _index: int) -> None:
+        self.config["system"]["lock_after_sleep_min"] = self.sleep_lock.currentData()
+        self.save(self.config)
 
     def refresh(self) -> None:
         unlock = self.config["unlock"]

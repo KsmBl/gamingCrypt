@@ -15,6 +15,7 @@ class LockScreen(QWidget):
     """Emits ``unlocked`` once the volume was mounted successfully."""
 
     unlocked = Signal()
+    accepted = Signal(str)  # the code that worked (for the after-sleep check, see unlock/verifier)
     power_requested = Signal(str)  # "shutdown" / "restart" / "boot:<UEFI entry>"
 
     def __init__(self, unlocker: VeraCryptUnlocker, method: str, parent: QWidget | None = None):
@@ -88,6 +89,7 @@ class LockScreen(QWidget):
         if self.busy:
             return
         self.busy = True
+        self._secret = secret
         set_status(self.status, "Unlocking…")
         run_async(
             lambda: self.unlocker.unlock(secret),
@@ -97,9 +99,11 @@ class LockScreen(QWidget):
 
     def _finished(self, result: UnlockResult) -> None:
         self.busy = False
+        secret, self._secret = getattr(self, "_secret", ""), ""
         if result.success:
             set_status(self.status, result.message)
             self.input.clear()
+            self.accepted.emit(secret)
             self.unlocked.emit()
         else:
             set_status(self.status, result.message, error=True)

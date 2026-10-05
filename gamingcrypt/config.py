@@ -36,6 +36,9 @@ DEFAULTS: dict[str, Any] = {
         # Volume per press of the + / - buttons (gaming mode), -10..10.
         # Negative swaps the buttons, 0 turns them off.
         "volume_step": 5,
+        # Gaming mode: ask for the unlock code again after sleeping this many
+        # minutes (0 = always, None = never).
+        "lock_after_sleep_min": None,
     },
     "input": {
         # Apply calibration + button mapping through a virtual controller.
