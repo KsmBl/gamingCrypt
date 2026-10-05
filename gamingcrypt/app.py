@@ -844,7 +844,9 @@ class MainWindow(QMainWindow):
                 self.download_notifier = DownloadNotifier(
                     service.downloads, lambda appid: any(g.appid == appid for g in service.installed_games()), self)
                 self.download_notifier.message.connect(lambda icon, text: self.notify(text, icon))
-        self.shell = Shell(pages)
+        from gamingcrypt.session.mode import in_gaming_session
+
+        self.shell = Shell(pages, show_hints=in_gaming_session())
         self.shell.exit_requested.connect(self.desktop_mode)
         self.shell.power_requested.connect(self.power_action)
         self.shell.power_menu.sleep_button.setVisible(self.sleep_allowed())

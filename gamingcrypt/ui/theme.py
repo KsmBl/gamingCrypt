@@ -96,6 +96,7 @@ QWidget#menuRow {{ background: transparent; }}
 QLabel#healthOk {{ color: {SUCCESS}; font-size: 26px; font-weight: 700; }}
 QLabel#healthBad {{ color: {DANGER}; font-size: 26px; font-weight: 700; }}
 QLabel#healthOptional {{ color: {TEXT_DIM}; font-size: 26px; font-weight: 700; }}
+QLabel#hintBar {{ background: {SURFACE}; color: {TEXT_DIM}; font-size: 18px; padding: 8px 24px; }}
 QLabel#battery {{ font-size: 22px; padding: 0 14px; color: {TEXT_DIM}; }}
 QLabel#battery[charging="true"] {{ color: {SUCCESS}; }}
 QLabel#battery[low="true"] {{ color: {DANGER}; font-weight: 700; }}

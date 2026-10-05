@@ -18,7 +18,7 @@ class Shell(QWidget):
     power_requested = Signal(str)  # "shutdown" / "restart" / "boot:<UEFI entry>"
 
     def __init__(self, pages: dict[str, QWidget] | None = None, parent: QWidget | None = None,
-                 battery_reader=read_battery):
+                 battery_reader=read_battery, show_hints: bool = False):
         super().__init__(parent)
         self.battery_reader = battery_reader
         pages = pages or {}
@@ -51,6 +51,11 @@ class Shell(QWidget):
 
         layout.addWidget(bar)
         layout.addWidget(self.stack, 1)
+        from gamingcrypt.ui.hint_bar import HintBar
+
+        self.hint_bar = HintBar()  # controller hints - gaming mode, where the controller is the input
+        self.hint_bar.setVisible(show_hints)
+        layout.addWidget(self.hint_bar)
         downloads = self.pages.get("Downloads")
         if hasattr(downloads, "count_changed"):
             downloads.count_changed.connect(lambda n: self.set_badge("Downloads", n))
