@@ -289,3 +289,17 @@ def test_top_bar_battery_refreshes_every_second():
     from gamingcrypt.ui import shell
 
     assert shell.BATTERY_REFRESH_MS == 1000
+
+
+def test_emulator_row_fits_the_panel(menu):
+    """Save / Load state next to each other, Controls below - three buttons don't fit in one line."""
+    m, *_ = menu
+    m.set_emulated(True)
+    m.open_menu(0x70000001, "Super Mario World")
+    m._test_host.grab()  # layout done
+    panel = m.panel.viewport().rect()
+    for button in (m.save_state_button, m.load_state_button, m.controls_button):
+        r = button.rect().translated(button.mapTo(m.panel.viewport(), button.rect().topLeft()))
+        assert panel.left() <= r.left() and r.right() <= panel.right(), button.text()
+        assert button.width() >= button.sizeHint().width(), button.text()  # the text isn't cut
+    assert m.controls_button.y() > m.save_state_button.y() and m.save_state_button.y() == m.load_state_button.y()

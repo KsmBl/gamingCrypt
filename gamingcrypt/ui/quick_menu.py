@@ -152,8 +152,10 @@ class QuickMenu(QWidget):
         # emulated game: save / load state
         row = QWidget()
         row.setObjectName("menuRow")
-        line = QHBoxLayout(row)
-        line.setContentsMargins(0, 0, 0, 0)
+        column = QVBoxLayout(row)  # two lines: three buttons don't fit next to each other
+        column.setContentsMargins(0, 0, 0, 0)
+        line = QHBoxLayout()
+        column.addLayout(line)
         self.save_state_button = big_button("💾  Save state")
         self.save_state_button.clicked.connect(lambda: self._emulator("SAVE_STATE"))
         self.load_state_button = big_button("↺  Load state")
@@ -162,7 +164,7 @@ class QuickMenu(QWidget):
         self.controls_button.clicked.connect(self._controls)
         line.addWidget(self.save_state_button, 1)
         line.addWidget(self.load_state_button, 1)
-        line.addWidget(self.controls_button, 1)
+        column.addWidget(self.controls_button)
         self.box.addWidget(row)
         self.state_row = row
         row.hide()
