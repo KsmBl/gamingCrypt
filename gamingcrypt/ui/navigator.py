@@ -151,8 +151,6 @@ class GamepadNavigator(QObject):
 
     def scroll_to(self, area: QScrollArea, w: QWidget, margin: int = 40) -> None:
         """Glide (instead of jumping) so ``w`` is fully visible."""
-        from gamingcrypt.ui.widgets import FoldingHeader
-
         content = area.widget()
         if content is None:
             return
@@ -160,16 +158,32 @@ class GamepadNavigator(QObject):
         top = w.mapTo(content, QPoint(0, 0)).y()
         bottom = top + w.height()
         view = area.viewport().height()
-        anim = self._live_anim(bar)
+        self._live_anim(bar)  # drops what's left of a deleted page
         start = self._scroll_targets.get(id(bar), bar.value())
         target = start
         if top - margin < start:
             target = top - margin
         elif bottom + margin > start + view:
             target = bottom + margin - view
+        if self._topmost_in(content, w):
+            # the first thing in the list: show the list from its very top (captions above
+            # it, and the folded header comes back) - not just the highlighted button
+            target = bar.minimum()
         target = max(bar.minimum(), min(bar.maximum(), target))
         if target == start:
             return
+        self._glide(bar, target)
+
+    def _topmost_in(self, content: QWidget, w: QWidget) -> bool:
+        my_top = w.mapTo(content, QPoint(0, 0)).y()
+        return not any(other is not w and content.isAncestorOf(other)
+                       and other.mapTo(content, QPoint(0, 0)).y() < my_top - 4
+                       for other in self.candidates())
+
+    def _glide(self, bar, target: int) -> None:
+        from gamingcrypt.ui.widgets import FoldingHeader
+
+        anim = self._live_anim(bar)
         self._scroll_targets[id(bar)] = target
         if anim is None:
             anim = QPropertyAnimation(bar, b"value", bar)  # owned by the bar: others can stop it
@@ -233,6 +247,11 @@ class GamepadNavigator(QObject):
         target = self.nearest(current, dx, dy)
         if target is not None:
             self.focus(target)
+        elif dy < 0:
+            # nothing further up, but the list isn't at its top yet: go there
+            area = self._scroll_area(current)
+            if area is not None and area.verticalScrollBar().value() > area.verticalScrollBar().minimum():
+                self._glide(area.verticalScrollBar(), area.verticalScrollBar().minimum())
 
     @staticmethod
     def _scroll_area(w: QWidget | None) -> QScrollArea | None:

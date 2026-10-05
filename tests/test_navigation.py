@@ -528,3 +528,67 @@ def test_deleted_scroll_page_leaves_no_broken_animation(qtbot):
     qtbot.wait(20)
     nav.focus(buttons2[-1])  # scrolling in the new page works
     qtbot.waitUntil(lambda: area2.verticalScrollBar().value() == area2.verticalScrollBar().maximum())
+
+
+def test_going_up_ends_at_the_very_top_of_the_games_page(qtbot):
+    """It used to stop at the top-most button with the list still scrolled down a bit
+    (caption hidden, search bar folded away and so unreachable)."""
+    from PySide6.QtWidgets import QMainWindow, QScrollArea
+
+    from gamingcrypt.steam.models import SteamGame
+    from gamingcrypt.ui import theme
+    from gamingcrypt.ui.games_tab import GamesTab
+    from tests.fakes import FakeService
+
+    games = [SteamGame(i, f"Game {i}", installed=True, last_played=1700000000 + i) for i in range(1, 31)]
+    service = FakeService(games=games)
+    tab = GamesTab(service)
+    tab.games.update({g.appid: g for g in games})
+    window = QMainWindow()
+    window.setStyleSheet(theme.STYLESHEET)
+    window.setCentralWidget(tab)
+    qtbot.addWidget(window)
+    window.resize(1280, 720)
+    window.show()
+    tab.home.set_installed(service.installed_games())
+    qtbot.waitExposed(window)
+    bar = tab.home.findChild(QScrollArea).verticalScrollBar()
+    qtbot.waitUntil(lambda: bar.maximum() > 1000)  # the grid has its real height
+    nav = GamepadNavigator(window)
+    nav.focus(tab.home.cards[30])  # the last game, far down
+    qtbot.waitUntil(lambda: bar.value() > 1000)
+    for _ in range(20):
+        nav.move(0, -1)
+        qtbot.wait(nav_mod.SCROLL_MS + 30)
+        if window.focusWidget() is tab.home.search:
+            break
+    f = window.focusWidget()
+    assert bar.value() == 0 and tab.home.header.height() > 0, (bar.value(), tab.home.header.height(),  # whole top visible
+                                                                type(f).__name__, getattr(f, "text", str)())
+    assert window.focusWidget() is tab.home.search  # and reachable
+
+
+def test_up_without_anything_above_still_scrolls_to_the_top(qtbot):
+    from PySide6.QtWidgets import QScrollArea
+
+    window = QWidget()
+    qtbot.addWidget(window)
+    window.resize(400, 300)
+    area = QScrollArea(window)
+    area.setGeometry(0, 0, 400, 300)
+    area.setWidgetResizable(True)
+    content = QWidget()
+    column = QVBoxLayout(content)
+    column.addSpacing(300)  # a big picture / caption on top, nothing selectable
+    button = QPushButton("only")
+    column.addWidget(button)
+    column.addSpacing(600)
+    area.setWidget(content)
+    window.show()
+    qtbot.waitExposed(window)
+    bar = area.verticalScrollBar()
+    bar.setValue(250)
+    button.setFocus()
+    nav = GamepadNavigator(window)
+    nav.move(0, -1)
+    qtbot.waitUntil(lambda: bar.value() == 0)
