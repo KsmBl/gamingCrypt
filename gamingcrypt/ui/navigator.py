@@ -30,6 +30,7 @@ REPEAT_DELAY_MS, REPEAT_RATE_MS = 380, 110
 SCROLL_MS = 140  # shorter than the repeat rate: holding the D-pad glides continuously
 
 _paused = False
+_TO_TOP = object()  # nearest(): scroll the list to its top first
 
 
 def set_paused(paused: bool) -> None:
@@ -63,6 +64,7 @@ class GamepadNavigator(QObject):
         self._scroll_anims: dict[int, QPropertyAnimation] = {}
         self._scroll_targets: dict[int, int] = {}
         self.hotkey_filter: Callable[[int, int, int], bool] | None = None
+        self.anchor_x: float | None = None  # the column up / down keeps (global x)
 
     # input -------------------------------------------------------------------
     @property
@@ -155,6 +157,7 @@ class GamepadNavigator(QObject):
             if keyboard.dismissable and keyboard.isVisible() and not keyboard.owns(w):
                 keyboard.hide()  # highlight went somewhere else
         w.setFocus(Qt.FocusReason.TabFocusReason)
+        self.anchor_x = self._anchor(w)
         parent = w.parentWidget()
         while parent is not None:
             if isinstance(parent, QScrollArea):
@@ -202,6 +205,8 @@ class GamepadNavigator(QObject):
             anim.setEasingCurve(QEasingCurve.Type.OutCubic)
             anim.finished.connect(lambda b=id(bar): self._scroll_targets.pop(b, None))
             anim.finished.connect(self._scroll_done)
+            # its page closed while it glided: "the controller scrolls" must not stay set for good
+            anim.destroyed.connect(lambda _o=None: QTimer.singleShot(0, self._scroll_done))
             self._scroll_anims[id(bar)] = anim
         anim.stop()
         anim.setDuration(SCROLL_MS)
@@ -269,6 +274,10 @@ class GamepadNavigator(QObject):
                 break
             node = node.parentWidget()
         target = self.nearest(current, dx, dy)
+        if target is _TO_TOP:
+            bar = self._scroll_area(current).verticalScrollBar()
+            self._glide(bar, bar.minimum())  # first the list's top (and what's above it, e.g. filters)
+            return
         if target is not None:
             self.focus(target)
         elif dy < 0:
@@ -301,44 +310,122 @@ class GamepadNavigator(QObject):
             best = self._best(current, inside, dx, dy)
             if best is not None:
                 return best
+            if dx:
+                return self._wrap(current, dx)  # sideways never leaves the list
+            bar = area.verticalScrollBar()
+            if dy < 0 and bar.value() > bar.minimum() and self._scroll_targets.get(id(bar)) != bar.minimum():
+                return _TO_TOP
             options = [w for w in options if not content.isAncestorOf(w)]
-        return self._best(current, options, dx, dy)
+        return self._best(current, options, dx, dy) or (self._wrap(current, dx) if dx else None)
 
     @staticmethod
     def _rect(w: QWidget) -> QRect:
         return QRect(w.mapToGlobal(QPoint(0, 0)), QSize(w.width(), w.height()))
+
+    def _seen(self, w: QWidget) -> QRect:
+        """The part that's on screen: lists cut off what's scrolled away (a card half under the
+        on-screen keyboard isn't in the keyboard's row)."""
+        rect = self._rect(w)
+        area = self._scroll_area(w)
+        while area is not None and not rect.isEmpty():
+            viewport = area.viewport()
+            rect = rect.intersected(QRect(viewport.mapToGlobal(QPoint(0, 0)), viewport.size()))
+            area = self._scroll_area(area)
+        return rect
 
     @staticmethod
     def _gap(a0: int, a1: int, b0: int, b1: int) -> int:
         """Distance between two ranges, 0 when they overlap."""
         return max(0, b0 - a1, a0 - b1)
 
+    ROW_TOLERANCE = 24  # widgets this close in height count as one row
+
+    def _anchor(self, w: QWidget) -> float:
+        """The column to keep when going up / down: a narrow widget's centre; inside a wide one
+        (the search field, a list row) the column kept so far - or its left edge."""
+        rect = self._rect(w)
+        if rect.width() < self.root().width() * 0.45:
+            return float(rect.center().x())
+        if self.anchor_x is not None and rect.left() <= self.anchor_x <= rect.right():
+            return self.anchor_x
+        return float(rect.left() + 1)
+
     def _best(self, current: QWidget, options: list[QWidget], dx: int, dy: int) -> QWidget | None:
-        """Nearest widget in that direction, measured edge to edge: the next row wins
-        even when its control sits off to the side (a wide drop-down right of its
-        caption, below a narrow button) - centre distances used to skip those."""
-        here, mine = self._center(current), self._rect(current)
-        best, best_score = None, None
-        for w in options:
-            there, rect = self._center(w), self._rect(w)
-            vx, vy = there.x() - here.x(), there.y() - here.y()
-            if vx * dx + vy * dy <= 4:
-                continue  # not in that direction
-            if dy:
-                ahead = rect.top() - mine.bottom() if dy > 0 else mine.top() - rect.bottom()
-                aside = self._gap(mine.left(), mine.right(), rect.left(), rect.right())
-            else:
+        """What an average user expects: left / right stays in the row, up / down goes to the
+        next row in the same column, and a row of tabs is entered at the selected tab."""
+        mine = self._rect(current)
+        if dx:
+            mine = self._seen(current)
+            row = []
+            for w in options:
+                rect = self._seen(w)
+                if rect.isEmpty():
+                    continue
+                overlap = min(mine.bottom(), rect.bottom()) - max(mine.top(), rect.top())
+                if overlap < min(mine.height(), rect.height()) * 0.5:
+                    continue  # another row
                 ahead = rect.left() - mine.right() if dx > 0 else mine.left() - rect.right()
-                aside = self._gap(mine.top(), mine.bottom(), rect.top(), rect.bottom())
-            # tie-break between widgets in line: the one closer to the centre line
-            if ahead < 0:
-                # overlaps along the way (e.g. a wide field above a key when moving right):
-                # not really ahead - only its centre counts
-                ahead = vx * dx + vy * dy
-            score = ahead + 0.5 * aside + 0.02 * abs(vx * dy + vy * dx)
-            if best_score is None or score < best_score:
-                best, best_score = w, score
-        return best
+                centre = (rect.center().x() - mine.center().x()) * dx
+                if centre <= 4:
+                    continue  # not in that direction
+                row.append((max(ahead, 0), abs(rect.center().y() - mine.center().y()), w))
+            if not row:
+                return None
+            return self._enter_group(current, min(row, key=lambda r: (r[0], r[1]))[2])
+        ahead_of = []
+        area = self._scroll_area(current)
+        for w in options:
+            # in the same list: also what's scrolled away; elsewhere only what's on screen
+            same_list = area is not None and area.isAncestorOf(w)
+            rect = self._rect(w) if same_list else self._seen(w)
+            if rect.isEmpty():
+                continue
+            ahead = rect.top() - mine.bottom() if dy > 0 else mine.top() - rect.bottom()
+            if ahead < -8:  # beside or behind, not below / above
+                continue
+            if (rect.center().y() - mine.center().y()) * dy <= 4:
+                continue
+            ahead_of.append((max(ahead, 0), rect, w))
+        if not ahead_of:
+            return None
+        nearest = min(a for a, _r, _w in ahead_of)
+        row = [(rect, w) for a, rect, w in ahead_of if a <= nearest + self.ROW_TOLERANCE]
+        column = self.anchor_x if self.anchor_x is not None and self._rect(current).left() <= self.anchor_x \
+            <= self._rect(current).right() else self._anchor(current)
+
+        def distance(item) -> tuple:
+            rect = item[0]
+            return (self._gap(int(column), int(column), rect.left(), rect.right()), rect.left())
+
+        return self._enter_group(current, min(row, key=distance)[1])
+
+    @staticmethod
+    def _enter_group(current: QWidget, target: QWidget) -> QWidget:
+        """Coming into a row of tabs / chips (one of them selected) from outside: the selected one."""
+        parent = target.parentWidget()
+        if not isinstance(target, QAbstractButton) or not target.isCheckable() or parent is None:
+            return target
+        group = [b for b in parent.findChildren(QAbstractButton, options=Qt.FindChildOption.FindDirectChildrenOnly)
+                 if b.isCheckable() and b.isVisible() and b.isEnabled()]
+        if len(group) < 2 or current in group:
+            return target
+        return next((b for b in group if b.isChecked()), target)
+
+    def _wrap(self, current: QWidget, dx: int) -> QWidget | None:
+        """The end of a row of a grid (cards that wrap): on with the next row's first one."""
+        from gamingcrypt.ui.widgets import FlowLayout
+
+        parent = current.parentWidget()
+        layout = parent.layout() if parent is not None else None
+        if not isinstance(layout, FlowLayout):
+            return None
+        items = [layout.itemAt(i).widget() for i in range(layout.count())]
+        items = [w for w in items if w is not None and w.isVisible() and w.isEnabled()
+                 and w.focusPolicy() & Qt.FocusPolicy.TabFocus]
+        if current not in items:
+            return None
+        index = items.index(current) + dx
+        return items[index] if 0 <= index < len(items) else None
 
     def activate(self) -> None:
         popup = QApplication.activePopupWidget()

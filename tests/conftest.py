@@ -118,3 +118,12 @@ def no_update_check(monkeypatch):
     from gamingcrypt.app import MainWindow
 
     monkeypatch.setattr(MainWindow, "update_check_enabled", False)
+
+
+@pytest.fixture(autouse=True)
+def controller_not_scrolling():
+    """A test that ends while the navigator glides must not leave "the controller scrolls" set."""
+    yield
+    from gamingcrypt.ui.widgets import FoldingHeader
+
+    FoldingHeader.programmatic = False

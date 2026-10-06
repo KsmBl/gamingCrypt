@@ -107,12 +107,18 @@ def test_touch_scrolling_up_still_unfolds(qtbot):
 
 
 def test_focused_play_button_is_clearly_highlighted(qtbot):
-    """Focus on a blue primary button: thick white ring + brighter fill (was blue on blue)."""
+    """Focus on a blue primary button: a ring in the text colour + brighter fill (not blue on blue);
+    on any other button the accent ring - in both themes."""
     from gamingcrypt.ui import theme
 
-    css = theme.STYLESHEET
-    assert f"QPushButton#primary:focus {{ background: {theme.ACCENT_HI}; border: 4px solid {theme.TEXT}; }}" in css
-    assert f"QPushButton:focus {{ border: 4px solid {theme.TEXT}; }}" in css
+    for name in theme.THEMES:
+        theme.apply(name)
+        css = theme.STYLESHEET
+        assert (f"QPushButton#primary:focus {{ background: {theme.ACCENT_HI}; border-color: {theme.FOCUS}; }}"
+                in css)
+        assert f"QPushButton:focus {{ border-color: {theme.ACCENT}; }}" in css
+        assert theme.FOCUS != theme.ACCENT_HI
+    theme.apply(theme.DEFAULT)
 
 
 def test_up_in_the_game_grid_goes_to_the_game_above_not_the_tabs(qtbot):
@@ -157,3 +163,25 @@ def test_up_in_the_game_grid_goes_to_the_game_above_not_the_tabs(qtbot):
     step(nav, -1)  # from the top row it may leave the grid
     qtbot.waitUntil(lambda: not FoldingHeader.programmatic)
     assert window.focusWidget() not in cards
+
+
+def test_closing_a_page_while_it_glides_does_not_leave_the_controller_scrolling(qtbot):
+    from PySide6.QtWidgets import QScrollArea, QVBoxLayout, QWidget
+
+    from gamingcrypt.ui.navigator import GamepadNavigator
+    from gamingcrypt.ui.widgets import FoldingHeader
+
+    window = QWidget()
+    qtbot.addWidget(window)
+    area = QScrollArea(window)
+    content = QWidget()
+    QVBoxLayout(content).addWidget(QWidget())
+    content.setMinimumHeight(3000)
+    area.setWidget(content)
+    window.resize(400, 400)
+    window.show()
+    nav = GamepadNavigator(window)
+    nav._glide(area.verticalScrollBar(), 1000)
+    assert FoldingHeader.programmatic
+    area.deleteLater()  # the page goes away mid-glide
+    qtbot.waitUntil(lambda: not FoldingHeader.programmatic, timeout=2000)

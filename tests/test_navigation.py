@@ -363,8 +363,9 @@ def test_tab_highlight_looks_different_from_the_open_tab():
 
     css = theme.STYLESHEET
     focus_rule = next(line for line in css.splitlines() if line.startswith("QPushButton#tab:focus"))
+    focus_rule += next(line for line in css.splitlines()[css.splitlines().index(focus_rule) + 1:])
     assert theme.ACCENT not in focus_rule and theme.ACCENT_HI not in focus_rule  # no blue underline
-    assert "transparent" in focus_rule and theme.SURFACE_HI in focus_rule
+    assert "border-bottom: 3px solid transparent" in focus_rule and theme.SURFACE_HI in focus_rule  # a box
 
 
 # --- rows with a caption: wide controls must not be skipped ------------------------------
@@ -426,9 +427,10 @@ def test_down_reaches_every_control_of_the_device_settings(qtbot, monkeypatch):
     nav = GamepadNavigator(window)
     nav.focus(tab.sub_buttons["Device"])
     d, a = tab.display_section, tab.audio_section
-    expected = [tab.sub_buttons["Device"], d.gs_resolution, d.gs_refresh, d.gs_apply, d.brightness_slider,
+    look = tab.appearance_section.buttons
+    expected = [tab.sub_buttons["Device"], look["dark"], d.gs_resolution, d.gs_refresh, d.gs_apply, d.brightness_slider,
                 tab.power_section.power_button, a.combos["output"], a.sliders["output"], a.combos["input"], a.sliders["input"], a.step_slider]
-    assert walk_down(nav, 12) == expected
+    assert walk_down(nav, 13) == expected
 
 
 def test_down_reaches_every_control_of_the_quick_menu(qtbot):
