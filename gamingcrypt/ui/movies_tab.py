@@ -157,7 +157,7 @@ class MoviesHome(QWidget):
         filters.setSpacing(10)
         self.state_buttons = {}
         for key, label in library.STATES.items():
-            button = big_button(label, checkable=True)
+            button = big_button(label, choice=True)
             button.clicked.connect(lambda _=False, k=key: self.set_state(k))
             self.state_buttons[key] = button
             filters.addWidget(button)

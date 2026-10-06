@@ -192,3 +192,37 @@ def test_end_of_a_button_row_stays(qtbot, app):
     nav.focus(page.options_button)
     assert go(qtbot, nav, "RR") is page.options_button
     assert go(qtbot, nav, "U") is not w.shell.exit_button
+
+
+@pytest.mark.parametrize("kind", ["rom", "steam"])
+def test_right_from_play_goes_to_options_not_over_it(qtbot, app, kind):
+    """Options and Favorite are on / off buttons, not a row to pick one from: with the game a
+    favorite, right from Play went straight to the (checked) Favorite."""
+    w, nav, pages = app
+    games = pages["Games"]
+    if kind == "rom":
+        game = games.roms["snes"][0]
+        games.profiles.set(game.appid, "favorite", True)
+        games.open_rom(game)
+    else:
+        games.profiles.set(620, "favorite", True)
+        games.open_game(620)
+    page = games.currentWidget()
+    qtbot.wait(100)
+    assert page.favorite_button.isChecked()
+    nav.focus(page.main_button)
+    assert go(qtbot, nav, "R") is page.options_button
+    assert go(qtbot, nav, "R") is page.favorite_button
+    assert go(qtbot, nav, "L") is page.options_button
+
+
+def test_choice_rows_are_still_entered_at_the_picked_one(qtbot, app):
+    w, nav, pages = app
+    games = pages["Games"]
+    games.open_steam()
+    page = games.currentWidget()
+    qtbot.wait(100)
+    page.set_sort("playtime")
+    nav.focus(page.search)
+    target = go(qtbot, nav, "U")
+    assert target is page.sort_buttons["playtime"]  # the sort order in use, not the nearest

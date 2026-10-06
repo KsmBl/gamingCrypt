@@ -195,7 +195,7 @@ class QuickMenu(QWidget):
         line.setContentsMargins(0, 0, 0, 0)
         self.speed_buttons: dict[str, QWidget] = {}
         for mode in ("slow", "normal", "fast"):
-            button = big_button(mode.capitalize(), checkable=True)
+            button = big_button(mode.capitalize(), choice=True)
             button.clicked.connect(lambda _c=False, m=mode: self._speed_mode(m))
             line.addWidget(button, 1)
             self.speed_buttons[mode] = button

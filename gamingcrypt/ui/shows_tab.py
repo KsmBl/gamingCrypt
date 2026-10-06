@@ -347,7 +347,7 @@ class ShowPage(QWidget):
             button.deleteLater()
         self.season_buttons = {}
         for number in show.seasons:
-            button = big_button("Specials" if number == 0 else f"Season {number}", checkable=True)
+            button = big_button("Specials" if number == 0 else f"Season {number}", choice=True)
             button.clicked.connect(lambda _=False, n=number: self.show_season(n))
             self.season_row.addWidget(button)
             self.season_buttons[number] = button

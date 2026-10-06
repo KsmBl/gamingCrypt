@@ -401,12 +401,19 @@ class GamepadNavigator(QObject):
 
     @staticmethod
     def _enter_group(current: QWidget, target: QWidget) -> QWidget:
-        """Coming into a row of tabs / chips (one of them selected) from outside: the selected one."""
+        """Coming into a row of tabs / chips (one of them selected) from outside: the selected one.
+        Only real choices (tabs, buttons made with choice=True) - not on / off buttons side by side
+        (Options and Favorite: right from Play must not skip Options)."""
+
+        def picks(b) -> bool:
+            return isinstance(b, QAbstractButton) and b.isCheckable() and (
+                b.objectName() == "tab" or bool(b.property("choice")))
+
         parent = target.parentWidget()
-        if not isinstance(target, QAbstractButton) or not target.isCheckable() or parent is None:
+        if not picks(target) or parent is None:
             return target
         group = [b for b in parent.findChildren(QAbstractButton, options=Qt.FindChildOption.FindDirectChildrenOnly)
-                 if b.isCheckable() and b.isVisible() and b.isEnabled()]
+                 if picks(b) and b.isVisible() and b.isEnabled()]
         if len(group) < 2 or current in group:
             return target
         return next((b for b in group if b.isChecked()), target)

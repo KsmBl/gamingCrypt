@@ -33,11 +33,15 @@ def enable_touch_scroll(area: QAbstractScrollArea) -> None:
     scroller.setScrollerProperties(props)
 
 
-def big_button(text: str, object_name: str = "", checkable: bool = False) -> QPushButton:
+def big_button(text: str, object_name: str = "", checkable: bool = False, choice: bool = False) -> QPushButton:
+    """choice: one of a row where one is picked (filters, seasons, sort order) - the controller
+    enters such a row at the picked one. Plain on / off buttons (Favorite, Options) aren't."""
     button = QPushButton(text)
     if object_name:
         button.setObjectName(object_name)
-    button.setCheckable(checkable)
+    button.setCheckable(checkable or choice)
+    if choice:
+        button.setProperty("choice", True)
     # Reachable with the controller, but a finger tap doesn't steal focus from text fields.
     button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
     if object_name in ("", "primary", "danger") and "\n" not in text:

@@ -65,7 +65,7 @@ class SteamLibraryPage(QWidget):
         sort_row.addWidget(QLabel("Sort:"))
         self.sort_buttons = {}
         for key, (label, _desc) in SORT_OPTIONS.items():
-            button = big_button(label, checkable=True)
+            button = big_button(label, choice=True)
             button.clicked.connect(lambda _=False, k=key: self.set_sort(k))
             self.sort_buttons[key] = button
             sort_row.addWidget(button)

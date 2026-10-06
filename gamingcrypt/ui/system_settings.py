@@ -77,7 +77,7 @@ class AppearanceSection(Section):
         row.setSpacing(12)
         self.buttons = {}
         for name, label in (("dark", "🌙  Dark"), ("light", "☀  Light")):
-            button = big_button(label, checkable=True)
+            button = big_button(label, choice=True)
             button.setMinimumWidth(180)
             button.clicked.connect(lambda _=False, n=name: self.choose(n))
             row.addWidget(button)
