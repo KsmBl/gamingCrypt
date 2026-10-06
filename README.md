@@ -57,6 +57,10 @@ The screenshots are made with `.venv/bin/python docs/screenshots.py` (sample dat
   - **Shaders**: tick and combine CRT, scanlines, LCD grid, Game Boy screen, pixel-art smoothing (xBRZ, ScaleFX),
     sharp pixels, FXAA, sharpen and TV colors - per system (**✨ Shaders** next to Controls) or per game (Options),
     with a preview next to the list
+- **Windows and Linux games** outside Steam: copy a game folder over the network share into `<drive>/Windows Games`
+  or `<drive>/Linux Games`, pick its start file; Windows games run with any Proton (Steam's, GE-Proton …) or Wine in
+  their own prefix on the drive, Linux games directly or in Steam's runtime; covers from Steam's store, play time,
+  Continue, Recently played and Favorites like every other game
 - **Movies**: every video in `<drive>/Movies`, with cover, description, cast, FSK rating and length from Wikidata /
   Wikipedia (saved next to the movie as `.jpg` and Kodi `.nfo`); search and filters; plays full screen in mpv with
   controller and YouTube-like touch controls (double tap to skip, hold for 2x, speed menu); resume where you stopped,

@@ -25,7 +25,8 @@ from gamingcrypt.ui.widgets import (
 
 
 # Libraries on the Games tab: id -> name (Settings -> Games -> Libraries hides them)
-LIBRARIES = {"favorites": "Favorites", "steam": "Steam", "recent": "Recently played", "windows": "Windows games"}
+LIBRARIES = {"favorites": "Favorites", "steam": "Steam", "recent": "Recently played", "windows": "Windows games",
+             "linux": "Linux games"}
 
 
 def heading(text: str) -> QLabel:
@@ -80,6 +81,7 @@ class ContinueCard(QFrame):
 
     @property
     def windows(self) -> bool:
+        """A Windows game - or a Linux one (the same, without Proton / Wine)."""
         from gamingcrypt.wine.library import WindowsGame
 
         return isinstance(self.game, WindowsGame)
@@ -94,9 +96,9 @@ class ContinueCard(QFrame):
         if self.windows:
             from gamingcrypt.ui.wine_pages import load_windows_cover
 
-            self.meta.setText(f"Windows · last played {format_date(game.last_played)} · "
+            self.meta.setText(f"{game.LABEL} · last played {format_date(game.last_played)} · "
                               f"{format_playtime(game.minutes)}")
-            load_windows_cover(self.cover, game, self.tab.windows_covers, 150, 225)
+            load_windows_cover(self.cover, game, getattr(self.tab, f"{game.KIND}_covers"), 150, 225)
             return
         if self.emulated:
             from gamingcrypt.emulation.systems import short_name
@@ -114,8 +116,8 @@ class ContinueCard(QFrame):
         if self.game is None:
             return
         if self.windows:
-            launcher = self.tab.windows_launcher
-            ok, message = launcher(self.game) if launcher else (False, "Windows games can't be started here")
+            launcher = getattr(self.tab, f"{self.game.KIND}_launcher")
+            ok, message = launcher(self.game) if launcher else (False, f"{self.game.LABEL} games can't be started here")
             if not ok:
                 self.tab.home.show_notice(message, error=True)
             return
@@ -133,7 +135,7 @@ class ContinueCard(QFrame):
         if self.game is None:
             return
         if self.windows:
-            self.tab.open_windows_game(self.game)
+            getattr(self.tab, f"open_{self.game.KIND}_game")(self.game)
         elif self.emulated:
             self.tab.open_rom(self.game)
         else:
@@ -204,6 +206,9 @@ class GamesHome(QWidget):
         self.windows_card = SourceCard("Windows games", "Proton / Wine", icon=lambda w, h: icons.window(w, h))
         self.windows_card.tapped.connect(tab.open_windows_library)
         sources.addWidget(self.windows_card)
+        self.linux_card = SourceCard("Linux games", "Native games", icon=lambda w, h: icons.penguin(w, h))
+        self.linux_card.tapped.connect(tab.open_linux_library)
+        sources.addWidget(self.linux_card)
         self.add_card = SourceCard("⬆ Add ROMs", "Emulator games, cores, BIOS · over Wi-Fi")
         self.add_card.tapped.connect(tab.open_upload)
         self.add_card.setVisible(tab.emulation is not None)
@@ -245,7 +250,7 @@ class GamesHome(QWidget):
         self.refresh_results()
 
     def update_continue(self) -> None:
-        roms = [game for games in self.tab.roms.values() for game in games] + list(self.tab.windows_games)
+        roms = [game for games in self.tab.roms.values() for game in games] + self.tab.pc_games()
         self.continue_card.set_game(last_played(self.installed, roms))
 
     def library_cards(self) -> dict:
@@ -253,6 +258,8 @@ class GamesHome(QWidget):
         cards.update({f"emu:{sid}": card for sid, card in self.system_cards.items()})
         if self.tab.windows_root is not None:
             cards["windows"] = self.windows_card
+        if self.tab.linux_root is not None:
+            cards["linux"] = self.linux_card
         return cards
 
     def set_systems(self, found: dict) -> None:
@@ -275,7 +282,7 @@ class GamesHome(QWidget):
         from gamingcrypt.emulation.systems import SYSTEMS
 
         self.sources_row.take_all()
-        for card in [self.favorites_card, self.steam_card, self.recent_card, self.windows_card,
+        for card in [self.favorites_card, self.steam_card, self.recent_card, self.windows_card, self.linux_card,
                      *(self.system_cards[s.id] for s in SYSTEMS if s.id in self.system_cards), self.add_card]:
             self.sources_row.addWidget(card)
         self.apply_libraries()
@@ -283,9 +290,11 @@ class GamesHome(QWidget):
     def apply_libraries(self) -> None:
         """Only the libraries chosen in Settings; no heading when none is left."""
         hidden = set(self.tab.library_settings.get("hidden", []))
-        self.windows_card.setVisible(False)  # (shown below when the drive has the folder)
-        count = len(self.tab.windows_games)
-        self.windows_card.subtitle.setText(f"{count} game{'s' if count != 1 else ''}" if count else "Proton / Wine")
+        for card, games, idle in ((self.windows_card, self.tab.windows_games, "Proton / Wine"),
+                                  (self.linux_card, self.tab.linux_games, "Native games")):
+            card.setVisible(False)  # (shown below when the drive has the folder)
+            count = len(games)
+            card.subtitle.setText(f"{count} game{'s' if count != 1 else ''}" if count else idle)
         for key, card in self.library_cards().items():
             card.setVisible(key not in hidden)
         any_shown = any(key not in hidden for key in self.library_cards()) or self.add_card.isVisibleTo(self)
@@ -324,9 +333,9 @@ class GamesHome(QWidget):
         if isinstance(game, WindowsGame):
             from gamingcrypt.ui.wine_pages import WindowsCard
 
-            card = WindowsCard(game, covers=self.tab.windows_covers)
-            card.meta.setText(f"Windows · {card.meta.text()}")
-            card.clicked.connect(self.tab.open_windows_game)
+            card = WindowsCard(game, covers=getattr(self.tab, f"{game.KIND}_covers"))
+            card.meta.setText(f"{game.LABEL} · {card.meta.text()}")
+            card.clicked.connect(getattr(self.tab, f"open_{game.KIND}_game"))
             return card
         if isinstance(game, RomGame):
             from gamingcrypt.emulation.systems import short_name
@@ -347,7 +356,7 @@ class GamesHome(QWidget):
         self.continue_card.setVisible(not searching and self.continue_card.game is not None)
         self.results_heading.setText(f'Results for "{query.strip()}"' if searching else "Installed games")
         words = query.casefold().split()
-        roms = [g for games in [*self.tab.roms.values(), self.tab.windows_games] for g in games
+        roms = [g for games in [*self.tab.roms.values(), self.tab.pc_games()] for g in games
                 if all(w in g.name.casefold() for w in words)]
         # Steam games and emulated ones together, by name
         matches = sorted(filter_games(self.installed, query, installed_only=True) + roms,
@@ -387,7 +396,8 @@ class GamesTab(QStackedWidget):
     """Navigation stack: home -> Steam library -> game details / store."""
 
     def __init__(self, service, library_path: str = "", parent: QWidget | None = None,
-                 library_settings: dict | None = None, emulation_root: str = "", windows_root: str = ""):
+                 library_settings: dict | None = None, emulation_root: str = "", windows_root: str = "",
+                 linux_root: str = ""):
         super().__init__(parent)
         self.service = service
         # shared with the config: Settings changes it, apply_libraries() shows it
@@ -415,6 +425,17 @@ class GamesTab(QStackedWidget):
             self.windows_covers = WindowsCovers(self.windows_root)
         else:
             self.windows_covers = None
+        # native Linux games: the same, a folder each in <drive>/Linux Games
+        self.linux_root = _Path(linux_root) if linux_root else None
+        self.linux_games: list = []
+        self.linux_launcher = None  # set by the app: LinuxGame -> (ok, message)
+        self._linux_runners = None
+        if self.linux_root is not None:
+            from gamingcrypt.wine.covers import Covers as PcCovers
+
+            self.linux_covers = PcCovers(self.linux_root)  # Steam's store knows most Linux games too
+        else:
+            self.linux_covers = None
         self.rom_launcher = None  # set by the app: RomGame -> (ok, message)
         self.core_fetcher = None  # (paths, system, wanted) -> core path: downloads missing RetroArch cores
         self._fetching_cores = False
@@ -492,6 +513,7 @@ class GamesTab(QStackedWidget):
 
     def reload_roms(self) -> None:
         self.reload_windows()
+        self.reload_linux()
         if self.emulation is None:
             return
         paths = self.emulation
@@ -508,13 +530,13 @@ class GamesTab(QStackedWidget):
         run_async(work, self._roms_loaded, lambda _e: None, owner=self)
 
     def favorites(self) -> list[int]:
-        """The starred games that are still here: a removed (or renamed) ROM or Windows game keeps
-        its star - it's back when the game is - but isn't counted. Steam games always are (the
+        """The starred games that are still here: a removed (or renamed) ROM, Windows or Linux game
+        keeps its star - it's back when the game is - but isn't counted. Steam games always are (the
         Favorites page shows uninstalled ones too)."""
-        from gamingcrypt.wine.library import WINE_APPID_BASE
+        from gamingcrypt.linux.library import LINUX_APPID_BASE
 
-        here = {g.appid for games in [*self.roms.values(), self.windows_games] for g in games}
-        return [appid for appid in self.profiles.favorites() if appid < WINE_APPID_BASE or appid in here]
+        here = {g.appid for games in [*self.roms.values(), self.pc_games()] for g in games}
+        return [appid for appid in self.profiles.favorites() if appid < LINUX_APPID_BASE or appid in here]
 
     def _roms_loaded(self, found: dict) -> None:
         self.roms = found
@@ -554,7 +576,7 @@ class GamesTab(QStackedWidget):
         from gamingcrypt.ui.wine_pages import WindowsLibraryPage
 
         page = self.currentWidget()
-        if isinstance(page, WindowsLibraryPage) and [g.appid for g in page.games] != [g.appid for g in games]:
+        if type(page) is WindowsLibraryPage and [g.appid for g in page.games] != [g.appid for g in games]:
             self.back()  # open again with what's there now
             self.open_windows_library()
         self.home.apply_libraries()
@@ -563,7 +585,12 @@ class GamesTab(QStackedWidget):
         self.home.refresh_results()
 
     def windows_by_appid(self, appid: int):
-        return next((g for g in self.windows_games if g.appid == appid), None)
+        """A Windows or Linux game by its id."""
+        return next((g for g in self.pc_games() if g.appid == appid), None)
+
+    def pc_games(self) -> list:
+        """The Windows and the Linux games."""
+        return [*self.windows_games, *self.linux_games]
 
     def windows_runners(self) -> list:
         """Every Proton and Wine (looked for once)."""
@@ -595,6 +622,74 @@ class GamesTab(QStackedWidget):
         page = (self.upload_page_factory or WindowsUploadPage)(self.windows_root)
         page.closed.connect(self._windows_upload_closed)
         self.push(page)
+
+    # Linux games: as the Windows ones ---------------------------------------------------------------
+    def reload_linux(self) -> None:
+        root = self.linux_root
+        if root is None:
+            return
+
+        def work():
+            import os
+
+            from gamingcrypt.linux.library import scan
+
+            if not root.exists() and os.path.ismount(root.parent):
+                root.mkdir(exist_ok=True)  # an unlocked drive: the folder to copy games into
+            return scan(root, sizes=False)
+
+        run_async(work, self._linux_loaded, lambda _e: None, owner=self)
+
+    def _linux_loaded(self, games: list) -> None:
+        for game in games:
+            profile = self.profiles.get(game.appid)
+            game.last_played, game.minutes = profile.get("last_played"), profile.get("minutes", 0)
+        self.linux_games = games
+        from gamingcrypt.ui.wine_pages import LinuxLibraryPage
+
+        page = self.currentWidget()
+        if isinstance(page, LinuxLibraryPage) and [g.appid for g in page.games] != [g.appid for g in games]:
+            self.back()  # open again with what's there now
+            self.open_linux_library()
+        self.home.apply_libraries()
+        self.home.update_continue()
+        self.home.update_favorites()
+        self.home.refresh_results()
+
+    def linux_runners(self) -> list:
+        """Directly - and Steam's runtime when it's there (looked for once)."""
+        if self._linux_runners is None:
+            from gamingcrypt.linux import runners
+
+            self._linux_runners = runners.available()
+        return self._linux_runners
+
+    def open_linux_library(self) -> None:
+        from gamingcrypt.ui.wine_pages import LinuxLibraryPage, first_card
+
+        page = LinuxLibraryPage(self, self.linux_games)
+        self.push(page)
+        first_card(page)
+
+    def open_linux_game(self, game) -> None:
+        from gamingcrypt.ui.wine_pages import LinuxGamePage
+
+        page = LinuxGamePage(self, game)
+        self.push(page)
+        page.main_button.setFocus()
+
+    def open_linux_upload(self) -> None:
+        from gamingcrypt.ui.wine_pages import LinuxUploadPage
+
+        if self.linux_root is None:
+            return
+        page = (self.upload_page_factory or LinuxUploadPage)(self.linux_root)
+        page.closed.connect(self._linux_upload_closed)
+        self.push(page)
+
+    def _linux_upload_closed(self) -> None:
+        self.back()
+        self.reload_linux()
 
     def _windows_upload_closed(self) -> None:
         self.back()

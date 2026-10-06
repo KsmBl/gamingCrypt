@@ -659,11 +659,12 @@ class MainWindow(QMainWindow):
         """Stay visible ("Starting …") until the game draws, then step aside."""
         from gamingcrypt.emulation.library import EMU_APPID_BASE
 
+        from gamingcrypt.linux.library import is_linux_appid
         from gamingcrypt.movies.library import is_movie_appid
         from gamingcrypt.wine.library import is_wine_appid
 
         games = self.shell.pages.get("Games") if self.shell else None
-        if is_wine_appid(appid):  # a Windows game (Proton / Wine): Steam's patience - launchers restart
+        if is_wine_appid(appid) or is_linux_appid(appid):  # Windows / Linux game: Steam's patience (launchers)
             name = self.game_name(appid)
             self.game_watcher.describe = lambda a: f"Starting {name}…"
             self.launch_overlay.show_for(name, appid, None)
@@ -756,11 +757,13 @@ class MainWindow(QMainWindow):
 
     # running speed of RetroArch games ----------------------------------------------------------
     def emulated_game_in_front(self) -> bool:
-        """Steam shows its own volume indicator over its games - over emulators, movies and Windows
-        games started here nobody does."""
+        """Steam shows its own volume indicator over its games - over emulators, movies and Windows /
+        Linux games started here nobody does."""
+        from gamingcrypt.linux.library import is_linux_appid
         from gamingcrypt.wine.library import is_wine_appid
 
-        windows = self.game_watcher.active and is_wine_appid(self.game_watcher.appid)
+        appid = self.game_watcher.appid
+        windows = self.game_watcher.active and (is_wine_appid(appid) or is_linux_appid(appid))
         return not self.isVisible() and (self.running_rom() is not None or self.running_movie() is not None
                                          or windows)
 
@@ -796,8 +799,36 @@ class MainWindow(QMainWindow):
             log.warning("Windows game %s: %s", game.name, message)
         return ok, message
 
+    # Linux games: as the Windows ones, without Proton / Wine -------------------------------------
+    def launch_linux(self, game) -> tuple[bool, str]:
+        """Its start file - directly, or in Steam's runtime when that was chosen."""
+        import time
+
+        from gamingcrypt.linux import library as linux
+        from gamingcrypt.linux import runners
+        from gamingcrypt.ui.tour import data_dir
+
+        games = self.shell.pages.get("Games") if self.shell else None
+        profile = self.game_profiles.get(game.appid)
+        exe = profile.get("exe") or next(iter(linux.executables(game)), None)
+        if exe is None:
+            return False, ("There's no program or start script in its folder - copy the whole (unpacked) game "
+                           "folder over the network share")
+        found = games.linux_runners() if hasattr(games, "linux_runners") else runners.available()
+        runner = runners.pick(found, profile.get("runner"))
+        pads = self.input_service.game_env() if self.input_service is not None else {}  # SDL games too
+        ok, message = runners.launch(game, exe, runner, data_dir(), config_mod.cache_dir() / "logs", more_env=pads)
+        if ok:
+            log.info("starting Linux game %s: %s (%s)", game.name, exe, runner.label)
+            self._windows_started = getattr(self, "_windows_started", {})
+            self._windows_started[game.appid] = time.time()
+            self.game_launched(game.appid)
+        else:
+            log.warning("Linux game %s: %s", game.name, message)
+        return ok, message
+
     def windows_game_ended(self, appid: int | None) -> None:
-        """Play time and "last played" of a Windows game (Steam keeps its own games')."""
+        """Play time and "last played" of a Windows or Linux game (Steam keeps its own games')."""
         import time
 
         started = getattr(self, "_windows_started", {}).pop(appid, None) if appid is not None else None
@@ -809,6 +840,8 @@ class MainWindow(QMainWindow):
         games = self.shell.pages.get("Games") if self.shell else None
         if hasattr(games, "reload_windows"):
             games.reload_windows()  # Continue playing, Recently played
+        if hasattr(games, "reload_linux"):
+            games.reload_linux()
 
     def video_tabs(self) -> list:
         """Movies and Shows: what the player plays."""
@@ -1269,6 +1302,8 @@ class MainWindow(QMainWindow):
                 games.rom_launcher = self.launch_rom
             if hasattr(games, "windows_launcher"):
                 games.windows_launcher = self.launch_windows
+            if hasattr(games, "linux_launcher"):
+                games.linux_launcher = self.launch_linux
             if hasattr(games, "layout_store"):
                 from gamingcrypt.emulation import layouts
 
@@ -1442,8 +1477,9 @@ def default_pages(config: dict) -> dict[str, QWidget]:
     libraries = config.setdefault("libraries", {"hidden": []})
     emulation_root = os.path.join(mount_point, "Emulation") if mount_point else ""
     windows_root = os.path.join(mount_point, "Windows Games") if mount_point else ""
+    linux_root = os.path.join(mount_point, "Linux Games") if mount_point else ""
     games = GamesTab(service, library_path=library_path, library_settings=libraries, emulation_root=emulation_root,
-                     windows_root=windows_root)
+                     windows_root=windows_root, linux_root=linux_root)
     from gamingcrypt.emulation import cores, retroarch
 
     if retroarch.available():

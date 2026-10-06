@@ -92,3 +92,29 @@ def window(w: int, h: int) -> QPixmap:
         painter.drawEllipse(QPointF(body.left() + size * (0.1 + i * 0.09), body.top() + body.height() * 0.12), r, r)
     painter.end()
     return pixmap
+
+
+def penguin(w: int, h: int) -> QPixmap:
+    """Linux games: a penguin - drawn, generic (dark with a white belly; outlined for the dark theme)."""
+    size = min(w, h)
+    pixmap, painter = _pixmap(size, size)
+    dark, white = QColor("#23262e"), QColor("#f4f4f4")
+    painter.setPen(QPen(QColor(theme.TEXT), max(1.5, size / 40)))
+    painter.setBrush(dark)
+    painter.drawEllipse(QRectF(size * 0.22, size * 0.24, size * 0.56, size * 0.66))  # body
+    painter.drawEllipse(QRectF(size * 0.3, size * 0.04, size * 0.4, size * 0.38))  # head
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.drawEllipse(QRectF(size * 0.31, size * 0.2, size * 0.38, size * 0.3))  # neck, over the outline
+    painter.setBrush(white)
+    painter.drawEllipse(QRectF(size * 0.32, size * 0.42, size * 0.36, size * 0.44))  # belly
+    for x in (0.43, 0.57):
+        painter.setBrush(white)
+        painter.drawEllipse(QPointF(size * x, size * 0.19), size * 0.05, size * 0.06)  # eyes
+        painter.setBrush(dark)
+        painter.drawEllipse(QPointF(size * x, size * 0.2), size * 0.022, size * 0.03)
+    painter.setBrush(QColor("#f5a623"))
+    painter.drawEllipse(QRectF(size * 0.42, size * 0.26, size * 0.16, size * 0.08))  # beak
+    painter.drawEllipse(QRectF(size * 0.2, size * 0.84, size * 0.24, size * 0.1))  # feet
+    painter.drawEllipse(QRectF(size * 0.56, size * 0.84, size * 0.24, size * 0.1))
+    painter.end()
+    return pixmap

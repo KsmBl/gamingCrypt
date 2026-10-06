@@ -242,10 +242,12 @@ def test_default_pages_pass_mount_point_to_games(monkeypatch):
     seen = {}
 
     class Probe:
-        def __init__(self, service, library_path="", library_settings=None, emulation_root="", windows_root=""):
+        def __init__(self, service, library_path="", library_settings=None, emulation_root="", windows_root="",
+                     linux_root=""):
             seen["path"] = library_path
             seen["libraries"] = library_settings
             seen["windows"] = windows_root
+            seen["linux"] = linux_root
 
     monkeypatch.setattr(games_tab, "GamesTab", Probe)
     cfg = configured()
@@ -254,6 +256,7 @@ def test_default_pages_pass_mount_point_to_games(monkeypatch):
     assert seen["path"].endswith("/GamingCrypt") and not seen["path"].startswith("~")
     assert seen["libraries"] is cfg["libraries"]  # shared: Settings changes reach the Games tab
     assert seen["windows"].endswith("/GamingCrypt/Windows Games")  # Windows games on the drive too
+    assert seen["linux"].endswith("/GamingCrypt/Linux Games")  # and Linux games
     cfg["steam"]["auto_library"] = False
     app.default_pages(cfg)
     assert seen["path"] == ""

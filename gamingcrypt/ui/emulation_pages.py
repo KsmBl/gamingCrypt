@@ -427,6 +427,9 @@ class RomGamePage(QWidget):
     def toggle_favorite(self, on: bool) -> None:
         self._favorite_text()
         self.tab.profiles.set(self.game.appid, "favorite", True if on else None)
+        home = getattr(self.tab, "home", None)
+        if home is not None and hasattr(home, "update_favorites"):
+            home.update_favorites()  # the Favorites card's count
 
     def play(self) -> None:
         launcher = getattr(self.tab, "rom_launcher", None)

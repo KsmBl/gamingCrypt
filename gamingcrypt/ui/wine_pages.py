@@ -1,7 +1,10 @@
-"""Games tab: the Windows games library (Proton / Wine), a game's page and how games get there.
+"""Games tab: the Windows games library (Proton / Wine), a game's page and how games get there -
+and the same for native Linux games (the Linux* classes at the end).
 
 A game is a folder copied over the network share as it is (<drive>/Windows Games/<Game>);
-its start file and what runs it (a Proton or a Wine) are chosen in its Options.
+its start file and what runs it (a Proton or a Wine) are chosen in its Options. The tab has the
+same pieces per kind ("windows" / "linux"): <kind>_covers, <kind>_launcher, <kind>_runners(),
+open_<kind>_game, open_<kind>_upload.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from gamingcrypt.ui.game_widgets import (COVER_H, COVER_W, Cover, Tappable, card
 from gamingcrypt.ui.movies_tab import MovieUploadPage
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import FlowLayout, big_button, enable_touch_scroll, set_status, settle_focus
+from gamingcrypt.linux import library as linux_library
 from gamingcrypt.wine import library
 from gamingcrypt.wine.library import WindowsGame
 
@@ -80,6 +84,11 @@ class WindowsCard(Tappable):
 class WindowsLibraryPage(QWidget):
     """Every Windows game, with search - and how to add one."""
 
+    KIND = "windows"
+    TITLE = "Windows games"
+    EMPTY = ("No Windows games yet. Copy each game as a folder over the network share "
+             "(⬆ Add games) - then pick its start file on its page.")
+
     def __init__(self, tab, games: list[WindowsGame], parent: QWidget | None = None):
         super().__init__(parent)
         self.tab, self.games = tab, games
@@ -87,11 +96,11 @@ class WindowsLibraryPage(QWidget):
         layout.setContentsMargins(30, 16, 30, 10)
         top = QHBoxLayout()
         top.addWidget(tab.back_button())
-        title = QLabel("Windows games")
+        title = QLabel(self.TITLE)
         title.setObjectName("title")
         top.addWidget(title, 1)
         self.add_button = big_button("⬆  Add games")
-        self.add_button.clicked.connect(tab.open_windows_upload)
+        self.add_button.clicked.connect(getattr(tab, f"open_{self.KIND}_upload"))
         top.addWidget(self.add_button)
         layout.addLayout(top)
         self.search = QLineEdit()
@@ -99,8 +108,7 @@ class WindowsLibraryPage(QWidget):
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.refresh)
         layout.addWidget(self.search)
-        self.empty = QLabel("No Windows games yet. Copy each game as a folder over the network share "
-                            "(⬆ Add games) - then pick its start file on its page.")
+        self.empty = QLabel(self.EMPTY)
         self.empty.setObjectName("subtitle")
         self.empty.setWordWrap(True)
         self.empty.setVisible(not games)
@@ -115,8 +123,8 @@ class WindowsLibraryPage(QWidget):
         layout.addWidget(scroll, 1)
         self.cards: dict[int, WindowsCard] = {}
         for game in games:
-            card = WindowsCard(game, covers=getattr(tab, "windows_covers", None))
-            card.clicked.connect(tab.open_windows_game)
+            card = WindowsCard(game, covers=getattr(tab, f"{self.KIND}_covers", None))
+            card.clicked.connect(getattr(tab, f"open_{self.KIND}_game"))
             self.cards[game.appid] = card
             self.grid.addWidget(card)
         self.shown: list[int] = [g.appid for g in games]
@@ -185,6 +193,18 @@ class RemoveWindowsConfirm(QFrame):
 class WindowsGamePage(QWidget):
     """A Windows game: Play; Options - start file, Proton / Wine, remove; favorite."""
 
+    LIB = library  # what finds its start files
+    NO_START_FILE = "No .exe file in its folder - copy the whole game folder over the network share"
+    NO_RUNNER = "No Proton or Wine found"
+    DIDNT_START = "It didn't start - see Options (start file, Proton / Wine)"
+
+    def runs_text(self) -> str:
+        return f"Runs with {self.runner_combo.currentText()}"
+
+    def saves_note(self) -> str:
+        return (f"Saves and settings: its own Wine prefix on the drive "
+                f"(Windows Games/{library.PREFIXES}/{self.game.path.name})")
+
     def __init__(self, tab, game: WindowsGame, parent: QWidget | None = None):
         super().__init__(parent)
         self.tab, self.game = tab, game
@@ -199,7 +219,7 @@ class WindowsGamePage(QWidget):
         body.setSpacing(36)
         self.cover = Cover()
         self.cover.setFixedSize(300, 450)
-        load_windows_cover(self.cover, game, getattr(tab, "windows_covers", None), 300, 450)
+        load_windows_cover(self.cover, game, getattr(tab, f"{game.KIND}_covers", None), 300, 450)
         body.addWidget(self.cover, alignment=Qt.AlignmentFlag.AlignTop)
         info = QVBoxLayout()
         info.setSpacing(14)
@@ -244,8 +264,7 @@ class WindowsGamePage(QWidget):
             grid.addWidget(label, line, 0)
             grid.addWidget(combo, line, 1)
         options.addLayout(grid)
-        self.prefix_note = QLabel(f"Saves and settings: its own Wine prefix on the drive "
-                                  f"(Windows Games/{library.PREFIXES}/{game.path.name})")
+        self.prefix_note = QLabel(self.saves_note())
         self.prefix_note.setObjectName("cardMeta")
         self.prefix_note.setWordWrap(True)
         options.addWidget(self.prefix_note)
@@ -275,7 +294,7 @@ class WindowsGamePage(QWidget):
         self.runner_combo.currentIndexChanged.connect(self.runner_chosen)
         self._fill_runners()
         self._show_facts()
-        run_async(lambda: (library.executables(game), library.folder_size(game.path)), self._scanned,
+        run_async(lambda: (self.LIB.executables(game), library.folder_size(game.path)), self._scanned,
                   lambda _e: None, owner=self)
 
     # what's in the folder, what runs it -------------------------------------------------
@@ -292,20 +311,21 @@ class WindowsGamePage(QWidget):
         self.exe_combo.setCurrentIndex(max(0, self.exe_combo.findData(chosen)))
         self.exe_combo.blockSignals(False)
         if not exes:
-            self.say("No .exe file in its folder - copy the whole game folder over the network share", error=True)
+            self.say(self.NO_START_FILE, error=True)
         elif not chosen:
             self.tab.profiles.set(self.game.appid, "exe", exes[0])  # the likeliest one, until another is picked
         self._show_facts()
 
     def _fill_runners(self) -> None:
-        runners = self.tab.windows_runners() if hasattr(self.tab, "windows_runners") else []
+        find = getattr(self.tab, f"{self.game.KIND}_runners", None)
+        runners = find() if find is not None else []
         chosen = self.tab.profiles.get(self.game.appid).get("runner")
         self.runner_combo.blockSignals(True)
         self.runner_combo.clear()
         for runner in runners:
             self.runner_combo.addItem(runner.label, runner.id)
         if not runners:
-            self.runner_combo.addItem("No Proton or Wine found", None)
+            self.runner_combo.addItem(self.NO_RUNNER, None)
         self.runner_combo.setCurrentIndex(max(0, self.runner_combo.findData(chosen)))
         self.runner_combo.blockSignals(False)
 
@@ -322,16 +342,16 @@ class WindowsGamePage(QWidget):
         game = self.game
         game.last_played = profile.get("last_played") or game.last_played
         game.minutes = profile.get("minutes", game.minutes)
-        lines = ["Windows game", f"Starts {profile['exe']}" if profile.get("exe") else "",
-                 f"Runs with {self.runner_combo.currentText()}", format_size(self.size) if self.size else "",
+        lines = [f"{game.LABEL} game", f"Starts {profile['exe']}" if profile.get("exe") else "",
+                 self.runs_text(), format_size(self.size) if self.size else "",
                  played(game)]
         self.facts.setText("\n".join(line for line in lines if line))
 
     # actions ----------------------------------------------------------------------------
     def play(self) -> None:
-        launcher = getattr(self.tab, "windows_launcher", None)
+        launcher = getattr(self.tab, f"{self.game.KIND}_launcher", None)
         if launcher is None:
-            self.say("Windows games can't be started here", error=True)
+            self.say(f"{self.game.LABEL} games can't be started here", error=True)
             return
         ok, message = launcher(self.game)
         self.say("" if ok else message, error=not ok)
@@ -342,6 +362,9 @@ class WindowsGamePage(QWidget):
     def toggle_favorite(self, on: bool) -> None:
         self._favorite_text()
         self.tab.profiles.set(self.game.appid, "favorite", True if on else None)
+        home = getattr(self.tab, "home", None)
+        if home is not None and hasattr(home, "update_favorites"):
+            home.update_favorites()  # the Favorites card's count
 
     def toggle_options(self, visible: bool) -> None:
         self.options_panel.setVisible(visible)
@@ -380,7 +403,7 @@ class WindowsGamePage(QWidget):
 
     def game_session_ended(self, appid: int, failed: bool) -> None:
         if appid == self.game.appid:
-            self.say("It didn't start - see Options (start file, Proton / Wine)" if failed else "", error=failed)
+            self.say(self.DIDNT_START if failed else "", error=failed)
             self._show_facts()
 
 
@@ -393,20 +416,59 @@ class WindowsUploadPage(MovieUploadPage):
     FOLDERS = ("Network share: the Windows Games folder - drop the game folders in · Browser: single files "
                "into a game you already have (e.g. a patch)")
 
+    KIND = "windows"
+
     def __init__(self, root: Path, **kwargs):
         from gamingcrypt.emulation.upload_server import UploadServer
 
         kwargs.setdefault("server_factory", lambda folder, received: UploadServer(
-            None, received, folders=lambda: upload_folders(folder)))
+            None, received, folders=lambda: upload_folders(folder, self.KIND)))
         super().__init__(Path(root), **kwargs)
 
 
-def upload_folders(root: Path) -> dict[str, tuple[str, Path]]:
+def upload_folders(root: Path, kind: str = "windows") -> dict[str, tuple[str, Path]]:
     """Every game's folder (the browser can't make new folders: new games come over the share)."""
-    return {f"windows/{g.path.name}": (f"Game: {g.name}", g.path) for g in library.scan(root, sizes=False)}
+    games = linux_library.scan(root, sizes=False) if kind == "linux" else library.scan(root, sizes=False)
+    return {f"{kind}/{g.path.name}": (f"Game: {g.name}", g.path) for g in games}
 
 
 def first_card(page) -> None:
     """Library pages open on their first game."""
     if page.shown:
         settle_focus(page, page.cards.get(page.shown[0]))
+
+
+# --- native Linux games: the same pages, without Proton / Wine ----------------------------------
+
+class LinuxLibraryPage(WindowsLibraryPage):
+    KIND = "linux"
+    TITLE = "Linux games"
+    EMPTY = ("No Linux games yet. Copy each game as a folder over the network share (⬆ Add games) - "
+             "unpacked, e.g. from GOG, itch.io or Humble - then pick its start file on its page.")
+
+
+class LinuxGamePage(WindowsGamePage):
+    """A Linux game: Play; Options - start file, directly or in Steam's runtime, remove; favorite."""
+
+    LIB = linux_library
+    NO_START_FILE = ("No program or start script in its folder - copy the whole (unpacked) game folder over "
+                     "the network share")
+    NO_RUNNER = "Directly"
+    DIDNT_START = "It didn't start - see Options (start file, Directly / Steam Runtime)"
+
+    def runs_text(self) -> str:
+        return "Runs directly" if self.runner_combo.currentData() in (None, "direct") else "Runs in Steam's runtime"
+
+    def saves_note(self) -> str:
+        return "Saves and settings: where the game keeps them - usually in your home folder (~/.local/share, ~/.config)"
+
+
+class LinuxUploadPage(WindowsUploadPage):
+    KIND = "linux"
+    TITLE = "Add Linux games"
+    HINT = ("Copy a game as a whole folder over the network share (from a PC in the same Wi-Fi) into the "
+            "Linux Games folder of your encrypted drive - one folder per game, unpacked (GOG installers: "
+            "install on a PC first, or unpack them). Then open it here and pick its start file (a program "
+            "or .sh script) in its Options. Both ways work only while this page is open.")
+    FOLDERS = ("Network share: the Linux Games folder - drop the game folders in · Browser: single files "
+               "into a game you already have (e.g. a patch)")

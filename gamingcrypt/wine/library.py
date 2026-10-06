@@ -34,10 +34,14 @@ class WindowsGame:
     last_played: int | None = None
     minutes: int = 0
 
+    KIND = "windows"  # a Linux game (linux.library.LinuxGame) is the same, without Proton / Wine
+    LABEL = "Windows"
+    APPID_BASE = WINE_APPID_BASE
+
     @property
     def appid(self) -> int:
         """Stable id (favorites, settings, the game watcher) - not a Steam app."""
-        return WINE_APPID_BASE | (zlib.crc32(self.path.name.encode()) & 0x0FFFFFFF)
+        return self.APPID_BASE | (zlib.crc32(self.path.name.encode()) & 0x0FFFFFFF)
 
     @property
     def key(self) -> str:
@@ -59,7 +63,7 @@ def folder_size(path: Path) -> int:
     return total
 
 
-def scan(root: Path, sizes: bool = True) -> list[WindowsGame]:
+def scan(root: Path, sizes: bool = True, kind: type = WindowsGame) -> list[WindowsGame]:
     """Every folder in the Windows Games folder (not hidden ones, not the prefixes)."""
     root = Path(root)
     try:
@@ -67,7 +71,7 @@ def scan(root: Path, sizes: bool = True) -> list[WindowsGame]:
                          key=lambda p: p.name.casefold())
     except OSError:
         return []
-    return [WindowsGame(p, p.name, folder_size(p) if sizes else 0) for p in folders]
+    return [kind(p, p.name, folder_size(p) if sizes else 0) for p in folders]
 
 
 def _words(text: str) -> set[str]:

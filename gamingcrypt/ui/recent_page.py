@@ -18,6 +18,11 @@ def recently_played(games: list[SteamGame], limit: int = LIMIT) -> list[SteamGam
     return sorted(played, key=lambda g: g.last_played, reverse=True)[:limit]
 
 
+def pc_games(tab) -> list:
+    """The tab's Windows and Linux games."""
+    return [*getattr(tab, "windows_games", []), *getattr(tab, "linux_games", [])]
+
+
 class RecentPage(QWidget):
     title_text = "Recently played"
 
@@ -53,7 +58,7 @@ class RecentPage(QWidget):
 
     def _loaded(self, games: list[SteamGame]) -> None:
         self.loading = False
-        roms = [r for rs in [*getattr(self.tab, "roms", {}).values(), getattr(self.tab, "windows_games", [])]
+        roms = [r for rs in [*getattr(self.tab, "roms", {}).values(), pc_games(self.tab)]
                 for r in rs if r.last_played]
         recent = recently_played(list(games) + roms)  # Steam and emulated games together
         self.order = [g.appid for g in recent]
@@ -79,8 +84,8 @@ class RecentPage(QWidget):
         if isinstance(game, WindowsGame):
             from gamingcrypt.ui.wine_pages import WindowsCard
 
-            card = WindowsCard(game, covers=getattr(self.tab, "windows_covers", None))
-            card.clicked.connect(self.tab.open_windows_game)
+            card = WindowsCard(game, covers=getattr(self.tab, f"{game.KIND}_covers", None))
+            card.clicked.connect(getattr(self.tab, f"open_{game.KIND}_game"))
             return card
         if isinstance(game, RomGame):
             from gamingcrypt.ui.emulation_pages import RomCard
@@ -106,7 +111,7 @@ class FavoritesPage(RecentPage):
     def _loaded(self, games: list[SteamGame]) -> None:
         self.loading = False
         wanted = set(self.tab.profiles.favorites())
-        roms = [r for rs in [*getattr(self.tab, "roms", {}).values(), getattr(self.tab, "windows_games", [])]
+        roms = [r for rs in [*getattr(self.tab, "roms", {}).values(), pc_games(self.tab)]
                 for r in rs]
         favorites = sorted((g for g in list(games) + roms if g.appid in wanted), key=lambda g: g.name.lower())
         self.order = [g.appid for g in favorites]
