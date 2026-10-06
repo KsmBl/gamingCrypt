@@ -25,7 +25,7 @@ from gamingcrypt.ui.widgets import (
 
 
 # Libraries on the Games tab: id -> name (Settings -> Games -> Libraries hides them)
-LIBRARIES = {"favorites": "Favorites", "steam": "Steam", "recent": "Recently played"}
+LIBRARIES = {"favorites": "Favorites", "steam": "Steam", "recent": "Recently played", "windows": "Windows games"}
 
 
 def heading(text: str) -> QLabel:
@@ -78,6 +78,12 @@ class ContinueCard(QFrame):
 
         return isinstance(self.game, RomGame)
 
+    @property
+    def windows(self) -> bool:
+        from gamingcrypt.wine.library import WindowsGame
+
+        return isinstance(self.game, WindowsGame)
+
     def set_game(self, game) -> None:
         """A Steam game or an emulated one (RomGame)."""
         self.game = game
@@ -85,6 +91,13 @@ class ContinueCard(QFrame):
         if game is None:
             return
         self.title.setText(game.name)
+        if self.windows:
+            from gamingcrypt.ui.wine_pages import load_windows_cover
+
+            self.meta.setText(f"Windows · last played {format_date(game.last_played)} · "
+                              f"{format_playtime(game.minutes)}")
+            load_windows_cover(self.cover, game, self.tab.windows_covers, 150, 225)
+            return
         if self.emulated:
             from gamingcrypt.emulation.systems import short_name
             from gamingcrypt.ui.emulation_pages import load_rom_cover
@@ -100,6 +113,12 @@ class ContinueCard(QFrame):
     def play(self) -> None:
         if self.game is None:
             return
+        if self.windows:
+            launcher = self.tab.windows_launcher
+            ok, message = launcher(self.game) if launcher else (False, "Windows games can't be started here")
+            if not ok:
+                self.tab.home.show_notice(message, error=True)
+            return
         if self.emulated:
             launcher = self.tab.rom_launcher
             ok, message = launcher(self.game) if launcher else (False, "RetroArch isn't set up yet")
@@ -113,7 +132,9 @@ class ContinueCard(QFrame):
     def details(self) -> None:
         if self.game is None:
             return
-        if self.emulated:
+        if self.windows:
+            self.tab.open_windows_game(self.game)
+        elif self.emulated:
             self.tab.open_rom(self.game)
         else:
             self.tab.open_game(self.game.appid)
@@ -180,6 +201,9 @@ class GamesHome(QWidget):
         self.recent_card = SourceCard("Recently played", "Your last 10 games", icon=lambda w, h: icons.clock(h))
         self.recent_card.tapped.connect(tab.open_recent)
         sources.addWidget(self.recent_card)
+        self.windows_card = SourceCard("Windows games", "Proton / Wine", icon=lambda w, h: icons.window(w, h))
+        self.windows_card.tapped.connect(tab.open_windows_library)
+        sources.addWidget(self.windows_card)
         self.add_card = SourceCard("⬆ Add ROMs", "Emulator games, cores, BIOS · over Wi-Fi")
         self.add_card.tapped.connect(tab.open_upload)
         self.add_card.setVisible(tab.emulation is not None)
@@ -221,12 +245,14 @@ class GamesHome(QWidget):
         self.refresh_results()
 
     def update_continue(self) -> None:
-        roms = [game for games in self.tab.roms.values() for game in games]
+        roms = [game for games in self.tab.roms.values() for game in games] + list(self.tab.windows_games)
         self.continue_card.set_game(last_played(self.installed, roms))
 
     def library_cards(self) -> dict:
         cards = {"favorites": self.favorites_card, "steam": self.steam_card, "recent": self.recent_card}
         cards.update({f"emu:{sid}": card for sid, card in self.system_cards.items()})
+        if self.tab.windows_root is not None:
+            cards["windows"] = self.windows_card
         return cards
 
     def set_systems(self, found: dict) -> None:
@@ -249,7 +275,7 @@ class GamesHome(QWidget):
         from gamingcrypt.emulation.systems import SYSTEMS
 
         self.sources_row.take_all()
-        for card in [self.favorites_card, self.steam_card, self.recent_card,
+        for card in [self.favorites_card, self.steam_card, self.recent_card, self.windows_card,
                      *(self.system_cards[s.id] for s in SYSTEMS if s.id in self.system_cards), self.add_card]:
             self.sources_row.addWidget(card)
         self.apply_libraries()
@@ -257,6 +283,9 @@ class GamesHome(QWidget):
     def apply_libraries(self) -> None:
         """Only the libraries chosen in Settings; no heading when none is left."""
         hidden = set(self.tab.library_settings.get("hidden", []))
+        self.windows_card.setVisible(False)  # (shown below when the drive has the folder)
+        count = len(self.tab.windows_games)
+        self.windows_card.subtitle.setText(f"{count} game{'s' if count != 1 else ''}" if count else "Proton / Wine")
         for key, card in self.library_cards().items():
             card.setVisible(key not in hidden)
         any_shown = any(key not in hidden for key in self.library_cards()) or self.add_card.isVisibleTo(self)
@@ -290,6 +319,15 @@ class GamesHome(QWidget):
         """GameCard for an installed Steam game, RomCard (with its system) for an emulated one."""
         from gamingcrypt.emulation.library import RomGame
 
+        from gamingcrypt.wine.library import WindowsGame
+
+        if isinstance(game, WindowsGame):
+            from gamingcrypt.ui.wine_pages import WindowsCard
+
+            card = WindowsCard(game, covers=self.tab.windows_covers)
+            card.meta.setText(f"Windows · {card.meta.text()}")
+            card.clicked.connect(self.tab.open_windows_game)
+            return card
         if isinstance(game, RomGame):
             from gamingcrypt.emulation.systems import short_name
             from gamingcrypt.ui.emulation_pages import RomCard
@@ -309,14 +347,16 @@ class GamesHome(QWidget):
         self.continue_card.setVisible(not searching and self.continue_card.game is not None)
         self.results_heading.setText(f'Results for "{query.strip()}"' if searching else "Installed games")
         words = query.casefold().split()
-        roms = [g for games in self.tab.roms.values() for g in games if all(w in g.name.casefold() for w in words)]
+        roms = [g for games in [*self.tab.roms.values(), self.tab.windows_games] for g in games
+                if all(w in g.name.casefold() for w in words)]
         # Steam games and emulated ones together, by name
         matches = sorted(filter_games(self.installed, query, installed_only=True) + roms,
                          key=lambda g: g.name.casefold())
         from gamingcrypt.ui.emulation_pages import RomCard
+        from gamingcrypt.ui.wine_pages import WindowsCard
 
         focused = self.window().focusWidget() if self.window() else None
-        if isinstance(focused, (GameCard, RomCard)):
+        if isinstance(focused, (GameCard, RomCard, WindowsCard)):
             self.selected_appid = focused.game.appid
         # cards are made once and only re-ordered: typing must stay fast
         for card in self.grid.take_all():
@@ -333,7 +373,7 @@ class GamesHome(QWidget):
         self.grid.invalidate()
         self.result_appids = [g.appid for g in matches]
         card = self.cards.get(self.selected_appid) if self.selected_appid is not None else None
-        if card is not None and card.isVisible() and isinstance(focused, (GameCard, RomCard)):
+        if card is not None and card.isVisible() and isinstance(focused, (GameCard, RomCard, WindowsCard)):
             focus_and_reveal(card)  # hiding/re-adding cards must not lose the selection
         if matches:
             self.empty_label.setText("")
@@ -347,7 +387,7 @@ class GamesTab(QStackedWidget):
     """Navigation stack: home -> Steam library -> game details / store."""
 
     def __init__(self, service, library_path: str = "", parent: QWidget | None = None,
-                 library_settings: dict | None = None, emulation_root: str = ""):
+                 library_settings: dict | None = None, emulation_root: str = "", windows_root: str = ""):
         super().__init__(parent)
         self.service = service
         # shared with the config: Settings changes it, apply_libraries() shows it
@@ -362,6 +402,19 @@ class GamesTab(QStackedWidget):
 
         self.play_log = PlayLog(self.emulation) if self.emulation is not None else None
         self.roms: dict = {}  # system id -> games
+        # Windows games (Proton / Wine): a folder each in <drive>/Windows Games
+        from pathlib import Path as _Path
+
+        self.windows_root = _Path(windows_root) if windows_root else None
+        self.windows_games: list = []
+        self.windows_launcher = None  # set by the app: WindowsGame -> (ok, message)
+        self._runners = None
+        if self.windows_root is not None:
+            from gamingcrypt.wine.covers import Covers as WindowsCovers
+
+            self.windows_covers = WindowsCovers(self.windows_root)
+        else:
+            self.windows_covers = None
         self.rom_launcher = None  # set by the app: RomGame -> (ok, message)
         self.core_fetcher = None  # (paths, system, wanted) -> core path: downloads missing RetroArch cores
         self._fetching_cores = False
@@ -437,6 +490,7 @@ class GamesTab(QStackedWidget):
         self.reload_roms()
 
     def reload_roms(self) -> None:
+        self.reload_windows()
         if self.emulation is None:
             return
         paths = self.emulation
@@ -463,6 +517,76 @@ class GamesTab(QStackedWidget):
         self.home.update_continue()
         self.home.refresh_results()  # emulated games are in "Installed games" too
         self.fetch_missing_cores(found)
+
+    # Windows games -------------------------------------------------------------------------
+    def reload_windows(self) -> None:
+        root = self.windows_root
+        if root is None:
+            return
+
+        def work():
+            import os
+
+            from gamingcrypt.wine.library import scan
+
+            if not root.exists() and os.path.ismount(root.parent):
+                root.mkdir(exist_ok=True)  # an unlocked drive: the folder to copy games into
+            return scan(root, sizes=False)
+
+        run_async(work, self._windows_loaded, lambda _e: None, owner=self)
+
+    def _windows_loaded(self, games: list) -> None:
+        for game in games:
+            profile = self.profiles.get(game.appid)
+            game.last_played, game.minutes = profile.get("last_played"), profile.get("minutes", 0)
+        self.windows_games = games
+        from gamingcrypt.ui.wine_pages import WindowsLibraryPage
+
+        page = self.currentWidget()
+        if isinstance(page, WindowsLibraryPage) and [g.appid for g in page.games] != [g.appid for g in games]:
+            self.back()  # open again with what's there now
+            self.open_windows_library()
+        self.home.apply_libraries()
+        self.home.update_continue()
+        self.home.refresh_results()
+
+    def windows_by_appid(self, appid: int):
+        return next((g for g in self.windows_games if g.appid == appid), None)
+
+    def windows_runners(self) -> list:
+        """Every Proton and Wine (looked for once)."""
+        if self._runners is None:
+            from gamingcrypt.wine import runners
+
+            self._runners = runners.available()
+        return self._runners
+
+    def open_windows_library(self) -> None:
+        from gamingcrypt.ui.wine_pages import WindowsLibraryPage, first_card
+
+        page = WindowsLibraryPage(self, self.windows_games)
+        self.push(page)
+        first_card(page)
+
+    def open_windows_game(self, game) -> None:
+        from gamingcrypt.ui.wine_pages import WindowsGamePage
+
+        page = WindowsGamePage(self, game)
+        self.push(page)
+        page.main_button.setFocus()
+
+    def open_windows_upload(self) -> None:
+        from gamingcrypt.ui.wine_pages import WindowsUploadPage
+
+        if self.windows_root is None:
+            return
+        page = (self.upload_page_factory or WindowsUploadPage)(self.windows_root)
+        page.closed.connect(self._windows_upload_closed)
+        self.push(page)
+
+    def _windows_upload_closed(self) -> None:
+        self.back()
+        self.reload_windows()  # the library page below shows what was copied in (_windows_loaded)
 
     def fetch_missing_cores(self, found: dict) -> None:
         """Systems with games get their RetroArch core in the background (see emulation/cores)."""

@@ -73,3 +73,22 @@ def console(system_id: str, w: int, h: int) -> QPixmap:
         painter.drawRoundedRect(QRectF(x - bw / 2, y - bh / 2, bw, bh), min(bw, bh) / 2, min(bw, bh) / 2)
     painter.end()
     return pixmap
+
+
+def window(w: int, h: int) -> QPixmap:
+    """Windows games: a program window (title bar with its buttons) - generic, no logo."""
+    size = min(w, int(h * 1.25))
+    pixmap, painter = _pixmap(size, int(size * 0.8))
+    pen = QPen(QColor(theme.TEXT), max(2.0, size / 16))
+    painter.setPen(pen)
+    body = QRectF(size * 0.06, size * 0.06, size * 0.88, size * 0.66)
+    painter.drawRoundedRect(body, size * 0.06, size * 0.06)
+    bar = body.top() + body.height() * 0.24
+    painter.drawLine(QPointF(body.left(), bar), QPointF(body.right(), bar))
+    painter.setPen(Qt.PenStyle.NoPen)
+    for i, color in enumerate((theme.DANGER, "#f5c518", theme.SUCCESS)):
+        painter.setBrush(QColor(color))
+        r = size * 0.035
+        painter.drawEllipse(QPointF(body.left() + size * (0.1 + i * 0.09), body.top() + body.height() * 0.12), r, r)
+    painter.end()
+    return pixmap

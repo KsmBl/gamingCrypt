@@ -53,7 +53,8 @@ class RecentPage(QWidget):
 
     def _loaded(self, games: list[SteamGame]) -> None:
         self.loading = False
-        roms = [r for rs in getattr(self.tab, "roms", {}).values() for r in rs if r.last_played]
+        roms = [r for rs in [*getattr(self.tab, "roms", {}).values(), getattr(self.tab, "windows_games", [])]
+                for r in rs if r.last_played]
         recent = recently_played(list(games) + roms)  # Steam and emulated games together
         self.order = [g.appid for g in recent]
         for game in recent:
@@ -73,7 +74,14 @@ class RecentPage(QWidget):
     def _card(self, game):
         """GameCard for Steam games, RomCard for emulated ones."""
         from gamingcrypt.emulation.library import RomGame
+        from gamingcrypt.wine.library import WindowsGame
 
+        if isinstance(game, WindowsGame):
+            from gamingcrypt.ui.wine_pages import WindowsCard
+
+            card = WindowsCard(game, covers=getattr(self.tab, "windows_covers", None))
+            card.clicked.connect(self.tab.open_windows_game)
+            return card
         if isinstance(game, RomGame):
             from gamingcrypt.ui.emulation_pages import RomCard
 
@@ -98,7 +106,8 @@ class FavoritesPage(RecentPage):
     def _loaded(self, games: list[SteamGame]) -> None:
         self.loading = False
         wanted = set(self.tab.profiles.favorites())
-        roms = [r for rs in getattr(self.tab, "roms", {}).values() for r in rs]
+        roms = [r for rs in [*getattr(self.tab, "roms", {}).values(), getattr(self.tab, "windows_games", [])]
+                for r in rs]
         favorites = sorted((g for g in list(games) + roms if g.appid in wanted), key=lambda g: g.name.lower())
         self.order = [g.appid for g in favorites]
         for game in favorites:

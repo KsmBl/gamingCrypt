@@ -316,6 +316,15 @@ install_player() {
     fi
 }
 
+install_windows_games() {
+    # Windows games outside Steam: umu-launcher runs Proton with Steam's runtime, as Steam does
+    command -v umu-run >/dev/null && return 0
+    if command -v pacman >/dev/null; then
+        sudo pacman -S --needed --noconfirm umu-launcher >/dev/null \
+            || warn "could not install umu-launcher (Windows games then start with Proton's own script)"
+    fi
+}
+
 install_sharing() {
     # Settings -> add games over the network: Samba runs only while that page is open
     command -v smbd >/dev/null && return 0
@@ -456,6 +465,7 @@ if [[ $WITH_SUDO -eq 1 ]]; then
     install_sharing
     install_retroarch
     install_player
+    install_windows_games
     ask_boot_questions
     [[ $SESSION -eq 1 ]] && install_session
 else

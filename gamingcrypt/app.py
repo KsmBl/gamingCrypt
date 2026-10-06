@@ -497,6 +497,7 @@ class MainWindow(QMainWindow):
         from gamingcrypt.emulation.library import EMU_APPID_BASE
 
         self.end_game_refresh()  # the screen's own refresh rate again
+        self.windows_game_ended(appid)
         for tab in self.video_tabs():
             if appid is not None:
                 tab.movie_ended(appid)  # watched? where it was stopped
@@ -659,8 +660,16 @@ class MainWindow(QMainWindow):
         from gamingcrypt.emulation.library import EMU_APPID_BASE
 
         from gamingcrypt.movies.library import is_movie_appid
+        from gamingcrypt.wine.library import is_wine_appid
 
         games = self.shell.pages.get("Games") if self.shell else None
+        if is_wine_appid(appid):  # a Windows game (Proton / Wine): Steam's patience - launchers restart
+            name = self.game_name(appid)
+            self.game_watcher.describe = lambda a: f"Starting {name}…"
+            self.launch_overlay.show_for(name, appid, None)
+            self.launch_overlay.set_phase(f"Starting {name}…")
+            self.game_watcher.watch(appid)
+            return
         if is_movie_appid(appid):  # a movie (mpv): up in a moment, gone when it's gone
             from gamingcrypt.ui.game_watcher import QUICK
 
@@ -702,6 +711,8 @@ class MainWindow(QMainWindow):
         game = getattr(games, "games", {}).get(appid) if games is not None else None
         if game is None and games is not None:
             game = getattr(games, "rom_games", {}).get(appid)  # emulated
+        if game is None and games is not None and hasattr(games, "windows_by_appid"):
+            game = games.windows_by_appid(appid)  # Windows (Proton / Wine)
         movie = self.running_movie(appid)
         if movie is not None:
             return movie.title
@@ -743,8 +754,56 @@ class MainWindow(QMainWindow):
 
     # running speed of RetroArch games ----------------------------------------------------------
     def emulated_game_in_front(self) -> bool:
-        """Steam shows its own volume indicator over its games - over emulators and movies nobody does."""
-        return not self.isVisible() and (self.running_rom() is not None or self.running_movie() is not None)
+        """Steam shows its own volume indicator over its games - over emulators, movies and Windows
+        games started here nobody does."""
+        from gamingcrypt.wine.library import is_wine_appid
+
+        windows = self.game_watcher.active and is_wine_appid(self.game_watcher.appid)
+        return not self.isVisible() and (self.running_rom() is not None or self.running_movie() is not None
+                                         or windows)
+
+    # Windows games (Proton / Wine) ---------------------------------------------------------------
+    def launch_windows(self, game) -> tuple[bool, str]:
+        """Its start file with the chosen Proton / Wine (the newest Proton when nothing was chosen)."""
+        import time
+
+        from gamingcrypt.ui.tour import data_dir
+        from gamingcrypt.wine import library as wine
+        from gamingcrypt.wine import runners
+
+        games = self.shell.pages.get("Games") if self.shell else None
+        profile = self.game_profiles.get(game.appid)
+        exe = profile.get("exe") or next(iter(wine.executables(game)), None)
+        if exe is None:
+            return False, "There's no .exe in its folder - copy the whole game folder over the network share"
+        found = games.windows_runners() if hasattr(games, "windows_runners") else runners.available()
+        runner = runners.pick(found, profile.get("runner"))
+        if runner is None:
+            return False, ("No Proton or Wine on this device - install a Proton in Steam (any game: Properties → "
+                           "Compatibility) or Wine")
+        ok, message = runners.launch(game, exe, runner, data_dir(), config_mod.cache_dir() / "logs")
+        if ok:
+            log.info("starting Windows game %s: %s with %s", game.name, exe, runner.label)
+            self._windows_started = getattr(self, "_windows_started", {})
+            self._windows_started[game.appid] = time.time()
+            self.game_launched(game.appid)
+        else:
+            log.warning("Windows game %s: %s", game.name, message)
+        return ok, message
+
+    def windows_game_ended(self, appid: int | None) -> None:
+        """Play time and "last played" of a Windows game (Steam keeps its own games')."""
+        import time
+
+        started = getattr(self, "_windows_started", {}).pop(appid, None) if appid is not None else None
+        if started is None:
+            return
+        profile = self.game_profiles.get(appid)
+        self.game_profiles.set(appid, "minutes", int(profile.get("minutes", 0)) + max(0, round((time.time() - started) / 60)))
+        self.game_profiles.set(appid, "last_played", int(time.time()))
+        games = self.shell.pages.get("Games") if self.shell else None
+        if hasattr(games, "reload_windows"):
+            games.reload_windows()  # Continue playing, Recently played
 
     def video_tabs(self) -> list:
         """Movies and Shows: what the player plays."""
@@ -1203,6 +1262,8 @@ class MainWindow(QMainWindow):
             service.on_big_picture = self.big_picture_opened
             if hasattr(games, "rom_launcher"):
                 games.rom_launcher = self.launch_rom
+            if hasattr(games, "windows_launcher"):
+                games.windows_launcher = self.launch_windows
             if hasattr(games, "layout_store"):
                 from gamingcrypt.emulation import layouts
 
@@ -1374,7 +1435,9 @@ def default_pages(config: dict) -> dict[str, QWidget]:
 
     libraries = config.setdefault("libraries", {"hidden": []})
     emulation_root = os.path.join(mount_point, "Emulation") if mount_point else ""
-    games = GamesTab(service, library_path=library_path, library_settings=libraries, emulation_root=emulation_root)
+    windows_root = os.path.join(mount_point, "Windows Games") if mount_point else ""
+    games = GamesTab(service, library_path=library_path, library_settings=libraries, emulation_root=emulation_root,
+                     windows_root=windows_root)
     from gamingcrypt.emulation import cores, retroarch
 
     if retroarch.available():
