@@ -349,7 +349,7 @@ def test_loading_screen_has_cover_and_spinner(qtbot, monkeypatch):
 
 
 def test_game_page_forgets_starting_message_after_the_game(qtbot, monkeypatch):
-    monkeypatch.setattr(game_watcher, "EXIT_GRACE_S", 0)
+    monkeypatch.setattr(game_watcher, "STEAM", game_watcher.Timing(exit_grace_s=0))
     window, service, calls = make_window(qtbot, monkeypatch)
     games = window.shell.pages["Games"]
     games.open_game(620)
@@ -544,3 +544,31 @@ def test_gaming_mode_follows_games_started_elsewhere(qtbot, monkeypatch):
 def test_no_adopting_outside_gaming_mode(qtbot, monkeypatch):
     window, service, calls = make_window(qtbot, monkeypatch)
     assert not window.adopt_timer.isActive()
+
+
+def test_quick_timing_for_the_movie_player(qtbot):
+    """The movie player: on screen right after it drew, back the moment it's gone."""
+    game, clock = Game(), Clock()
+    w, events = watcher_for(game, clock)
+    w.watch(0x60000001, game_watcher.QUICK)
+    assert w.timer.interval() == 200
+    game.pids, game.drawing = {10}, True
+    w.poll()
+    clock.now += 0.3
+    w.poll()
+    assert events == ["started", "visible"]
+    game.pids = set()
+    w.poll()
+    assert events == ["started", "visible", "finished"]  # no waiting for a restart
+    w.watch(620)  # a Steam game afterwards: Steam's timing again
+    assert w.timer.interval() == game_watcher.POLL_MS and w.timing is game_watcher.STEAM
+    w._stop()
+
+
+def test_quick_timing_gives_up_soon(qtbot):
+    game, clock = Game(), Clock()
+    w, events = watcher_for(game, clock)
+    w.watch(0x60000001, game_watcher.QUICK)
+    clock.now += 21
+    w.poll()
+    assert events == ["failed"]

@@ -657,11 +657,13 @@ class MainWindow(QMainWindow):
         from gamingcrypt.movies.library import is_movie_appid
 
         games = self.shell.pages.get("Games") if self.shell else None
-        if is_movie_appid(appid):  # a movie (mpv)
+        if is_movie_appid(appid):  # a movie (mpv): up in a moment, gone when it's gone
+            from gamingcrypt.ui.game_watcher import QUICK
+
             self.game_watcher.describe = lambda a: "Starting the movie…"
             self.launch_overlay.show_for(self.game_name(appid), appid, None)
             self.launch_overlay.set_phase("Starting the movie…")
-            self.game_watcher.watch(appid)
+            self.game_watcher.watch(appid, QUICK)
             return
         if appid >= EMU_APPID_BASE:  # an emulated game (RetroArch)
             self.game_watcher.describe = lambda a: "Starting RetroArch…"
