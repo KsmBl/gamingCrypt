@@ -50,6 +50,13 @@ class MovieInfo:
     actors: list[tuple[str, str]] = field(default_factory=list)  # (name, role)
     wikidata: str = ""  # found online: its Wikidata id
     looked_up: float = 0  # when it was searched online (0: not yet)
+    # shows (Kodi's tvshow.nfo / episode .nfo)
+    tvmaze: str = ""  # found on TVmaze: its id
+    end_year: int | None = None  # a show that ended
+    season: int | None = None  # an episode's
+    episode: int | None = None
+    aired: str = ""  # "2008-01-20"
+    showtitle: str = ""
     # watching
     watched: bool = False
     playcount: int = 0
@@ -164,19 +171,23 @@ def read_info(path: Path) -> MovieInfo:
         directors=[(d.text or "").strip() for d in root.findall("director") if (d.text or "").strip()],
         actors=[(_text(a, "name"), _text(a, "role")) for a in root.findall("actor") if _text(a, "name")],
         playcount=_number(_text(root, "playcount"), int), last_played=_played_time(_text(root, "lastplayed")),
-        looked_up=_number(_text(root, "gamingcrypt/lookedup")))
+        looked_up=_number(_text(root, "gamingcrypt/lookedup")),
+        end_year=_number(_text(root, "gamingcrypt/endyear"), int, None),
+        season=_number(_text(root, "season"), int, None), episode=_number(_text(root, "episode"), int, None),
+        aired=_text(root, "aired"), showtitle=_text(root, "showtitle"))
     info.watched = _text(root, "watched").lower() == "true" or info.playcount > 0
     for uid in root.findall("uniqueid"):
-        if uid.get("type") == "wikidata":
-            info.wikidata = (uid.text or "").strip()
+        if uid.get("type") in ("wikidata", "tvmaze"):
+            setattr(info, uid.get("type"), (uid.text or "").strip())
     resume = root.find("resume")
     if resume is not None:
         info.position, info.total = _number(_text(resume, "position")), _number(_text(resume, "total"))
     return info
 
 
-def info_xml(info: MovieInfo) -> bytes:
-    root = ET.Element("movie")
+def info_xml(info: MovieInfo, kind: str = "movie") -> bytes:
+    """kind: Kodi's root element - movie, tvshow or episodedetails."""
+    root = ET.Element(kind)
 
     def add(tag: str, value, parent: ET.Element = root) -> ET.Element:
         node = ET.SubElement(parent, tag)
@@ -184,6 +195,14 @@ def info_xml(info: MovieInfo) -> bytes:
         return node
 
     add("title", info.title)
+    if info.showtitle:
+        add("showtitle", info.showtitle)
+    if info.season is not None:
+        add("season", info.season)
+    if info.episode is not None:
+        add("episode", info.episode)
+    if info.aired:
+        add("aired", info.aired)
     if info.year:
         add("year", info.year)
     if info.plot:
@@ -202,8 +221,10 @@ def info_xml(info: MovieInfo) -> bytes:
         if role:
             add("role", role, actor)
         add("order", order, actor)
-    if info.wikidata:
-        add("uniqueid", info.wikidata).attrib.update(type="wikidata", default="true")
+    ids = [(kind_id, getattr(info, kind_id)) for kind_id in ("tvmaze", "wikidata") if getattr(info, kind_id)]
+    for index, (kind_id, value) in enumerate(ids):
+        node = add("uniqueid", value)
+        node.attrib.update(type=kind_id, **({"default": "true"} if index == 0 else {}))
     add("playcount", info.playcount)
     add("watched", "true" if info.watched else "false")
     if info.last_played:
@@ -212,15 +233,19 @@ def info_xml(info: MovieInfo) -> bytes:
         resume = ET.SubElement(root, "resume")
         add("position", f"{info.position:.1f}", resume)
         add("total", f"{info.total:.1f}", resume)
-    if info.looked_up:
-        add("lookedup", int(info.looked_up), ET.SubElement(root, "gamingcrypt"))
+    if info.looked_up or info.end_year:
+        own = ET.SubElement(root, "gamingcrypt")
+        if info.looked_up:
+            add("lookedup", int(info.looked_up), own)
+        if info.end_year:
+            add("endyear", info.end_year, own)
     ET.indent(root)
     return b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' + ET.tostring(root, encoding="utf-8")
 
 
-def write_info(path: Path, info: MovieInfo) -> None:
+def write_info(path: Path, info: MovieInfo, kind: str = "movie") -> None:
     part = path.with_name(f".{path.name}.part")
-    part.write_bytes(info_xml(info))
+    part.write_bytes(info_xml(info, kind))
     part.replace(path)
 
 
@@ -229,7 +254,7 @@ def change_info(movie: Movie, change) -> MovieInfo:
     with _lock:
         info = read_info(movie.info_path)
         change(info)
-        write_info(movie.info_path, info)
+        write_info(movie.info_path, info, getattr(movie, "NFO_KIND", "movie"))
     movie.info = info
     return info
 

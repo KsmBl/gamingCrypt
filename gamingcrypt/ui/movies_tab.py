@@ -13,8 +13,8 @@ from pathlib import Path
 import shiboken6
 from PySide6.QtCore import QObject, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
-from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QStackedWidget,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QSizePolicy,
+                               QStackedWidget, QVBoxLayout, QWidget)
 
 from gamingcrypt.movies import library
 from gamingcrypt.movies.library import Movie
@@ -93,6 +93,10 @@ class MovieCard(Tappable):
         self.tapped.connect(lambda: self.clicked.emit(self.movie))
         self.update_movie()
 
+    def set_item(self, movie: Movie) -> None:
+        self.movie = movie
+        self.update_movie()
+
     def update_movie(self) -> None:
         self.title.setText(self.movie.title)
         self.meta.setText(facts(self.movie) or format_size(self.movie.size))
@@ -100,6 +104,28 @@ class MovieCard(Tappable):
 
 
 class MoviesHome(QWidget):
+    """A tab's list: the cards, search, filters (Shows reuses it - see shows_tab)."""
+
+    TITLE, ADD, SEARCH = "Movies", "⬆  Add movies", "🔍  Search title, actor or director"
+    NOUN, NOUNS = "movie", "movies"
+    EMPTY = ("No movies yet - add some with ⬆ Add movies (from a PC or phone in the same Wi-Fi), or put them "
+             "into the Movies folder on your drive")
+
+    def sorts(self) -> dict:
+        return library.SORTS
+
+    def make_card(self, item):
+        card = MovieCard(item)
+        card.clicked.connect(self.tab.open_movie)
+        return card
+
+    def filtered(self, items: list, query: str, watch_state: str, genre: str, max_age) -> list:
+        return library.sort_movies(library.filter_movies(items, query, watch_state, genre, max_age),
+                                   self.sort_combo.currentData() or "title")
+
+    def all_genres(self, items: list) -> list[str]:
+        return library.genres(items)
+
     def __init__(self, tab: "MoviesTab"):
         super().__init__()
         self.tab = tab
@@ -112,20 +138,20 @@ class MoviesHome(QWidget):
         header = QVBoxLayout(self.header)
         header.setContentsMargins(0, 0, 0, 10)
         top = QHBoxLayout()
-        title = QLabel("Movies")
+        title = QLabel(self.TITLE)
         title.setObjectName("title")
         top.addWidget(title)
         self.count_label = QLabel("")
         self.count_label.setObjectName("subtitle")
         top.addWidget(self.count_label)
         top.addStretch()
-        self.add_button = big_button("⬆  Add movies", "primary")
+        self.add_button = big_button(self.ADD, "primary")
         self.add_button.clicked.connect(tab.open_upload)
         top.addWidget(self.add_button)
         header.addLayout(top)
 
         self.search = QLineEdit()
-        self.search.setPlaceholderText("🔍  Search title, actor or director")
+        self.search.setPlaceholderText(self.SEARCH)
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(lambda _t: self.refresh())
         header.addWidget(self.search)
@@ -147,7 +173,7 @@ class MoviesHome(QWidget):
         self.age_combo.currentIndexChanged.connect(lambda _i: self.refresh())
         filters.addWidget(self.age_combo)
         self.sort_combo = QComboBox()
-        for key, label in library.SORTS.items():
+        for key, label in self.sorts().items():
             self.sort_combo.addItem(label, key)
         self.sort_combo.currentIndexChanged.connect(lambda _i: self.refresh())
         filters.addWidget(self.sort_combo)
@@ -198,19 +224,17 @@ class MoviesHome(QWidget):
             button.setChecked(k == key)
         self.refresh()
 
-    def set_movies(self, movies: list[Movie]) -> None:
-        keys = {m.key for m in movies}
+    def set_movies(self, items: list) -> None:
+        keys = {m.key for m in items}
         for key in [k for k in self.cards if k not in keys]:
             self.cards.pop(key).deleteLater()
-        for movie in movies:
-            card = self.cards.get(movie.key)
+        for item in items:
+            card = self.cards.get(item.key)
             if card is None:
-                card = self.cards[movie.key] = MovieCard(movie)
-                card.clicked.connect(self.tab.open_movie)
+                card = self.cards[item.key] = self.make_card(item)
             else:
-                card.movie = movie
-                card.update_movie()
-        self.update_genres(movies)
+                card.set_item(item)
+        self.update_genres(items)
         self.refresh()
 
     def update_genres(self, movies: list[Movie]) -> None:
@@ -218,7 +242,7 @@ class MoviesHome(QWidget):
         self.genre_combo.blockSignals(True)
         self.genre_combo.clear()
         self.genre_combo.addItem("All genres", "")
-        for genre in library.genres(movies):
+        for genre in self.all_genres(movies):
             self.genre_combo.addItem(genre, genre)
         self.genre_combo.setCurrentIndex(max(0, self.genre_combo.findData(current)))
         self.genre_combo.blockSignals(False)
@@ -226,14 +250,12 @@ class MoviesHome(QWidget):
     def update_movie(self, movie: Movie) -> None:
         card = self.cards.get(movie.key)
         if card is not None:
-            card.movie = movie
-            card.update_movie()
+            card.set_item(movie)
 
     def refresh(self) -> None:
-        movies = self.tab.movies
-        shown = library.sort_movies(library.filter_movies(
-            movies, self.search.text(), self.watch_state, self.genre_combo.currentData() or "",
-            self.age_combo.currentData()), self.sort_combo.currentData() or "title")
+        movies = self.tab.items
+        shown = self.filtered(movies, self.search.text(), self.watch_state, self.genre_combo.currentData() or "",
+                              self.age_combo.currentData())
         focused = self.window().focusWidget() if self.window() else None
         for card in self.grid.take_all():
             card.hide()
@@ -244,16 +266,15 @@ class MoviesHome(QWidget):
                 card.show()
         self.grid.invalidate()
         self.shown = [m.key for m in shown]
-        if isinstance(focused, MovieCard) and focused.isVisible():
+        if focused in self.cards.values() and focused.isVisible():
             focus_and_reveal(focused)
-        self.count_label.setText(f"{len(movies)} movie{'s' if len(movies) != 1 else ''}" if movies else "")
+        self.count_label.setText(f"{len(movies)} {self.NOUN if len(movies) == 1 else self.NOUNS}" if movies else "")
         if self.tab.root is None:
-            self.empty_label.setText("Unlock your encrypted drive to see your movies")
+            self.empty_label.setText(f"Unlock your encrypted drive to see your {self.NOUNS}")
         elif not movies:
-            self.empty_label.setText("No movies yet - add some with ⬆ Add movies (from a PC or phone in the same "
-                                     "Wi-Fi), or put them into the Movies folder on your drive")
+            self.empty_label.setText(self.EMPTY)
         elif not shown:
-            self.empty_label.setText("No movie matches")
+            self.empty_label.setText(f"No {self.NOUN} matches")
         else:
             self.empty_label.setText("")
 
@@ -262,16 +283,20 @@ class RemoveMovieConfirm(QFrame):
     removed = Signal(str)
     cancelled = Signal()
 
-    def __init__(self, movie: Movie, root: Path, parent: QWidget | None = None):
+    def __init__(self, movie: Movie, root: Path, parent: QWidget | None = None, question: str | None = None,
+                 work=None):
         super().__init__(parent)
         self.movie, self.root = movie, root
+        self.work = work or (lambda: library.remove(movie, root))
         self.setObjectName("card")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 16, 20, 16)
-        extra = len(library.related_files(movie))
-        self.question = QLabel(f"Really remove {movie.title}?\nThe movie file and its cover, info and subtitles "
-                               f"({extra + 1} file{'s' if extra else ''}, {format_size(library.removal_size(movie))})"
-                               " are deleted from the drive.")
+        if question is None:
+            extra = len(library.related_files(movie))
+            question = (f"Really remove {movie.title}?\nThe movie file and its cover, info and subtitles "
+                        f"({extra + 1} file{'s' if extra else ''}, {format_size(library.removal_size(movie))})"
+                        " are deleted from the drive.")
+        self.question = QLabel(question)
         self.question.setWordWrap(True)
         layout.addWidget(self.question)
         row = QHBoxLayout()
@@ -291,8 +316,8 @@ class RemoveMovieConfirm(QFrame):
     def confirm(self) -> None:
         self.remove_button.setEnabled(False)
         self.cancel_button.setEnabled(False)
-        movie, root = self.movie, self.root
-        run_async(lambda: library.remove(movie, root),
+        movie = self.movie
+        run_async(self.work,
                   lambda freed: self.removed.emit(f"{movie.title} removed, {format_size(freed)} freed"),
                   lambda exc: self.removed.emit(f"Could not remove it: {exc}"), owner=self)
 
@@ -316,6 +341,7 @@ class MoviePage(QWidget):
         self.cover.setFixedSize(300, 450)
         body.addWidget(self.cover, alignment=Qt.AlignmentFlag.AlignTop)
         info = QVBoxLayout()
+        info.setSpacing(14)  # not the 36 px between cover and text it would take over
         self.title = QLabel()
         self.title.setObjectName("detailTitle")
         self.title.setWordWrap(True)
@@ -330,6 +356,7 @@ class MoviePage(QWidget):
         self.actions = QWidget()  # wraps to a second row when the screen is too narrow for all
         actions = FlowLayout(self.actions, spacing=16)
         actions.setContentsMargins(0, 0, 0, 0)
+        self.actions.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)  # only its rows
         self.main_button = big_button("", "primary")
         self.main_button.setMinimumWidth(220)
         self.main_button.clicked.connect(lambda: self.play(from_start=False))
@@ -360,6 +387,7 @@ class MoviePage(QWidget):
         self.status = QLabel("")
         self.status.setObjectName("status")
         self.status.setWordWrap(True)
+        self.status.hide()  # no empty line under the buttons
         info.addWidget(self.status)
         self.plot = QLabel()
         self.plot.setWordWrap(True)
@@ -416,12 +444,12 @@ class MoviePage(QWidget):
 
     def play(self, from_start: bool = False) -> None:
         ok, message = self.tab.play(self.movie, from_start)
-        set_status(self.status, "" if ok else message, error=not ok)
+        self.say("" if ok else message, error=not ok)
 
     def toggle_watched(self) -> None:
         movie, watched = self.movie, not self.movie.info.watched
         run_async(lambda: library.set_watched(movie, watched), lambda _i: self.tab.movie_changed(movie),
-                  lambda exc: set_status(self.status, f"Could not save it: {exc}", error=True), owner=self)
+                  lambda exc: self.say(f"Could not save it: {exc}", error=True), owner=self)
 
     def toggle_options(self, visible: bool) -> None:
         self.options_panel.setVisible(visible)
@@ -456,7 +484,11 @@ class MoviePage(QWidget):
 
     def game_session_ended(self, appid: int, failed: bool) -> None:
         if appid == self.movie.appid and failed:
-            set_status(self.status, "The player didn't start", error=True)
+            self.say("The player didn't start", error=True)
+
+    def say(self, text: str, error: bool = False) -> None:
+        set_status(self.status, text, error=error)
+        self.status.setVisible(bool(text))
 
 
 class MovieUploadPage(UploadPage):
@@ -485,6 +517,8 @@ class Playback(QObject):
     """Where the running movie is: asked every few seconds, kept in its .nfo."""
 
     changed = Signal(object)  # the movie, after it ended
+    played_to_the_end = Signal(object)  # ... and it ran to its end (not stopped): next episode
+    END_S = 20  # this close to the end when the player went away: it ran out
 
     def __init__(self, parent: QObject | None = None, position=None, socket_path=None):
         super().__init__(parent)
@@ -498,9 +532,10 @@ class Playback(QObject):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll)
         self._polling = False
+        self.last_where: tuple[float, float] | None = None
 
     def start(self, movie: Movie) -> None:
-        self.movie, self.session = movie, object()
+        self.movie, self.session, self.last_where = movie, object(), None
         self.timer.start(POLL_MS)
 
     def poll(self) -> None:
@@ -515,6 +550,7 @@ class Playback(QObject):
                 return
             with self.lock:
                 if self.session is session:  # not ended meanwhile
+                    self.last_where = where
                     library.set_progress(movie, *where)
 
         def done(_r=None) -> None:
@@ -528,12 +564,19 @@ class Playback(QObject):
             return
         self.timer.stop()
         self.movie = self.session = None
+        where = self.last_where
+        at_end = where is not None and where[1] > 0 and where[0] >= where[1] - self.END_S
 
         def work():
             with self.lock:
                 return library.finish_watching(movie)
 
-        run_async(work, lambda _i: self.changed.emit(movie), lambda _e: self.changed.emit(movie), owner=self)
+        def done(_info=None) -> None:
+            self.changed.emit(movie)
+            if at_end:
+                self.played_to_the_end.emit(movie)
+
+        run_async(work, done, done, owner=self)
 
 
 class MoviesTab(QStackedWidget):
@@ -542,21 +585,44 @@ class MoviesTab(QStackedWidget):
         super().__init__(parent)
         self.root = Path(root) if root else None
         self.languages = tuple(languages)
-        if lookup is None:
-            from gamingcrypt.movies.metadata import Lookup
-
-            lookup = Lookup(languages=self.languages)
-        self.lookup = lookup
-        self.movies: list[Movie] = []
+        self.lookup = lookup if lookup is not None else self.make_lookup()
+        self.items: list = []
         self.player_launcher = None  # set by the app: (movie, start seconds) -> (ok, message)
         self.upload_page_factory = None  # tests: a stand-in upload page
         self.playback = Playback(self)
         self.playback.changed.connect(self.movie_changed)
         self._looking_up = False
         self._came_from: list = []
-        self.home = MoviesHome(self)
+        self.home = self.HOME(self)
         self.addWidget(self.home)
         self.reload()
+
+    HOME = MoviesHome
+    UPLOAD = None  # MovieUploadPage, below
+    NOTICE_LOOKUP = "Looking up cover and info online… ({count} to go)"
+
+    @property
+    def movies(self) -> list:
+        return self.items
+
+    # what differs between movies and shows ---------------------------------------------
+    def make_lookup(self):
+        from gamingcrypt.movies.metadata import Lookup
+
+        return Lookup(languages=self.languages)
+
+    def scan(self, root: Path) -> list:
+        return library.scan(root)
+
+    def needs_lookup(self, item, now: float) -> bool:
+        from gamingcrypt.movies import metadata
+
+        return metadata.needs_lookup(item, now)
+
+    def update_item(self, item) -> bool:
+        from gamingcrypt.movies import metadata
+
+        return metadata.update(item, self.lookup)
 
     # navigation ----------------------------------------------------------------------
     def push(self, page: QWidget) -> None:
@@ -595,7 +661,7 @@ class MoviesTab(QStackedWidget):
         if self.root is None:
             self.home.show_notice("Unlock your encrypted drive first", error=True)
             return
-        page = (self.upload_page_factory or MovieUploadPage)(self.root)
+        page = (self.upload_page_factory or self.UPLOAD or MovieUploadPage)(self.root)
         page.closed.connect(self._upload_closed)
         self.push(page)
 
@@ -620,52 +686,53 @@ class MoviesTab(QStackedWidget):
 
             if not root.exists() and os.path.ismount(root.parent):
                 root.mkdir(exist_ok=True)  # an unlocked drive: the folder to put movies in
-            return library.scan(root)
+            return self.scan(root)
 
         run_async(work, self._loaded, lambda _e: self._loaded([]), owner=self)
 
-    def _loaded(self, movies: list[Movie]) -> None:
-        self.movies = movies
-        self.home.set_movies(movies)
+    def _loaded(self, items: list) -> None:
+        self.items = items
+        self.home.set_movies(items)
         self.look_up_missing()
 
     def look_up_missing(self) -> None:
         """One movie after the other, in the background: cover and info from the internet."""
         if self._looking_up:
             return
-        from gamingcrypt.movies import metadata
-
         now = time.time()
-        waiting = [m for m in self.movies if metadata.needs_lookup(m, now)]
+        waiting = [m for m in self.items if self.needs_lookup(m, now)]
         if not waiting:
             if self.home.notice.text().startswith("Looking up"):
                 self.home.show_notice("")
             return
         movie = waiting[0]
         self._looking_up = True
-        self.home.show_notice(f"Looking up cover and info online… ({len(waiting)} to go)")
+        self.home.show_notice(self.NOTICE_LOOKUP.format(count=len(waiting)))
 
         def done(online: bool) -> None:
             self._looking_up = False
             if not online:
                 self.home.show_notice("No internet - covers and info come when you're online again")
                 return
-            self.movie_changed(movie)
-            self.look_up_missing()
+            self.looked_up(movie)
 
         def failed(_exc) -> None:
             self._looking_up = False
             self.home.show_notice("")
 
-        run_async(lambda: metadata.update(movie, self.lookup), done, failed, owner=self)
+        run_async(lambda: self.update_item(movie), done, failed, owner=self)
+
+    def looked_up(self, item) -> None:
+        self.movie_changed(item)
+        self.look_up_missing()
 
     def movie_changed(self, movie: Movie) -> None:
         """New info or watching state: the card, the open page, the filters."""
         info = library.read_info(movie.info_path)
-        movie = next((m for m in self.movies if m.key == movie.key), movie)  # a reload may have made new ones
+        movie = next((m for m in self.items if m.key == movie.key), movie)  # a reload may have made new ones
         movie.info = info
         self.home.update_movie(movie)
-        self.home.update_genres(self.movies)
+        self.home.update_genres(self.items)
         self.home.refresh()
         for index in range(self.count()):
             page = self.widget(index)
@@ -673,7 +740,7 @@ class MoviesTab(QStackedWidget):
                 page.update_movie(movie)
 
     def by_appid(self, appid: int) -> Movie | None:
-        return next((m for m in self.movies if m.appid == appid), None)
+        return next((m for m in self.items if m.appid == appid), None)
 
     # playing ---------------------------------------------------------------------------
     def play(self, movie: Movie, from_start: bool = False) -> tuple[bool, str]:
