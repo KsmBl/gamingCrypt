@@ -24,8 +24,19 @@ def test_fps_limit_command():
     calls = []
     run = lambda cmd, **kw: calls.append(cmd) or __import__("subprocess").CompletedProcess(cmd, 0, "", "")  # noqa
     assert gamescope_ctl.set_fps_limit(40, run)
+    # gamescope's control protocol, as Steam does it (a limit set by the property alone was reset
+    # every frame - games ran on at 60 on the handheld); the property for older gamescopes
+    assert calls[-2] == ["gamescopectl", "debug_set_fps_limit", "40"]
     assert calls[-1] == ["xprop", "-root", "-f", "GAMESCOPE_FPS_LIMIT", "32c", "-set", "GAMESCOPE_FPS_LIMIT", "40"]
-    assert gamescope_ctl.set_fps_limit(0, run) and calls[-1][-2:] == ["-remove", "GAMESCOPE_FPS_LIMIT"]
+    assert gamescope_ctl.set_fps_limit(0, run)
+    assert calls[-2] == ["gamescopectl", "debug_set_fps_limit", "0"] and calls[-1][-2:] == ["-remove", "GAMESCOPE_FPS_LIMIT"]
+
+    def no_gamescopectl(cmd, **kw):
+        if cmd[0] == "gamescopectl":
+            raise FileNotFoundError(cmd[0])
+        return __import__("subprocess").CompletedProcess(cmd, 0, "", "")
+
+    assert gamescope_ctl.set_fps_limit(30, no_gamescopectl)  # the property alone still counts
 
 
 def test_game_page_options(qtbot, monkeypatch):

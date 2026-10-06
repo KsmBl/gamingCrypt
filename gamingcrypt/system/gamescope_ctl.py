@@ -90,12 +90,43 @@ def set_focus_order(appids: list[int], runner: Runner = subprocess.run) -> bool:
 
 
 def set_fps_limit(fps: int, runner: Runner = subprocess.run) -> bool:
-    """Frame limit for the game on screen (0 = none)."""
+    """Frame limit for the game on screen (0 = none).
+
+    Through gamescope's control protocol, as Steam does it: gamescope (3.16) resets a limit set
+    with the GAMESCOPE_FPS_LIMIT property every frame - games ran at 60 with "30" on the
+    handheld. The property stays as the way for older gamescopes. On a fixed 60 Hz screen only
+    rates that divide 60 limit anything (30, 20 …)."""
+    try:
+        ctl = runner(["gamescopectl", "debug_set_fps_limit", str(int(fps))], capture_output=True, text=True,
+                     timeout=5)
+        ok = ctl.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        ok = False
     if fps:
         args = ["-f", FPS_LIMIT, "32c", "-set", FPS_LIMIT, str(int(fps))]
     else:
         args = ["-remove", FPS_LIMIT]
     result = _xprop(args, runner)
+    return ok or (result is not None and result.returncode == 0)
+
+
+# --- upscaling: a game on gamescope's second X server, at a lower resolution ------------------
+
+XWAYLAND_MODE = "GAMESCOPE_XWAYLAND_MODE_CONTROL"  # server index, width, height, allow bigger than the screen
+SCALING_FILTER = "GAMESCOPE_NEW_SCALING_FILTER"
+FILTER_LINEAR, FILTER_FSR = 0, 2  # gamescope's GamescopeUpscaleFilter
+
+
+def set_xwayland_mode(server: int, width: int, height: int, runner: Runner = subprocess.run) -> bool:
+    """The size an X server of gamescope offers its windows (games render at it)."""
+    value = f"{int(server)},{int(width)},{int(height)},0"
+    result = _xprop(["-f", XWAYLAND_MODE, "32c", "-set", XWAYLAND_MODE, value], runner)
+    return result is not None and result.returncode == 0
+
+
+def set_scaling_filter(value: int, runner: Runner = subprocess.run) -> bool:
+    """How gamescope scales a smaller game up to the screen (FILTER_FSR, FILTER_LINEAR)."""
+    result = _xprop(["-f", SCALING_FILTER, "32c", "-set", SCALING_FILTER, str(int(value))], runner)
     return result is not None and result.returncode == 0
 
 
