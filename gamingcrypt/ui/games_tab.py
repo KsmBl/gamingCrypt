@@ -298,7 +298,7 @@ class GamesHome(QWidget):
         self.sources_row.invalidate()  # cards shown / hidden: new height
 
     def update_favorites(self) -> None:
-        count = len(self.tab.profiles.favorites())
+        count = len(self.tab.favorites())
         self.favorites_card.subtitle.setText(f"{count} game{'s' if count != 1 else ''}" if count
                                              else "Your starred games")
 
@@ -506,6 +506,15 @@ class GamesTab(QStackedWidget):
 
         run_async(work, self._roms_loaded, lambda _e: None, owner=self)
 
+    def favorites(self) -> list[int]:
+        """The starred games that are still here: a removed (or renamed) ROM or Windows game keeps
+        its star - it's back when the game is - but isn't counted. Steam games always are (the
+        Favorites page shows uninstalled ones too)."""
+        from gamingcrypt.wine.library import WINE_APPID_BASE
+
+        here = {g.appid for games in [*self.roms.values(), self.windows_games] for g in games}
+        return [appid for appid in self.profiles.favorites() if appid < WINE_APPID_BASE or appid in here]
+
     def _roms_loaded(self, found: dict) -> None:
         self.roms = found
         for games in found.values():
@@ -515,6 +524,7 @@ class GamesTab(QStackedWidget):
                 self.rom_games[game.appid] = game
         self.home.set_systems(found)
         self.home.update_continue()
+        self.home.update_favorites()
         self.home.refresh_results()  # emulated games are in "Installed games" too
         self.fetch_missing_cores(found)
 
@@ -548,6 +558,7 @@ class GamesTab(QStackedWidget):
             self.open_windows_library()
         self.home.apply_libraries()
         self.home.update_continue()
+        self.home.update_favorites()
         self.home.refresh_results()
 
     def windows_by_appid(self, appid: int):

@@ -114,3 +114,20 @@ def test_app_records_the_session(qtbot, paths, monkeypatch):
     window.game_watcher._stop()
     window.game_watcher.finished.emit(mario.appid)
     assert mario.appid not in games.play_log.started  # session closed
+
+
+def test_favorites_count_only_games_still_there(qtbot, tab, paths):
+    # a starred ROM that was removed (or renamed) kept its star: "3 games" over a page of 2
+    crash = tab.roms["psx"][0]
+    for appid in (crash.appid, 620):
+        tab.profiles.set(appid, "favorite", True)
+    tab.home.update_favorites()
+    assert tab.home.favorites_card.subtitle.text() == "2 games"
+    crash.path.unlink()
+    tab.reload_roms()
+    qtbot.waitUntil(lambda: not tab.roms.get("psx"))
+    assert tab.home.favorites_card.subtitle.text() == "1 game"  # as the Favorites page shows
+    (paths.roms / "psx" / crash.path.name).write_text("x")
+    tab.reload_roms()
+    qtbot.waitUntil(lambda: bool(tab.roms.get("psx")))
+    assert tab.home.favorites_card.subtitle.text() == "2 games"  # back: still a favorite
