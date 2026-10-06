@@ -476,7 +476,9 @@ class SlidingHeader(QObject):
 
         self.scroll_area, self.header, self.spacer = scroll_area, header, spacer
         self.bar = scroll_area.verticalScrollBar()
-        header.setParent(scroll_area.parentWidget())
+        # cut off at the list's top edge, like the cards scrolling out
+        self.clip = QWidget(scroll_area.parentWidget())
+        header.setParent(self.clip)
         header.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)  # hides what's beneath
         self.offset = 0  # how far it's slid up (0: all there)
         self.last = self.bar.value()
@@ -514,20 +516,33 @@ class SlidingHeader(QObject):
             self.spacer.setFixedHeight(height)
         self.offset = max(0, min(self.offset, height))
         top = area.mapTo(area.parentWidget(), viewport.geometry().topLeft())
-        self.header.setGeometry(area.x(), top.y() - self.offset, area.width(), height)
+        shown = self.offset < height
+        self.clip.setGeometry(area.x(), top.y(), area.width(), max(1, height - self.offset))
+        self.header.setGeometry(0, -self.offset, area.width(), height)
         # slid away completely: out of reach for the controller too
-        self.header.setVisible(self.offset < height)
-        self.header.raise_()
+        self.clip.setVisible(shown)
+        self.header.setVisible(shown)
+        self.clip.raise_()
 
     def _set_offset(self, offset: int) -> None:
         self.offset = offset
         self.place()
+
+    @property
+    def short(self) -> bool:
+        """The list scrolls less than the header is high: it just scrolls along like the list
+        (sliding back over the cards would cover them for nothing)."""
+        return self.bar.maximum() <= self.height
 
     def _scrolled(self, value: int) -> None:
         delta, self.last = value - self.last, value
         if delta:
             self.going_up = delta < 0
         height = self.height
+        if self.short:
+            self.anim.stop()
+            self._set_offset(max(0, min(value, height)))
+            return
         offset = max(0, min(height, self.offset + delta))
         if FoldingHeader.programmatic:
             # controller navigation: never cover the card it just scrolled to
@@ -538,11 +553,15 @@ class SlidingHeader(QObject):
         self.snap_timer.start()
 
     def _snap(self) -> None:
-        height = self.height
-        if 0 < self.offset < height:
-            # up: all of it back (like YouTube); down: away - unless that would leave a gap at the top
-            hide = not self.going_up and self.bar.value() >= height
-            self._animate_to(height if hide else 0)
+        viewport = self.scroll_area.viewport()
+        if QScroller.hasScroller(viewport) and QScroller.scroller(viewport).state() != QScroller.State.Inactive:
+            self.snap_timer.start()  # finger still on it, or still gliding: not under its hands
+            return
+        height, value = self.height, self.bar.value()
+        if self.short or not 0 < self.offset < height:
+            return
+        # up: all of it back (like YouTube); down: away - near the top only as far as the list went
+        self._animate_to(0 if self.going_up else min(height, value))
 
     def _animate_to(self, target: int) -> None:
         self.anim.stop()

@@ -532,7 +532,12 @@ def test_filters_slide_away_when_scrolling_down(qtbot, root, monkeypatch):
     scroll_to(bar, 0)
     viewport = sliding.scroll_area.viewport()
     assert header.isVisible() and sliding.offset == 0
-    assert header.y() == viewport.mapTo(tab.home, viewport.rect().topLeft()).y()  # right on top of the list
+    top = viewport.mapTo(tab.home, viewport.rect().topLeft()).y()
+    assert header.mapTo(tab.home, header.rect().topLeft()).y() == top  # right on top of the list
+    scroll_to(bar, 30)
+    clip = sliding.clip
+    assert clip.y() == top and clip.height() == sliding.height - 30  # cut off at the list's edge
+    assert header.mapTo(tab.home, header.rect().topLeft()).y() == top - 30
 
 
 def test_the_list_never_changes_size_while_sliding(qtbot, root, monkeypatch):
@@ -561,8 +566,51 @@ def test_header_keeps_its_room_at_the_top(qtbot, root, monkeypatch):
     viewport = sliding.scroll_area.viewport()
     card_top = first.mapTo(home, first.rect().topLeft()).y()
     assert home.header_room.height() == sliding.height
-    assert card_top >= home.header.geometry().bottom()  # nothing covered at the start
+    header_bottom = home.header.mapTo(home, home.header.rect().bottomLeft()).y()
+    assert card_top >= header_bottom  # nothing covered at the start
     assert viewport.isAncestorOf(first)
+
+
+def test_short_list_scrolls_the_bar_along(qtbot, root, monkeypatch):
+    """One movie, as on the handheld: the list scrolls less than the bar is high - the bar just
+    scrolls with the list and never snaps back over the cards."""
+    for path in root.rglob("*.mkv"):
+        if path.stem != "Finding Nemo":
+            path.unlink()
+    from gamingcrypt.ui.widgets import SlidingHeader
+
+    monkeypatch.setattr(SlidingHeader, "SNAP_DELAY_MS", 20)
+    from gamingcrypt.ui import theme
+
+    tab = make_tab(qtbot, root)
+    tab.setStyleSheet(theme.STYLESHEET)  # real sizes
+    tab.resize(1280, 600)  # the Movies page on the handheld is about this high
+    sliding = tab.home.folding
+    qtbot.waitUntil(lambda: 0 < sliding.bar.maximum() < sliding.height)
+    bar = sliding.bar
+    assert sliding.short
+    scroll_to(bar, bar.maximum())
+    assert sliding.offset == bar.maximum()
+    qtbot.wait(150)  # no snapping afterwards
+    assert sliding.offset == bar.maximum()
+    scroll_to(bar, 10)
+    qtbot.wait(150)
+    assert sliding.offset == 10
+
+
+def test_no_snapping_under_the_finger(qtbot, root, monkeypatch):
+    from PySide6.QtWidgets import QScroller
+
+    tab, sliding = sliding_tab(qtbot, root, 12, monkeypatch)
+    scroll_to(sliding.bar, 600)
+    scroll_to(sliding.bar, 560)
+    partly = sliding.offset
+    assert 0 < partly < sliding.height
+    monkeypatch.setattr(QScroller, "state", lambda self: QScroller.State.Dragging)
+    qtbot.wait(150)
+    assert sliding.offset == partly  # the finger is still on it
+    monkeypatch.undo()
+    qtbot.waitUntil(lambda: sliding.offset == 0)
 
 
 def test_scrolling_up_brings_it_back_all_the_way(qtbot, root, monkeypatch):
