@@ -315,3 +315,20 @@ def test_controller_picture_reads_like_the_picture(qtbot, app):
     assert go(qtbot, nav, "R") is buttons["A"]
     nav.focus(buttons["Y"])
     assert go(qtbot, nav, "U") is buttons["X"]
+
+
+def test_shader_page_goes_down_the_list(qtbot, app):
+    w, nav, pages = app
+    games = pages["Games"]
+    game = games.roms["snes"][0]
+    games.open_rom(game)
+    games.currentWidget().shaders_button.click()
+    page = games.currentWidget()
+    qtbot.waitUntil(lambda: nav.focused() is page.same_button)  # opens on the picked choice
+    assert go(qtbot, nav, "R") is page.own_button
+    assert go(qtbot, nav, "D") is page.rows["handheld_colors"]  # down into the list
+    assert go(qtbot, nav, "D") is page.rows["ntsc"]
+    assert go(qtbot, nav, "DD") is page.rows["sharpen"]  # over the group's heading
+    nav.activate()
+    assert page.rows["sharpen"].isChecked() and page.own_button.isChecked()
+    assert go(qtbot, nav, "UUUU") in (page.same_button, page.own_button)

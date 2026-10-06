@@ -254,9 +254,27 @@ def current_disc(paths: EmulationPaths, game: RomGame, core: Path | None) -> int
     return 0
 
 
-def command(game: RomGame, core: Path, config: Path, reaper_path: Path) -> list[str]:
+def command(game: RomGame, core: Path, config: Path, reaper_path: Path, shader: Path | None = None) -> list[str]:
     return [str(reaper_path), "SteamLaunch", f"AppId={game.appid}", "--",
-            "retroarch", "--verbose", "--appendconfig", str(config), "-L", str(core), str(game.path)]
+            "retroarch", "--verbose", "--appendconfig", str(config),
+            *([f"--set-shader={shader}"] if shader else []), "-L", str(core), str(game.path)]
+
+
+SHADER_PRESET = "gamingcrypt.slangp"  # in config/shaders: the ticked shaders of the game being started
+
+
+def shader_settings(paths: EmulationPaths, ids: list[str] | None, extra: dict[str, str],
+                    dirs=None) -> Path | None:
+    """The ticked shaders as one preset; RetroArch's "gl" driver can't run slang shaders -
+    glcore (or Vulkan, when the game needs it) can."""
+    from gamingcrypt.emulation import shaders
+
+    root = shaders.folder(dirs or shaders.SHADER_DIRS) if ids else None
+    preset = shaders.write_preset(ids, paths.config / "shaders" / SHADER_PRESET, root) if root else None
+    if preset is not None:
+        extra["video_shader_enable"] = "true"
+        extra.setdefault("video_driver", "glcore")
+    return preset
 
 
 def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, core_name: str | None = None,
@@ -264,7 +282,8 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
            layout: dict[str, str] | None = None, fast: float = DEFAULT_FAST,
            slow: float = DEFAULT_SLOW, memory_card: str | None = None,
            widescreen: str | None = None, input_lag: str | None = None,
-           renderer: str | None = None, resolution: str | None = None) -> tuple[bool, str]:
+           renderer: str | None = None, resolution: str | None = None,
+           shaders: list[str] | None = None, shader_dirs=None) -> tuple[bool, str]:
     if not available(which):
         return False, "RetroArch isn't installed - run ./install.sh"
     core = find_core(paths, game.system, core_name)
@@ -290,6 +309,7 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
     if options:  # the game's own core options file
         extra["global_core_options"] = "true"
         extra["core_options_path"] = write_core_options(core_options_file(paths, game), options)
+    shader = shader_settings(paths, shaders, extra, shader_dirs)
     config = write_config(paths, extra)
     from gamingcrypt.emulation import layouts
 
@@ -297,7 +317,7 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
     log_dir.mkdir(parents=True, exist_ok=True)
     try:
         with open(log_dir / LOG_NAME, "wb") as log:  # this game's log (its frame rate is read from it)
-            popen(command(game, core, config, reaper(data_dir)), stdin=subprocess.DEVNULL, stdout=log,
+            popen(command(game, core, config, reaper(data_dir), shader), stdin=subprocess.DEVNULL, stdout=log,
                   stderr=subprocess.STDOUT, start_new_session=True, env=dict(os.environ))
     except OSError as exc:
         return False, f"RetroArch didn't start: {exc}"

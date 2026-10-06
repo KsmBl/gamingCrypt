@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEd
                                QWidget)
 
 from gamingcrypt.emulation.library import RomGame
-from gamingcrypt.emulation.systems import System
+from gamingcrypt.emulation.systems import SHORT, System
 from gamingcrypt.ui.game_widgets import COVER_H, COVER_W, Cover, card_margins, format_size, placeholder_cover
 from gamingcrypt.ui.widgets import FlowLayout, big_button, enable_touch_scroll, set_status
 
@@ -92,6 +92,10 @@ class SystemPage(QWidget):
         self.controls_button.setVisible(getattr(tab, "layout_store", None) is not None
                                         and system.emulator == "retroarch")  # Eden has its own
         top.addWidget(self.controls_button)
+        self.shaders_button = big_button("✨  Shaders")
+        self.shaders_button.clicked.connect(lambda: tab.open_shaders(system.id))
+        self.shaders_button.setVisible(system.emulator == "retroarch" and hasattr(tab, "open_shaders"))
+        top.addWidget(self.shaders_button)
         self.add_button = big_button("⬆  Add ROMs")
         self.add_button.clicked.connect(tab.open_upload)
         top.addWidget(self.add_button)
@@ -387,6 +391,15 @@ class RomGamePage(QWidget):
                     appid, k, None if c.currentData() == d else c.currentData()))
             speeds.addWidget(combo)
             self.speed_combos[key] = combo
+        # shaders: the system's, or the game's own (a page of their own, with a preview)
+        self.shaders_button = big_button("")
+        self.shaders_button.clicked.connect(self.open_shaders)
+        caption = QLabel("Shaders")
+        caption.setObjectName("cardMeta")
+        line = grid.rowCount()
+        grid.addWidget(caption, line, 0)
+        grid.addWidget(self.shaders_button, line, 1, 1, 2)
+        self.show_shaders()
         caption = QLabel("Quick menu speeds")
         caption.setObjectName("cardMeta")
         line = grid.rowCount()
@@ -394,6 +407,19 @@ class RomGamePage(QWidget):
         grid.addLayout(speeds, line, 1, 1, 2)
         grid.setColumnStretch(3, 1)
         return grid
+
+    def show_shaders(self) -> None:
+        from gamingcrypt.emulation import shaders
+
+        config = getattr(self.tab, "shader_config", ({}, None))[0]
+        own = shaders.own_shaders(self.tab.profiles.get(self.game.appid))
+        chosen = shaders.describe(own if own is not None else shaders.system_shaders(config, self.game.system.id))
+        short = SHORT.get(self.game.system.id, self.game.system.name)
+        self.shaders_button.setText(f"✨ {chosen}" if own is not None else f"✨ Same as {short}: {chosen}")
+
+    def open_shaders(self) -> None:
+        page = self.tab.open_game_shaders(self.game)
+        page.changed.connect(self.show_shaders)
 
     def _favorite_text(self) -> None:
         self.favorite_button.setText("★ Favorite" if self.favorite_button.isChecked() else "☆ Favorite")

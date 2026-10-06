@@ -307,6 +307,15 @@ install_retroarch() {
     fi
 }
 
+install_shaders() {
+    # shaders for emulated games (a system's / game's ✨ Shaders): RetroArch's slang shaders
+    command -v pacman >/dev/null || return 0
+    pacman -Q libretro-shaders-slang >/dev/null 2>&1 && return 0
+    info "Installing RetroArch's shaders (needs sudo)"
+    sudo pacman -S --needed --noconfirm libretro-shaders-slang >/dev/null \
+        || warn "could not install libretro-shaders-slang (emulated games then run without shaders)"
+}
+
 install_player() {
     # the Movies tab plays with mpv (controller through SDL, hardware video decoding)
     command -v mpv >/dev/null && return 0
@@ -478,6 +487,7 @@ if [[ $WITH_SUDO -eq 1 ]]; then
     install_overlay
     install_sharing
     install_retroarch
+    install_shaders
     install_player
     install_windows_games
     ask_boot_questions

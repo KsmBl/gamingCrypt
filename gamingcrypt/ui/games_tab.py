@@ -420,6 +420,7 @@ class GamesTab(QStackedWidget):
         self._fetching_cores = False
         self.upload_page_factory = None  # tests: a stand-in upload page
         self.layout_store = None  # set by the app: emulator controls (emulation/layouts.Store)
+        self.shader_config: tuple = ({}, lambda _config: None)  # set by the app: (config, save) - shaders
         self.games: dict[int, SteamGame] = {}
         self._came_from: list = []
         from gamingcrypt.game_profiles import GameProfiles
@@ -658,6 +659,48 @@ class GamesTab(QStackedWidget):
         page = ControlsPage(self.layout_store, system_id)
         page.closed.connect(self.back)
         self.push(page)
+
+    def shader_picture(self, system, names: list[str]):
+        """What the shader preview draws on: the newest screenshot of these games."""
+        from pathlib import Path
+
+        from gamingcrypt.ui import shader_preview
+
+        folders = [Path.home() / "Pictures" / "GamingCrypt"]
+        if self.emulation is not None:
+            folders.insert(0, self.emulation.screenshots)
+        return shader_preview.sample(system.id, shader_preview.find_screenshot(names, folders))
+
+    def open_shaders(self, system_id: str) -> None:
+        """The shaders every game of the system gets."""
+        from gamingcrypt.emulation import shaders
+        from gamingcrypt.emulation.systems import BY_ID
+        from gamingcrypt.ui.shader_page import ShaderPage
+
+        config, save = self.shader_config
+        system = BY_ID[system_id]
+        games = self.roms.get(system_id, [])
+        names = [n for g in sorted(games, key=lambda g: -(g.last_played or 0)) for n in (g.name, g.path.stem)]
+
+        def store(ids) -> None:
+            shaders.set_system_shaders(config, system_id, ids or [])
+            save(config)
+
+        self.push(ShaderPage(self, system, self.shader_picture(system, names),
+                             shaders.system_shaders(config, system_id), store))
+
+    def open_game_shaders(self, game):
+        """The game's own shaders - or its system's."""
+        from gamingcrypt.emulation import shaders
+        from gamingcrypt.ui.shader_page import ShaderPage
+
+        config, _save = self.shader_config
+        own = shaders.own_shaders(self.profiles.get(game.appid))
+        page = ShaderPage(self, game.system, self.shader_picture(game.system, [game.name, game.path.stem]), own,
+                          lambda ids: self.profiles.set(game.appid, "shaders", ids),
+                          default=shaders.system_shaders(config, game.system.id), game_name=game.name)
+        self.push(page)
+        return page
 
     def _upload_closed(self) -> None:
         self.back()

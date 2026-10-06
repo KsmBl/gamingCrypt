@@ -54,6 +54,9 @@ The screenshots are made with `.venv/bin/python docs/screenshots.py` (sample dat
 - **Emulated games** (RetroArch, Eden for Switch): NES to PS2, covers from libretro-thumbnails, cores downloaded
   automatically, controls per system on a picture of its controller, save states, speed and disc switching in the
   quick menu; add ROMs and BIOS files over Wi-Fi (browser with QR code, or a network share)
+  - **Shaders**: tick and combine CRT, scanlines, LCD grid, Game Boy screen, pixel-art smoothing (xBRZ, ScaleFX),
+    sharp pixels, FXAA, sharpen and TV colors - per system (**✨ Shaders** next to Controls) or per game (Options),
+    with a preview next to the list
 - **Movies**: every video in `<drive>/Movies`, with cover, description, cast, FSK rating and length from Wikidata /
   Wikipedia (saved next to the movie as `.jpg` and Kodi `.nfo`); search and filters; plays full screen in mpv with
   controller and YouTube-like touch controls (double tap to skip, hold for 2x, speed menu); resume where you stopped,

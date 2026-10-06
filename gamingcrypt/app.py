@@ -728,6 +728,7 @@ class MainWindow(QMainWindow):
         if paths is None:
             return False, "The games drive isn't unlocked"
         from gamingcrypt.emulation import layouts
+        from gamingcrypt.emulation import shaders as shader_choice
 
         if game.system.emulator == "eden":
             ok, message = self.launch_switch(game, paths, games)
@@ -745,7 +746,8 @@ class MainWindow(QMainWindow):
                                        memory_card=profile.get("memory_card"),
                                        widescreen=profile.get("widescreen"),
                                        input_lag=profile.get("input_lag"), renderer=profile.get("renderer"),
-                                       resolution=profile.get("resolution"))
+                                       resolution=profile.get("resolution"),
+                                       shaders=shader_choice.for_game(self.config, profile, game.system.id))
         if ok:
             self.follow_game_refresh(config_mod.cache_dir() / "logs" / retroarch.LOG_NAME)
             self.speed_mode = "normal"  # RetroArch starts at normal speed
@@ -1271,6 +1273,7 @@ class MainWindow(QMainWindow):
                 from gamingcrypt.emulation import layouts
 
                 games.layout_store = layouts.Store(self.config, self.save)  # emulator controls
+                games.shader_config = (self.config, self.save)  # emulator shaders per system
             if self.download_notifier is None and hasattr(service, "downloads"):
                 from gamingcrypt.ui.download_notifier import DownloadNotifier
 
