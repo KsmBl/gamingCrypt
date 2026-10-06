@@ -62,6 +62,13 @@ class RecentPage(QWidget):
             self.cards[game.appid] = card
             self.grid.addWidget(card)
         self.status.setText("" if recent else "You haven't played any game yet")
+        self._focus_first()
+
+    def _focus_first(self) -> None:
+        from gamingcrypt.ui.widgets import settle_focus
+
+        if self.order:
+            settle_focus(self, self.cards.get(self.order[0]))  # the first game, not "‹ Back"
 
     def _card(self, game):
         """GameCard for Steam games, RomCard for emulated ones."""
@@ -99,3 +106,4 @@ class FavoritesPage(RecentPage):
             self.cards[game.appid] = card
             self.grid.addWidget(card)
         self.status.setText("" if favorites else "No favorites yet - tap ☆ Favorite on a game's page")
+        self._focus_first()

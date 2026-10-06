@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT))
 from PySide6.QtCore import QElapsedTimer  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-app = QApplication(sys.argv)
+app = QApplication.instance() or QApplication(sys.argv)
 
 from gamingcrypt.app import MainWindow  # noqa: E402
 from gamingcrypt.config import DEFAULTS  # noqa: E402

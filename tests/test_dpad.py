@@ -226,3 +226,92 @@ def test_choice_rows_are_still_entered_at_the_picked_one(qtbot, app):
     nav.focus(page.search)
     target = go(qtbot, nav, "U")
     assert target is page.sort_buttons["playtime"]  # the sort order in use, not the nearest
+
+
+def test_sideways_into_a_choice_row_goes_to_the_neighbour(qtbot, app):
+    """Only coming from above / below lands on the picked tab or chip - sideways it's the next one."""
+    w, nav, pages = app
+    shell = w.shell
+    nav.focus(shell.exit_button)
+    assert go(qtbot, nav, "L") is shell.tab_buttons["Settings"]  # not all the way to "Games"
+    games = pages["Games"]
+    games.open_steam()
+    page = games.currentWidget()
+    qtbot.wait(100)
+    nav.focus(page.direction_button)
+    assert go(qtbot, nav, "L") is page.sort_buttons["last_update"]  # not the picked "Name"
+    w.shell.show_tab("Movies")
+    home = pages["Movies"].home
+    qtbot.wait(200)  # the tab laid out
+    nav.focus(home.genre_combo)
+    assert go(qtbot, nav, "L") is home.state_buttons["watched"]  # not the picked "All"
+
+
+def test_up_from_the_keyboard_goes_back_to_its_field(qtbot, app):
+    w, nav, pages = app
+    w.shell.show_tab("Movies")
+    home = pages["Movies"].home
+    nav.focus(home.search)
+    nav.activate()
+    qtbot.waitUntil(home.keyboard.isVisible)
+    key = nav.focused()
+    assert home.keyboard.isAncestorOf(key)
+    assert go(qtbot, nav, "U") is home.search  # not a movie card behind the keyboard
+
+
+def test_a_list_with_nothing_on_screen_yet_can_be_entered(qtbot, app):
+    """Settings -> Health: only text at the top, the button further down - down from the tab
+    reached nothing."""
+    w, nav, pages = app
+    w.shell.show_tab("Settings")
+    settings = w.shell.pages["Settings"]
+    settings.show_sub_tab("Health")
+    qtbot.wait(200)
+    nav.focus(settings.sub_buttons["Health"])
+    target = go(qtbot, nav, "D")
+    assert target is not settings.sub_buttons["Health"]
+    assert settings.sub_pages["Health"].isAncestorOf(target)
+
+
+@pytest.mark.parametrize("library", ["steam", "favorites", "recent", "system"])
+def test_libraries_open_on_their_first_game(qtbot, app, library):
+    w, nav, pages = app
+    games = pages["Games"]
+    games.profiles.set(1145360, "favorite", True)
+    for game in games.service.games:
+        game.last_played = 1700000000 + game.appid  # something recently played
+    nav.focus(games.home.steam_card)
+    {"steam": games.open_steam, "favorites": games.open_favorites, "recent": games.open_recent,
+     "system": lambda: games.open_system("snes")}[library]()
+    page = games.currentWidget()
+    first = lambda: page.cards.get(page.order[0] if hasattr(page, "order") and page.order  # noqa: E731
+                                   else (page.shown[0] if getattr(page, "shown", None) else None))
+    qtbot.waitUntil(lambda: first() is not None and w.focusWidget() is first())
+    assert not (w.focusWidget().property("back"))
+
+
+def test_store_opens_ready_to_search(qtbot, app):
+    w, nav, pages = app
+    games = pages["Games"]
+    games.open_store()
+    page = games.currentWidget()
+    qtbot.wait(100)
+    assert not page.keyboard.isVisible() and w.focusWidget() is page.search
+    nav.back()
+    qtbot.wait(100)
+    assert games.currentWidget() is games.home  # one B: out of the store
+
+
+def test_controller_picture_reads_like_the_picture(qtbot, app):
+    w, nav, pages = app
+    games = pages["Games"]
+    games.open_controls("snes")
+    page = games.currentWidget()
+    qtbot.wait(200)
+    buttons = page.picture.buttons
+    nav.focus(buttons["B"])
+    assert go(qtbot, nav, "L") is buttons["Y"]  # the diamond's left one, not across to the D-pad
+    nav.focus(buttons["B"])
+    assert go(qtbot, nav, "R") is buttons["A"]
+    nav.focus(buttons["Y"])
+    assert go(qtbot, nav, "U") is buttons["X"]

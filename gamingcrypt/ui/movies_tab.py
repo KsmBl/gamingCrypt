@@ -653,6 +653,7 @@ class MoviesTab(QStackedWidget):
 
     def back_button(self) -> QWidget:
         button = big_button("‹ Back")
+        button.setProperty("back", True)  # not where a page should start (settle_focus)
         button.clicked.connect(self.back)
         return button
 

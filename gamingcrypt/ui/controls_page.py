@@ -92,6 +92,28 @@ class ControllerPicture(QWidget):
         super().resizeEvent(event)
         self._place()
 
+    def gamepad_navigate(self, current, dx: int, dy: int):
+        """The D-pad on the picture: the nearest button that way, as the eye reads it - left from
+        B (bottom of the diamond) is Y, not the D-pad across the controller. Nothing that way: the
+        usual navigation (out of the picture)."""
+        if current not in self.buttons.values():
+            return None
+        here = current.geometry().center()
+        best, best_score = None, None
+        for button in self.buttons.values():
+            if button is current or not button.isVisible():
+                continue
+            there = button.geometry().center()
+            vx, vy = there.x() - here.x(), there.y() - here.y()
+            along = vx * dx + vy * dy
+            aside = abs(vx * dy - vy * dx)
+            if along <= 0 or aside > along * 1.3:  # not that way (within about 50 degrees)
+                continue
+            score = along + 2 * aside
+            if best_score is None or score < best_score:
+                best, best_score = button, score
+        return best
+
     def paintEvent(self, _event) -> None:  # noqa: N802 - Qt API
         if self.pic is None:
             return

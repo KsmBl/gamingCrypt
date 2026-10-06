@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, Signal
+import shiboken6
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QGridLayout,
@@ -591,3 +592,18 @@ class SlidingHeader(QObject):
         if event.type() in (QEvent.Type.Resize, QEvent.Type.Move, QEvent.Type.LayoutRequest):
             self.place()
         return False
+
+
+def settle_focus(page: QWidget, target: QWidget | None) -> None:
+    """A page that just opened (or finished loading): the highlight on ``target`` (its first game,
+    its search) - unless it was already moved somewhere on the page (not just "‹ Back")."""
+    if target is None or not page.isVisible():
+        return
+    if not target.isVisible():  # just added to a layout: Qt shows it a moment later
+        QTimer.singleShot(0, lambda: shiboken6.isValid(target) and shiboken6.isValid(page)
+                          and target.isVisible() and settle_focus(page, target))
+        return
+    window = page.window()
+    focused = window.focusWidget() if window is not None else None
+    if focused is None or not page.isAncestorOf(focused) or focused.property("back"):
+        target.setFocus(Qt.FocusReason.TabFocusReason)

@@ -287,6 +287,16 @@ class GamepadNavigator(QObject):
                 self._glide(area.verticalScrollBar(), area.verticalScrollBar().minimum())
 
     @staticmethod
+    def _keyboard_of(w: QWidget | None):
+        from gamingcrypt.ui.widgets import OnScreenKeyboard
+
+        while w is not None:
+            if isinstance(w, OnScreenKeyboard):
+                return w
+            w = w.parentWidget()
+        return None
+
+    @staticmethod
     def _scroll_area(w: QWidget | None) -> QScrollArea | None:
         while w is not None:
             w = w.parentWidget()
@@ -300,6 +310,17 @@ class GamepadNavigator(QObject):
             return None
         if current is None:
             return min(options, key=lambda w: (round(self._center(w).y() / 20), self._center(w).x()))
+        keyboard = self._keyboard_of(current)
+        if keyboard is not None:
+            keys = [w for w in options if keyboard.isAncestorOf(w)]
+            best = self._best(current, keys, dx, dy)
+            if best is not None:
+                return best
+            field = keyboard.target()
+            if dy < 0 and field is not None and field.isVisible():
+                return field  # off the top row: back to what it types into (not a card behind it)
+            if keyboard.dismissable:
+                return None  # its edges: stay on the keys
         # Inside a scrolling list (e.g. the game grid) stay in the list - also on items
         # scrolled out of view - and only leave it at its edge. Otherwise the tab bar,
         # which is closer *on screen*, would win over the game right above.
@@ -331,7 +352,17 @@ class GamepadNavigator(QObject):
             viewport = area.viewport()
             rect = rect.intersected(QRect(viewport.mapToGlobal(QPoint(0, 0)), viewport.size()))
             area = self._scroll_area(area)
+        if not rect.isEmpty() and self._covered(w, rect):
+            return QRect()  # e.g. a card under the filter bar lying over the list
         return rect
+
+    def _covered(self, w: QWidget, rect: QRect) -> bool:
+        """Something else lies over the middle of what's visible of it."""
+        window = w.window()
+        hit = window.childAt(window.mapFromGlobal(rect.center()))
+        return hit is not None and hit is not w and not w.isAncestorOf(hit) and not hit.isAncestorOf(w) \
+            and not isinstance(hit, QScrollArea) and hit is not self._scroll_area(w).viewport() \
+            if self._scroll_area(w) is not None else False
 
     @staticmethod
     def _gap(a0: int, a1: int, b0: int, b1: int) -> int:
@@ -371,21 +402,13 @@ class GamepadNavigator(QObject):
                 row.append((max(ahead, 0), abs(rect.center().y() - mine.center().y()), w))
             if not row:
                 return None
-            return self._enter_group(current, min(row, key=lambda r: (r[0], r[1]))[2])
+            return min(row, key=lambda r: (r[0], r[1]))[2]  # sideways: always the next one
         ahead_of = []
         area = self._scroll_area(current)
-        for w in options:
-            # in the same list: also what's scrolled away; elsewhere only what's on screen
-            same_list = area is not None and area.isAncestorOf(w)
-            rect = self._rect(w) if same_list else self._seen(w)
-            if rect.isEmpty():
-                continue
-            ahead = rect.top() - mine.bottom() if dy > 0 else mine.top() - rect.bottom()
-            if ahead < -8:  # beside or behind, not below / above
-                continue
-            if (rect.center().y() - mine.center().y()) * dy <= 4:
-                continue
-            ahead_of.append((max(ahead, 0), rect, w))
+        for hidden_too in (False, True):
+            ahead_of = self._ahead(current, mine, options, dy, area, hidden_too)
+            if ahead_of:
+                break  # (the second time: a list with nothing on screen yet, e.g. a page of text first)
         if not ahead_of:
             return None
         nearest = min(a for a, _r, _w in ahead_of)
@@ -399,9 +422,27 @@ class GamepadNavigator(QObject):
 
         return self._enter_group(current, min(row, key=distance)[1])
 
+    def _ahead(self, current: QWidget, mine: QRect, options: list[QWidget], dy: int, area, hidden_too: bool) -> list:
+        ahead_of = []
+        for w in options:
+            # in the same list: also what's scrolled away; elsewhere only what's on screen
+            same_list = area is not None and area.isAncestorOf(w)
+            rect = self._rect(w) if same_list or hidden_too else self._seen(w)
+            if rect.isEmpty():
+                continue
+            ahead = rect.top() - mine.bottom() if dy > 0 else mine.top() - rect.bottom()
+            if ahead < -8:  # beside or behind, not below / above
+                continue
+            if (rect.center().y() - mine.center().y()) * dy <= 4:
+                continue
+            ahead_of.append((max(ahead, 0), rect, w))
+        return ahead_of
+
     @staticmethod
     def _enter_group(current: QWidget, target: QWidget) -> QWidget:
-        """Coming into a row of tabs / chips (one of them selected) from outside: the selected one.
+        """Coming into a row of tabs / chips (one of them selected) from above or below: the selected
+        one. (Sideways into such a row - from the power button, a sort direction, a drop-down next to
+        filter chips - goes to the neighbour, like everywhere else.)
         Only real choices (tabs, buttons made with choice=True) - not on / off buttons side by side
         (Options and Favorite: right from Play must not skip Options)."""
 

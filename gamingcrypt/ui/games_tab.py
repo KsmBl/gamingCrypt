@@ -427,6 +427,7 @@ class GamesTab(QStackedWidget):
 
     def back_button(self) -> QWidget:
         button = big_button("‹ Back")
+        button.setProperty("back", True)  # not where a page should start (settle_focus)
         button.clicked.connect(self.back)
         return button
 
@@ -498,7 +499,12 @@ class GamesTab(QStackedWidget):
         from gamingcrypt.emulation.systems import BY_ID
         from gamingcrypt.ui.emulation_pages import SystemPage
 
-        self.push(SystemPage(self, BY_ID[system_id], self.roms.get(system_id, [])))
+        page = SystemPage(self, BY_ID[system_id], self.roms.get(system_id, []))
+        self.push(page)
+        from gamingcrypt.ui.widgets import settle_focus
+
+        first = page.cards.get(page.shown[0]) if page.shown else None
+        settle_focus(page, first or page.search)  # the first game, not "‹ Back"
 
     def open_upload(self) -> None:
         from gamingcrypt.ui.upload_page import UploadPage
@@ -562,4 +568,6 @@ class GamesTab(QStackedWidget):
     def open_store(self) -> None:
         from gamingcrypt.ui.store_page import StorePage
 
-        self.push(StorePage(self))
+        page = StorePage(self)
+        self.push(page)
+        page.search.setFocus()  # ready to search: A opens the keyboard (it isn't up by itself)

@@ -128,6 +128,9 @@ class SteamLibraryPage(QWidget):
         self.count_label.setText(f"{prefix}{len(games)} games · {installed} installed")
         self.apply_sort()
         self.status.setText(self.empty_hint(games))
+        from gamingcrypt.ui.widgets import settle_focus
+
+        settle_focus(self, self.cards.get(self.order[0]) if self.order else self.search)  # not "‹ Back"
         self._pending = [g.appid for g in games if self.service.needs_metadata(g)]
         self._fetch_total = len(self._pending)
         self._fetch_next()
