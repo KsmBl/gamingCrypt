@@ -44,9 +44,8 @@ def command(runner: Runner, game: LinuxGame, exe: str) -> tuple[list[str], Path]
 
 
 def launch(game: LinuxGame, exe: str, runner: Runner, data_dir: Path, log_dir: Path, popen=subprocess.Popen,
-           more_env: dict[str, str] | None = None, wrapper: list[str] | None = None) -> tuple[bool, str]:
-    """Start it like a Steam game (the "reaper" wrapper: gamescope, quick menu, Force quit).
-    wrapper: goes before the command (upscaling's nested gamescope)."""
+           more_env: dict[str, str] | None = None) -> tuple[bool, str]:
+    """Start it like a Steam game (the "reaper" wrapper: gamescope, quick menu, Force quit)."""
     from gamingcrypt.emulation.retroarch import reaper
 
     if not (game.path / exe).is_file():
@@ -56,7 +55,7 @@ def launch(game: LinuxGame, exe: str, runner: Runner, data_dir: Path, log_dir: P
     log_dir.mkdir(parents=True, exist_ok=True)
     try:
         with open(log_dir / "linux.log", "wb") as log:
-            popen([str(reaper(data_dir)), "SteamLaunch", f"AppId={game.appid}", "--", *(wrapper or []), *args],
+            popen([str(reaper(data_dir)), "SteamLaunch", f"AppId={game.appid}", "--", *args],
                   cwd=str(cwd), env={**os.environ, **(more_env or {})}, stdin=subprocess.DEVNULL, stdout=log,
                   stderr=subprocess.STDOUT, start_new_session=True)
     except OSError as exc:

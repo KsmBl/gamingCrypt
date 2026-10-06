@@ -1,4 +1,4 @@
-"""Upscaling: Windows / Linux games rendered smaller, scaled up by a nested gamescope (FSR)."""
+"""Upscaling: games rendered smaller on gamescope's second X server, scaled up with FSR."""
 
 import copy
 
@@ -22,19 +22,27 @@ def test_render_sizes_and_names():
     assert list(upscaling.LEVELS) == sorted(upscaling.LEVELS, reverse=True)  # light to strong
 
 
-def test_nested_gamescope_command():
-    which = lambda name: f"/usr/bin/{name}"  # noqa: E731
-    assert upscaling.command(None, SCREEN, which=which) == []
-    assert upscaling.command(33, SCREEN, which=which) == []  # not one of the levels
-    assert upscaling.command(75, SCREEN, which=lambda n: None) == []  # no gamescope: as it is
-    cmd = upscaling.command(60, SCREEN, which=which)
-    assert cmd[:4] == ["env", "-u", "GAMESCOPE_WAYLAND_DISPLAY", "ENABLE_GAMESCOPE_WSI=0"]  # no WSI-layer error
-    assert cmd[4:] == ["/usr/bin/gamescope", "-w", "768", "-h", "480", "-W", "1280", "-H", "800", "-F", "fsr", "-f",
-                       "--"]
-    assert upscaling.command(50, SCREEN, fps=30, which=which)[-3:] == ["-r", "30", "--"]  # the limit inside too
+def test_start_and_stop_the_second_x_server(tmp_path):
+    import subprocess
+
+    calls = []
+    run = lambda cmd, **kw: calls.append(cmd) or subprocess.CompletedProcess(cmd, 0, "", "")  # noqa: E731
+    assert upscaling.start(75, SCREEN, run, x11_dir=tmp_path) == {}  # no second X server: as it is
+    (tmp_path / "X1").touch()
+    assert upscaling.start(None, SCREEN, run, x11_dir=tmp_path) == {} and calls == []  # off
+    assert upscaling.start(33, SCREEN, run, x11_dir=tmp_path) == {}  # not one of the levels
+    assert upscaling.start(60, SCREEN, run, x11_dir=tmp_path) == {"DISPLAY": ":1"}  # the game goes there
+    assert calls == [
+        ["xprop", "-root", "-f", "GAMESCOPE_XWAYLAND_MODE_CONTROL", "32c", "-set", "GAMESCOPE_XWAYLAND_MODE_CONTROL",
+         "1,768,480,0"],
+        ["xprop", "-root", "-f", "GAMESCOPE_NEW_SCALING_FILTER", "32c", "-set", "GAMESCOPE_NEW_SCALING_FILTER", "2"]]
+    upscaling.stop(SCREEN, run)
+    assert calls[-2][-1] == "1,1280,800,0" and calls[-1][-1] == "0"  # full size, the usual scaling
+    failing = lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, "", "no gamescope")  # noqa: E731
+    assert upscaling.start(60, SCREEN, failing, x11_dir=tmp_path) == {}
 
 
-def test_runners_put_it_before_the_game(tmp_path):
+def test_runners_pass_the_display_on(tmp_path):
     from gamingcrypt.linux.library import LinuxGame
     from gamingcrypt.wine.library import WindowsGame
 
@@ -42,19 +50,31 @@ def test_runners_put_it_before_the_game(tmp_path):
     folder.mkdir()
     (folder / "game.exe").write_bytes(b"MZ")
     (folder / "game.sh").write_bytes(b"#!/bin/sh\n")
-    wrapper = ["gamescope", "-w", "960", "--"]
     started = []
-    popen = lambda args, **kw: started.append(args)  # noqa: E731
+    popen = lambda args, **kw: started.append(kw["env"])  # noqa: E731
     wine = wine_runners.Runner("wine:system", "Wine", "wine", tmp_path / "wine")
     assert wine_runners.launch(WindowsGame(folder, "Game"), "game.exe", wine, tmp_path / "d", tmp_path / "l",
-                               popen=popen, home=tmp_path, which=lambda n: None, wrapper=wrapper)[0]
-    assert started[-1][4:9] == [*wrapper, str(tmp_path / "wine")]  # reaper ... -- gamescope … -- wine game.exe
+                               popen=popen, home=tmp_path, which=lambda n: None, more_env={"DISPLAY": ":1"})[0]
+    assert started[-1]["DISPLAY"] == ":1"
     assert linux_runners.launch(LinuxGame(folder, "Game"), "game.sh", linux_runners.DIRECT, tmp_path / "d",
-                                tmp_path / "l", popen=popen, wrapper=wrapper)[0]
-    assert started[-1][4:] == [*wrapper, str(folder / "game.sh")]
-    linux_runners.launch(LinuxGame(folder, "Game"), "game.sh", linux_runners.DIRECT, tmp_path / "d", tmp_path / "l",
-                         popen=popen)
-    assert started[-1][4:] == [str(folder / "game.sh")]  # off: nothing in between
+                                tmp_path / "l", popen=popen, more_env={"DISPLAY": ":1"})[0]
+    assert started[-1]["DISPLAY"] == ":1"
+
+
+def gamescope(monkeypatch) -> list:
+    """In the gaming session, with a second X server; what's asked of gamescope."""
+    from gamingcrypt.session import mode
+    from gamingcrypt.system import gamescope_ctl
+
+    asked = []
+    monkeypatch.setattr(mode, "in_gaming_session", lambda *a, **k: True)
+    monkeypatch.setattr(upscaling, "available", lambda *a, **k: True)
+    monkeypatch.setattr(gamescope_ctl, "set_xwayland_mode", lambda *a, **k: asked.append(("mode", *a[:3])) or True)
+    monkeypatch.setattr(gamescope_ctl, "set_scaling_filter", lambda *a, **k: asked.append(("filter", a[0])) or True)
+    monkeypatch.setattr(gamescope_ctl, "set_fps_limit", lambda *a, **k: True)
+    monkeypatch.setattr(gamescope_ctl, "set_focus_order", lambda *a, **k: True)
+    monkeypatch.setattr(gamescope_ctl, "set_touch_mode", lambda *a, **k: True)
+    return asked
 
 
 @pytest.fixture
@@ -68,9 +88,10 @@ def window(qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
     launched = []
     monkeypatch.setattr(linux_runners, "launch", lambda game, exe, runner, *a, **k: launched.append(
-        k.get("wrapper")) or (True, "Starting"))
+        k.get("more_env")) or (True, "Starting"))
     monkeypatch.setattr(wine_runners, "launch", lambda game, exe, runner, *a, **k: launched.append(
-        k.get("wrapper")) or (True, "Starting"))
+        k.get("more_env")) or (True, "Starting"))
+    gamescope(monkeypatch)
     linux_root, windows_root = tmp_path / "Linux Games", tmp_path / "Windows Games"
     (linux_root / "Celeste").mkdir(parents=True)
     (linux_root / "Celeste" / "Celeste.sh").write_bytes(b"#!/bin/sh\n")
@@ -113,16 +134,35 @@ def test_option_on_the_games_page_and_launch(qtbot, window, monkeypatch, kind):
     combo.setCurrentIndex(combo.findData(75))
     assert window.game_profiles.get(game.appid)["upscale"] == 75
     assert "Renders at 960×600, upscaled with FSR" in page.facts.text()
-    window.game_profiles.set(game.appid, "fps", 40)
     getattr(window, f"launch_{kind}")(game)
-    wrapper = window._launched[-1]
-    assert wrapper[4:] == ["/usr/bin/gamescope", "-w", "960", "-h", "600", "-W", "1280", "-H", "800", "-F", "fsr",
-                           "-f", "-r", "40", "--"]
+    assert window._launched[-1]["DISPLAY"] == ":1"  # on the second X server, at 960×600
+    window.game_ended(game.appid)
+    assert not window._upscaled  # the second server at full size again (in the background)
     combo.setCurrentIndex(0)
     assert "upscale" not in window.game_profiles.get(game.appid)
     assert "Renders at" not in page.facts.text()
     getattr(window, f"launch_{kind}")(game)
-    assert window._launched[-1] == []
+    assert "DISPLAY" not in window._launched[-1]
+
+
+def test_the_second_server_is_set_and_put_back(qtbot, window, monkeypatch):
+    from gamingcrypt.system import gamescope_ctl
+
+    asked = []
+    monkeypatch.setattr(gamescope_ctl, "set_xwayland_mode", lambda *a, **k: asked.append(("mode", *a[:3])) or True)
+    monkeypatch.setattr(gamescope_ctl, "set_scaling_filter", lambda *a, **k: asked.append(("filter", a[0])) or True)
+    games = window._games
+    game = games.linux_games[0]
+    window.game_profiles.set(game.appid, "upscale", 50)
+    window.launch_linux(game)
+    assert asked == [("mode", 1, 640, 400), ("filter", gamescope_ctl.FILTER_FSR)]
+    window.game_ended(game.appid)
+    qtbot.waitUntil(lambda: len(asked) == 4)
+    assert asked[2:] == [("mode", 1, 1280, 800), ("filter", gamescope_ctl.FILTER_LINEAR)]
+    monkeypatch.setattr(linux_runners, "launch", lambda *a, **k: (False, "It didn't start"))
+    window.launch_linux(game)
+    qtbot.waitUntil(lambda: len(asked) == 8)  # it didn't start: put back at once
+    assert asked[-2:] == [("mode", 1, 1280, 800), ("filter", gamescope_ctl.FILTER_LINEAR)]
 
 
 def test_without_gamescope_the_choice_is_off(qtbot, window, monkeypatch):
@@ -141,6 +181,7 @@ def test_emulated_games_upscale_and_render_higher_together(qtbot, tmp_path, monk
     from tests.fakes import FakeService
 
     monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
+    gamescope(monkeypatch)
     seen = []
     monkeypatch.setattr(retroarch, "launch", lambda *a, **k: seen.append(k) or (True, "Starting"))
     monkeypatch.setattr(retroarch, "available", lambda *a: True)
@@ -173,21 +214,25 @@ def test_emulated_games_upscale_and_render_higher_together(qtbot, tmp_path, monk
     assert profile["resolution"] == "2x" and profile["upscale"] == 60
     w.launch_rom(game)
     assert seen[-1]["resolution"] == "2x"
-    assert seen[-1]["wrapper"][4:9] == ["/usr/bin/gamescope", "-w", "768", "-h", "480"]
+    assert seen[-1]["more_env"] == {"DISPLAY": ":1"}
+    w.game_ended(game.appid)
     page.upscale_combo.setCurrentIndex(0)
     w.launch_rom(game)
-    assert seen[-1]["wrapper"] == [] and seen[-1]["resolution"] == "2x"
+    assert seen[-1]["more_env"] == {} and seen[-1]["resolution"] == "2x"
 
 
-def test_retroarch_command_with_the_wrapper(tmp_path):
+def test_retroarch_gets_the_display(tmp_path, monkeypatch):
     from gamingcrypt.emulation import retroarch
     from gamingcrypt.emulation.library import EmulationPaths, scan
     from gamingcrypt.emulation.systems import BY_ID
 
+    monkeypatch.setattr(retroarch, "CORE_DIRS", ())
     paths = EmulationPaths(tmp_path / "Emulation")
     paths.ensure()
     (paths.roms / "snes" / "Mario.sfc").write_text("x")
+    (paths.cores / "snes9x_libretro.so").write_text("x")
     game = scan(paths, BY_ID["snes"])[0]
-    cmd = retroarch.command(game, tmp_path / "core.so", tmp_path / "c.cfg", tmp_path / "reaper",
-                            wrapper=["gamescope", "-w", "640", "--"])
-    assert cmd[3:8] == ["--", "gamescope", "-w", "640", "--"] and cmd[8] == "retroarch"
+    started = []
+    assert retroarch.launch(game, paths, tmp_path / "d", tmp_path / "l", popen=lambda cmd, **kw: started.append(kw),
+                            which=lambda n: "/usr/bin/retroarch", more_env={"DISPLAY": ":1"})[0]
+    assert started[-1]["env"]["DISPLAY"] == ":1"

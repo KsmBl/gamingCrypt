@@ -497,6 +497,7 @@ class MainWindow(QMainWindow):
         from gamingcrypt.emulation.library import EMU_APPID_BASE
 
         self.end_game_refresh()  # the screen's own refresh rate again
+        self.stop_upscaling()
         self.windows_game_ended(appid)
         for tab in self.video_tabs():
             if appid is not None:
@@ -749,7 +750,8 @@ class MainWindow(QMainWindow):
                                        input_lag=profile.get("input_lag"), renderer=profile.get("renderer"),
                                        resolution=profile.get("resolution"),
                                        shaders=shader_choice.for_game(self.config, profile, game.system.id),
-                                       wrapper=self.upscaling(profile))
+                                       more_env=self.start_upscaling(profile))
+        self.upscaling_started(ok)
         if ok:
             self.follow_game_refresh(config_mod.cache_dir() / "logs" / retroarch.LOG_NAME)
             self.speed_mode = "normal"  # RetroArch starts at normal speed
@@ -790,8 +792,9 @@ class MainWindow(QMainWindow):
         if runner.kind == "proton" and runners.is_32bit(game.path / exe) and not runners.vulkan_32bit():
             return False, runners.VULKAN_32.format(game=game.name)  # it would quit after 2 s without a word
         pads = self.input_service.game_env() if self.input_service is not None else {}
-        ok, message = runners.launch(game, exe, runner, data_dir(), config_mod.cache_dir() / "logs", more_env=pads,
-                                     wrapper=self.upscaling(profile))
+        ok, message = runners.launch(game, exe, runner, data_dir(), config_mod.cache_dir() / "logs",
+                                     more_env={**pads, **self.start_upscaling(profile)})
+        self.upscaling_started(ok)
         if ok:
             log.info("starting Windows game %s: %s with %s", game.name, exe, runner.label)
             self._windows_started = getattr(self, "_windows_started", {})
@@ -819,8 +822,9 @@ class MainWindow(QMainWindow):
         found = games.linux_runners() if hasattr(games, "linux_runners") else runners.available()
         runner = runners.pick(found, profile.get("runner"))
         pads = self.input_service.game_env() if self.input_service is not None else {}  # SDL games too
-        ok, message = runners.launch(game, exe, runner, data_dir(), config_mod.cache_dir() / "logs", more_env=pads,
-                                     wrapper=self.upscaling(profile))
+        ok, message = runners.launch(game, exe, runner, data_dir(), config_mod.cache_dir() / "logs",
+                                     more_env={**pads, **self.start_upscaling(profile)})
+        self.upscaling_started(ok)
         if ok:
             log.info("starting Linux game %s: %s (%s)", game.name, exe, runner.label)
             self._windows_started = getattr(self, "_windows_started", {})
@@ -835,11 +839,30 @@ class MainWindow(QMainWindow):
         size = screen.size() if screen is not None else None
         return (size.width(), size.height()) if size is not None and size.width() > 0 else (1280, 800)
 
-    def upscaling(self, profile: dict) -> list[str]:
-        """The game's Upscaling choice: a nested gamescope rendering it smaller ([] when off)."""
+    def start_upscaling(self, profile: dict) -> dict[str, str]:
+        """The game's Upscaling choice: gamescope's second X server at the smaller size, FSR on -
+        the game's environment ({} when off, or outside the gaming session)."""
+        from gamingcrypt.session.mode import in_gaming_session
         from gamingcrypt.system import upscaling
 
-        return upscaling.command(profile.get("upscale"), self.screen_size(), int(profile.get("fps") or 0))
+        if not profile.get("upscale") or not in_gaming_session():
+            return {}
+        env = upscaling.start(profile.get("upscale"), self.screen_size())
+        self._upscaled = bool(env)
+        return env
+
+    def upscaling_started(self, ok: bool) -> None:
+        if not ok:
+            self.stop_upscaling()  # it didn't start: nothing to scale
+
+    def stop_upscaling(self) -> None:
+        """The second X server at full size again, the usual scaling."""
+        if getattr(self, "_upscaled", False):
+            from gamingcrypt.system import upscaling
+
+            self._upscaled = False
+            screen = self.screen_size()
+            run_async(lambda: upscaling.stop(screen), owner=self, pool=self._power_pool)
 
     def windows_game_ended(self, appid: int | None) -> None:
         """Play time and "last played" of a Windows or Linux game (Steam keeps its own games')."""
@@ -1631,6 +1654,7 @@ def main(argv: list[str] | None = None) -> int:
     window.check_display_change()
     hide_cursor_in_gaming_mode(app)
     window_ids = tag_windows_in_gaming_mode(app)  # noqa: F841 - keep alive
+    reset_upscaling_in_gaming_mode(window)
     if cfg.get("fullscreen", True) and not args.windowed:
         window.showFullScreen()
     else:
@@ -1644,6 +1668,17 @@ def main(argv: list[str] | None = None) -> int:
     # still has to delete its unfinished file.
     QThreadPool.globalInstance().waitForDone(30_000)
     return code
+
+
+def reset_upscaling_in_gaming_mode(window) -> None:
+    """A game GamingCrypt upscaled may have outlived it (a crash): the second X server back at
+    full size, the usual scaling."""
+    from gamingcrypt.session.mode import in_gaming_session
+    from gamingcrypt.system import upscaling
+
+    if in_gaming_session() and upscaling.available():
+        screen = window.screen_size()
+        run_async(lambda: upscaling.stop(screen), owner=window, pool=window._power_pool)
 
 
 def tag_windows_in_gaming_mode(app):

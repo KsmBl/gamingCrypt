@@ -63,7 +63,8 @@ The screenshots are made with `.venv/bin/python docs/screenshots.py` (sample dat
   Continue, Recently played and Favorites like every other game
   - **Upscaling** per game (Options, also for emulated games - together with their Resolution): Light / Medium /
     Strong / Maximum renders the game at 85–50% of the screen's
-    resolution and scales it up with FSR in a gamescope of its own - more FPS, or less power with an FPS limit
+    resolution and gamescope scales it up with FSR (the game on its second display, as Steam does it) - more FPS,
+    or less power with an FPS limit
 - **Movies**: every video in `<drive>/Movies`, with cover, description, cast, FSK rating and length from Wikidata /
   Wikipedia (saved next to the movie as `.jpg` and Kodi `.nfo`); search and filters; plays full screen in mpv with
   controller and YouTube-like touch controls (double tap to skip, hold for 2x, speed menu); resume where you stopped,

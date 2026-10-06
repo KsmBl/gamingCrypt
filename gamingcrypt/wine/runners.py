@@ -170,9 +170,8 @@ def command(runner: Runner, game: WindowsGame, exe: str, home: Path,
 def launch(game: WindowsGame, exe: str, runner: Runner, data_dir: Path, log_dir: Path,
            popen=subprocess.Popen, home: Path | None = None,
            which: Callable[[str], str | None] = shutil.which,
-           more_env: dict[str, str] | None = None, wrapper: list[str] | None = None) -> tuple[bool, str]:
-    """Start it like a Steam game (the "reaper" wrapper: gamescope, quick menu, Force quit).
-    wrapper: goes before the command (upscaling's nested gamescope)."""
+           more_env: dict[str, str] | None = None) -> tuple[bool, str]:
+    """Start it like a Steam game (the "reaper" wrapper: gamescope, quick menu, Force quit)."""
     from gamingcrypt.emulation.retroarch import reaper
 
     home = home or Path.home()
@@ -184,7 +183,7 @@ def launch(game: WindowsGame, exe: str, runner: Runner, data_dir: Path, log_dir:
     env = {**os.environ, **extra, **(more_env or {})}
     try:
         with open(log_dir / "wine.log", "wb") as log:
-            popen([str(reaper(data_dir)), "SteamLaunch", f"AppId={game.appid}", "--", *(wrapper or []), *args],
+            popen([str(reaper(data_dir)), "SteamLaunch", f"AppId={game.appid}", "--", *args],
                   cwd=str(cwd), env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                   start_new_session=True)
     except OSError as exc:
