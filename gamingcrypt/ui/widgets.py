@@ -372,7 +372,9 @@ class FoldingHeader(QObject):
         from PySide6.QtCore import QElapsedTimer, QEasingCurve, QPropertyAnimation
 
         self.header = header
+        self.scroll_area = scroll_area
         self.bar = scroll_area.verticalScrollBar()
+        self._padded: tuple[QWidget, int] | None = None  # (content, its own minimum height)
         self.folded = False
         self.last = self.bar.value()
         self.anchor = self.last
@@ -403,10 +405,7 @@ class FoldingHeader(QObject):
         self.last = value
 
     def fold(self) -> None:
-        # A short list that fits once the header is gone: nothing would be left to scroll
-        # up with - the header could never come back.
-        if self.bar.maximum() - self.header.height() <= self.UP_PX:
-            return
+        self._keep_scrollable()
         self.folded = True
         self.settle.start()
         self.anim.stop()
@@ -414,7 +413,26 @@ class FoldingHeader(QObject):
         self.anim.setEndValue(0)
         self.anim.start()
 
+    def _keep_scrollable(self) -> None:
+        """A short list that fits once the header is gone would leave nothing to scroll up
+        with - the header could never come back. Some room at the bottom keeps it scrollable."""
+        content = getattr(self.scroll_area, "widget", lambda: None)()
+        if content is None:
+            return
+        missing = self.bar.value() + 2 * self.UP_PX + self.header.height() - self.bar.maximum()
+        if missing > 0:
+            if self._padded is None:
+                self._padded = (content, content.minimumHeight())
+            content.setMinimumHeight(content.height() + missing)
+
+    def _unpad(self) -> None:
+        if self._padded is not None:
+            content, height = self._padded
+            self._padded = None
+            content.setMinimumHeight(height)
+
     def unfold(self) -> None:
+        self._unpad()
         self.folded = False
         self.settle.start()
         self.anim.stop()

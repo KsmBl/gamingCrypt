@@ -98,8 +98,9 @@ def test_every_list_page_has_a_folding_header(qtbot):
         assert isinstance(page.folding, FoldingHeader) and page.folding.header is page.header
 
 
-def test_short_list_does_not_fold_away_for_good(qtbot, page):
-    """Movies tab, few movies: folding made everything fit - no scroll bar left to bring it back."""
+def test_short_list_folds_and_can_still_be_scrolled_back(qtbot, page):
+    """Movies tab, a few movies: the filters fold away like on the Games tab - and some room
+    at the bottom keeps the list scrollable, so they can come back."""
     root, header, scroll, fold = page
     header.setFixedHeight(150)
     content = scroll.widget()
@@ -108,7 +109,12 @@ def test_short_list_does_not_fold_away_for_good(qtbot, page):
     bar = scroll.verticalScrollBar()
     qtbot.waitUntil(lambda: bar.maximum() == 100)
     bar.setValue(bar.maximum())
-    assert not fold.folded and header.isVisible()
+    assert fold.folded
+    qtbot.waitUntil(header.isHidden)
+    assert bar.maximum() > FoldingHeader.UP_PX  # still something to scroll up with
+    bar.setValue(0)
+    assert not fold.folded and content.minimumHeight() == 10  # the extra room is gone again
+    qtbot.waitUntil(lambda: header.isVisible() and header.maximumHeight() > 1000)
 
 
 def test_unfolds_when_the_list_gets_short_while_folded(qtbot, page):

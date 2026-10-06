@@ -498,3 +498,22 @@ def test_volume_popup_is_cleared_when_the_movie_ends(qtbot, window):
     window.game_volume_osd = type("Overlay", (), {"dismiss": lambda self: dismissed.append(True)})()
     window.game_over(window._movies.movies[0].appid)
     assert dismissed == [True]
+
+
+def test_filters_fold_away_when_scrolling_down(qtbot, root, monkeypatch):
+    """As on the Games tab - even with only a few movies (one row more than fits)."""
+    from gamingcrypt.ui.widgets import FoldingHeader
+
+    monkeypatch.setattr(FoldingHeader, "DURATION_MS", 10)
+    monkeypatch.setattr(FoldingHeader, "SETTLE_MS", 0)
+    for n in range(4):
+        put(root, f"Movie {n}.mkv", title=f"Movie {n}", wikidata=f"Q{n + 10}")
+    tab = make_tab(qtbot, root)
+    home = tab.home
+    bar = home.folding.bar
+    qtbot.waitUntil(lambda: bar.maximum() > FoldingHeader.START_PX)
+    bar.setValue(bar.maximum())
+    qtbot.waitUntil(home.header.isHidden)  # search and filters out of the way
+    assert bar.maximum() > 0
+    bar.setValue(0)
+    qtbot.waitUntil(home.header.isVisible)
