@@ -88,7 +88,12 @@ def write_config(paths: EmulationPaths, extra: dict[str, str] | None = None) -> 
         "screenshot_directory": paths.screenshots, "libretro_info_path": "/usr/share/libretro/info",
         "video_fullscreen": "true", "pause_nonactive": "false", "config_save_on_exit": "false",
         "network_cmd_enable": "true", "network_cmd_port": str(COMMAND_PORT),
-        "input_autodetect_enable": "true", "input_menu_toggle_gamepad_combo": "2",  # L3 + R3: RetroArch menu
+        "input_autodetect_enable": "true",
+        # no RetroArch menu or on-screen overlay over the game - GamingCrypt's quick menu does it all
+        # (L3 + R3 opened RetroArch's menu by accident: games use both stick clicks)
+        "input_menu_toggle_gamepad_combo": "0", "input_menu_toggle_btn": "nul", "input_menu_toggle_axis": "nul",
+        "input_overlay_enable": "false", "input_overlay": "", "input_overlay_next": "nul",
+        "input_overlay_next_btn": "nul", "input_overlay_next_axis": "nul",
         "savestate_auto_index": "false", "menu_driver": "ozone", "auto_remaps_enable": "true",
         "input_remapping_directory": paths.config / "remaps",
         # the physical pad is grabbed by the remapper: player 1 is the virtual one when it's there

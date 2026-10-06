@@ -43,6 +43,11 @@ def test_config_points_at_the_drive(emu):
                         ("savefile_directory", emu.saves), ("savestate_directory", emu.states)):
         assert f'{key} = "{folder}"' in text
     assert 'network_cmd_enable = "true"' in text and 'video_fullscreen = "true"' in text
+    # no RetroArch menu or touch overlay over the game, nor the buttons that bring them
+    for key, value in (("input_menu_toggle_gamepad_combo", "0"), ("input_menu_toggle_btn", "nul"),
+                       ("input_overlay_enable", "false"), ("input_overlay_next", "nul"),
+                       ("input_overlay_next_btn", "nul")):
+        assert f'{key} = "{value}"' in text
 
 
 def test_launch(emu, tmp_path):
