@@ -22,11 +22,18 @@ class Shader:
     name: str
     description: str
     preset: str  # in the slang shaders' folder
-    group: str  # "color", "3d", "look" (one look at a time: they all draw the final picture)
+    group: str  # "color", "3d", "upscale", "screen"
+
+    @property
+    def final(self) -> bool:
+        """An upscaler or a screen effect: it draws the final picture - one of them at a time
+        (a CRT effect on an already upscaled picture draws its lines at the wrong size)."""
+        return self.group in FINAL
 
 
-GROUPS = {"color": "Colors", "3d": "3D games", "look": "Look - one at a time"}
-# in the order they're chained: colors first, the look (scaling, screen) last
+GROUPS = {"color": "Colors", "3d": "3D games", "upscale": "Upscalers", "screen": "Screen effects"}
+FINAL = {"upscale", "screen"}  # one of these at a time
+# in the order they're chained: colors first, the upscaler or screen effect last
 SHADERS: tuple[Shader, ...] = (
     Shader("handheld_colors", "Handheld colors", "The softer colors of a Game Boy Advance / Color screen",
            "handheld/color-mod/gba-color.slangp", "color"),
@@ -36,16 +43,16 @@ SHADERS: tuple[Shader, ...] = (
            "anti-aliasing/fxaa.slangp", "3d"),
     Shader("sharpen", "Sharpen", "Crisper details, for blurry games", "sharpen/adaptive-sharpen.slangp", "3d"),
     Shader("sharp_pixels", "Sharp pixels", "Every pixel the same size and crisp, without shimmering",
-           "pixel-art-scaling/sharp-bilinear-simple.slangp", "look"),
+           "pixel-art-scaling/sharp-bilinear-simple.slangp", "upscale"),
     Shader("xbrz", "Smooth pixel art (xBRZ)", "Rounds the stairs of pixel art", "edge-smoothing/xbrz/xbrz-freescale.slangp",
-           "look"),
+           "upscale"),
     Shader("scalefx", "Smooth pixel art (ScaleFX)", "Rounder, cleaner pixel art - needs more power",
-           "edge-smoothing/scalefx/scalefx.slangp", "look"),
-    Shader("scanlines", "Scanlines", "Dark lines between the rows, as on an old TV", "scanlines/scanline.slangp", "look"),
-    Shader("crt", "CRT TV", "Scanlines, glow and the color mask of a tube TV", "crt/crt-easymode.slangp", "look"),
-    Shader("crt_curved", "Curved CRT TV", "A tube TV with its curved glass", "crt/crt-geom.slangp", "look"),
-    Shader("lcd", "LCD grid", "The pixel grid of a handheld's screen", "handheld/lcd-grid-v2.slangp", "look"),
-    Shader("gameboy", "Game Boy screen", "The green screen of the first Game Boy", "handheld/gameboy.slangp", "look"),
+           "edge-smoothing/scalefx/scalefx.slangp", "upscale"),
+    Shader("scanlines", "Scanlines", "Dark lines between the rows, as on an old TV", "scanlines/scanline.slangp", "screen"),
+    Shader("crt", "CRT TV", "Scanlines, glow and the color mask of a tube TV", "crt/crt-easymode.slangp", "screen"),
+    Shader("crt_curved", "Curved CRT TV", "A tube TV with its curved glass", "crt/crt-geom.slangp", "screen"),
+    Shader("lcd", "LCD grid", "The pixel grid of a handheld's screen", "handheld/lcd-grid-v2.slangp", "screen"),
+    Shader("gameboy", "Game Boy screen", "The green screen of the first Game Boy", "handheld/gameboy.slangp", "screen"),
 )
 BY_ID = {s.id: s for s in SHADERS}
 
@@ -56,18 +63,18 @@ def folder(dirs=SHADER_DIRS) -> Path | None:
 
 
 def clean(ids) -> list[str]:
-    """Known ids, in chain order, one look at most (the last one given)."""
+    """Known ids, in chain order, one upscaler or screen effect at most (the last one given)."""
     given = [i for i in ids or () if i in BY_ID]
-    looks = [i for i in given if BY_ID[i].group == "look"]
-    return [s.id for s in SHADERS if s.id in given and (s.group != "look" or s.id == looks[-1])]
+    finals = [i for i in given if BY_ID[i].final]
+    return [s.id for s in SHADERS if s.id in given and (not s.final or s.id == finals[-1])]
 
 
 def toggle(ids, shader_id: str, on: bool) -> list[str]:
-    """Tick / untick one; ticking a look unticks the other look."""
+    """Tick / untick one; ticking an upscaler or screen effect unticks the one there was."""
     chosen = [i for i in clean(ids) if i != shader_id]
     if on:
-        if BY_ID[shader_id].group == "look":
-            chosen = [i for i in chosen if BY_ID[i].group != "look"]
+        if BY_ID[shader_id].final:
+            chosen = [i for i in chosen if not BY_ID[i].final]
         chosen.append(shader_id)
     return clean(chosen)
 

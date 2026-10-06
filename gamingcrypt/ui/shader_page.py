@@ -87,6 +87,16 @@ class ShaderPage(QWidget):
             label = QLabel(heading)
             label.setObjectName("section")
             rows.addWidget(label)
+            if group == "upscale":
+                hint = QLabel("Bigger pixel art, smoothed or sharp - not together with a screen effect")
+                hint.setObjectName("cardMeta")
+                hint.setWordWrap(True)
+                rows.addWidget(hint)
+            elif group == "screen":
+                hint = QLabel("The look of an old TV or a handheld's screen - not together with an upscaler")
+                hint.setObjectName("cardMeta")
+                hint.setWordWrap(True)
+                rows.addWidget(hint)
             for shader in (s for s in shaders.SHADERS if s.group == group):
                 row = ShaderRow(shader)
                 row.clicked.connect(lambda on, i=shader.id: self.tick(i, on))
@@ -183,7 +193,7 @@ class ShaderPage(QWidget):
 
     def explain(self, shader_id: str) -> None:
         shader = shaders.BY_ID[shader_id]
-        note = " (unticks the other look)" if shader.group == "look" else ""
+        note = " - one upscaler or screen effect at a time" if shader.final else ""
         self.about.setText(f"{shader.name}: {shader.description}{note}")
 
     def showEvent(self, event) -> None:  # noqa: N802 - Qt API

@@ -291,7 +291,7 @@ def render(picture: QImage, ids, size: QSize) -> QImage:
         picture = sharpen(picture)
     if "gameboy" in ids:
         picture = gameboy_shades(picture)
-    look = next((i for i in ids if shaders.BY_ID[i].group == "look"), None)
+    look = next((i for i in ids if shaders.BY_ID[i].final), None)  # the upscaler or screen effect
     smooth = look in ("sharp_pixels", "xbrz", "scalefx", "crt", "crt_curved")
     if look in ("xbrz", "scalefx"):
         picture = scale2x(picture)

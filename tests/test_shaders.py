@@ -14,16 +14,18 @@ from gamingcrypt.ui import shader_preview
 
 # --- choosing ----------------------------------------------------------------------------------
 
-def test_ticking_keeps_the_chain_order_and_one_look():
+def test_ticking_keeps_the_chain_order_and_one_final_picture():
     ids = shaders.toggle([], "crt", True)
     ids = shaders.toggle(ids, "ntsc", True)
     assert ids == ["ntsc", "crt"]  # colors first, the look last - whatever was ticked first
     ids = shaders.toggle(ids, "lcd", True)
-    assert ids == ["ntsc", "lcd"]  # a look unticks the other look
+    assert ids == ["ntsc", "lcd"]  # a screen effect unticks the other one
     ids = shaders.toggle(ids, "sharpen", True)
     assert ids == ["ntsc", "sharpen", "lcd"]
     assert shaders.toggle(ids, "ntsc", False) == ["sharpen", "lcd"]
-    assert shaders.clean(["crt", "nope", "xbrz"]) == ["xbrz"]  # unknown ones go, the last look wins
+    assert shaders.clean(["crt", "nope", "xbrz"]) == ["xbrz"]  # unknown ones go, the last final one wins
+    assert shaders.toggle(["ntsc", "crt"], "scalefx", True) == ["ntsc", "scalefx"]  # an upscaler unticks the CRT
+    assert shaders.toggle(["xbrz"], "sharp_pixels", True) == ["sharp_pixels"]  # and the other upscaler
     assert shaders.describe(["ntsc", "crt"]) == "TV signal (NTSC) + CRT TV" and shaders.describe([]) == "None"
 
 
@@ -71,7 +73,7 @@ def test_read_preset(slang):
 
 
 def test_presets_chained_into_one(slang, monkeypatch, tmp_path):
-    monkeypatch.setitem(shaders.BY_ID, "crt", shaders.Shader("crt", "CRT", "", "crt/crt-easymode.slangp", "look"))
+    monkeypatch.setitem(shaders.BY_ID, "crt", shaders.Shader("crt", "CRT", "", "crt/crt-easymode.slangp", "screen"))
     monkeypatch.setitem(shaders.BY_ID, "ntsc", shaders.Shader("ntsc", "NTSC", "", "ntsc/ntsc-adaptive.slangp", "color"))
     target = shaders.write_preset(["crt", "ntsc"], tmp_path / "out" / "x.slangp", slang)
     text = target.read_text()
@@ -87,6 +89,10 @@ def test_presets_chained_into_one(slang, monkeypatch, tmp_path):
 
 def test_every_shader_is_in_a_group():
     assert {s.group for s in shaders.SHADERS} == set(shaders.GROUPS)
+    upscalers = [s.id for s in shaders.SHADERS if s.group == "upscale"]
+    assert upscalers == ["sharp_pixels", "xbrz", "scalefx"]  # apart from the screen effects
+    assert all(s.final for s in shaders.SHADERS if s.group in ("upscale", "screen"))
+    assert not any(s.final for s in shaders.SHADERS if s.group in ("color", "3d"))
     assert len(shaders.BY_ID) == len(shaders.SHADERS)
 
 
@@ -111,7 +117,7 @@ def launch(emu, tmp_path, **kw):
 
 
 def test_launch_with_shaders(emu, tmp_path, slang, monkeypatch):
-    monkeypatch.setitem(shaders.BY_ID, "crt", shaders.Shader("crt", "CRT", "", "crt/crt-easymode.slangp", "look"))
+    monkeypatch.setitem(shaders.BY_ID, "crt", shaders.Shader("crt", "CRT", "", "crt/crt-easymode.slangp", "screen"))
     cmd, cfg = launch(emu, tmp_path, shaders=["crt"], shader_dirs=[slang])
     preset = emu.config / "shaders" / retroarch.SHADER_PRESET
     assert f"--set-shader={preset}" in cmd and preset.read_text().startswith("shaders = 2")
@@ -232,7 +238,7 @@ def test_system_page_sets_the_systems_shaders(qtbot, tab):
     page.rows["ntsc"].click()
     assert tab.shader_config[0]["shaders"]["snes"] == ["ntsc", "crt"] and tab._saved
     assert page.rows["crt"].isChecked() and page.rows["crt"].text().startswith("☑")
-    page.rows["lcd"].click()  # the other look goes
+    page.rows["lcd"].click()  # the other screen effect goes
     assert not page.rows["crt"].isChecked() and tab.shader_config[0]["shaders"]["snes"] == ["ntsc", "lcd"]
     assert page.summary.text() == "TV signal (NTSC) + LCD grid"
     page.clear_button.click()
@@ -260,6 +266,11 @@ def test_game_options_choose_own_or_the_systems(qtbot, tab):
     page.about.clear()
     page.rows["lcd"].setFocus()
     assert "LCD grid" in page.about.text()  # what the focused one does
+    assert "one upscaler or screen effect at a time" in page.about.text()
+    from PySide6.QtWidgets import QLabel
+
+    headings = [label.text() for label in page.findChildren(QLabel) if label.objectName() == "section"]
+    assert headings == ["Colors", "3D games", "Upscalers", "Screen effects"]
 
 
 def test_app_starts_with_the_games_shaders(qtbot, emu, monkeypatch):
