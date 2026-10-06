@@ -573,8 +573,10 @@ class MainWindow(QMainWindow):
             limit = power.read() if power is not None else None
         except Exception:  # noqa: BLE001 - the menu must open anyway
             limit = None
-        overlay = None
-        if in_gaming_session() and gamescope_ctl.overlay_available():
+        from gamingcrypt.movies.library import is_movie_appid
+
+        overlay = None  # no switch: there's no overlay over a movie or a show (see gamescope_focus)
+        if in_gaming_session() and gamescope_ctl.overlay_available() and not is_movie_appid(appid):
             overlay = gamescope_ctl.overlay_wanted()
         profile = self.game_profiles.get(appid) if appid else {}
         return {"limit": limit, "watts": self.desired_power_w(), "fps": profile.get("fps", 0), "overlay": overlay,

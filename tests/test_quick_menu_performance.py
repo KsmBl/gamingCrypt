@@ -165,3 +165,17 @@ def test_no_overlay_without_mangoapp(qtbot, window, monkeypatch):
     monkeypatch.setattr(gs, "overlay_available", lambda which=None: False)
     window.toggle_quick_menu()
     assert not window.quick_menu.overlay_button.isVisible()
+
+
+def test_no_overlay_switch_while_a_movie_or_show_plays(qtbot, window):
+    from gamingcrypt.movies.library import MOVIE_APPID_BASE
+
+    window.game_watcher.appid, window.game_watcher.phase = MOVIE_APPID_BASE | 0x123, "playing"  # movies and shows
+    window.toggle_quick_menu()
+    menu = window.quick_menu
+    assert not menu.overlay_button.isVisible()  # never drawn over them - no switch for it either
+    menu.close_menu()
+    window.game_watcher.appid = 620  # a game: there it is
+    window.toggle_quick_menu()
+    assert menu.overlay_button.isVisible()
+    window.game_watcher._stop()
