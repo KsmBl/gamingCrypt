@@ -119,3 +119,26 @@ def test_many_libraries_get_smaller_cards_five_per_row(qtbot, tmp_path):
     tab.library_settings["hidden"] = [f"emu:{s}" for s in systems[:3]]  # 8 left: big ones again
     home.apply_libraries()
     assert not home.favorites_card.compact and home.favorites_card.height() == home.favorites_card.HEIGHT
+
+
+def test_covers_sit_in_the_middle_of_their_cards(qtbot, tmp_path):
+    """The card's 3 px border is part of the padding: as much room right of the cover as left."""
+    from gamingcrypt.movies import library
+    from gamingcrypt.ui.emulation_pages import RomCard
+    from gamingcrypt.ui.game_widgets import GameCard
+    from gamingcrypt.ui.movies_tab import MovieCard
+
+    (tmp_path / "Up (2009).mkv").write_bytes(b"v")
+    paths = EmulationPaths(tmp_path / "Emulation")
+    paths.ensure()
+    (paths.roms / "snes" / "Super Mario World (USA).sfc").write_text("x")
+    for card in (MovieCard(library.scan(tmp_path)[0]), RomCard(scan(paths, BY_ID["snes"])[0]),
+                 GameCard(SteamGame(620, "Portal 2", installed=True))):
+        from gamingcrypt.ui import theme
+
+        card.setStyleSheet(theme.STYLESHEET)  # the border comes from the theme
+        qtbot.addWidget(card)
+        card.show()
+        qtbot.waitExposed(card)
+        cover = card.cover.geometry()
+        assert cover.left() == card.width() - 1 - cover.right() == 10, type(card).__name__

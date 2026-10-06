@@ -14,6 +14,14 @@ from gamingcrypt.ui import theme
 from gamingcrypt.ui.tasks import run_async
 
 COVER_W, COVER_H = 200, 300
+CARD_BORDER = 3  # QFrame#card's border (theme): inside the card's width
+CARD_PAD = 10  # cover to card edge, the same on both sides
+
+
+def card_margins(layout) -> None:
+    """The cover centred: the border takes its part of the padding."""
+    inner = CARD_PAD - CARD_BORDER
+    layout.setContentsMargins(inner, inner, inner, CARD_PAD + 2 - CARD_BORDER)
 
 
 def format_date(ts: int | None) -> str:
@@ -117,7 +125,7 @@ class GameCard(Tappable):
         self.setObjectName("card")
         self.setFixedWidth(COVER_W + 20)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 12)
+        card_margins(layout)
         layout.setSpacing(6)
         self.cover = QLabel()
         self.cover.setFixedSize(COVER_W, COVER_H)

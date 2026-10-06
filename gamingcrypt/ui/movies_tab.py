@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit
 from gamingcrypt.movies import library
 from gamingcrypt.movies.library import Movie
 from gamingcrypt.ui import theme
-from gamingcrypt.ui.game_widgets import COVER_H, COVER_W, Tappable, format_size, placeholder_cover
+from gamingcrypt.ui.game_widgets import COVER_H, COVER_W, Tappable, card_margins, format_size, placeholder_cover
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.upload_page import UploadPage
 from gamingcrypt.ui.widgets import (FlowLayout, FoldingHeader, KeyboardFocusFilter, OnScreenKeyboard, big_button,
@@ -76,7 +76,7 @@ class MovieCard(Tappable):
         self.setObjectName("card")
         self.setFixedWidth(COVER_W + 20)  # as big as a game's card
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 12)
+        card_margins(layout)
         layout.setSpacing(6)
         self.cover = QLabel()
         self.cover.setFixedSize(COVER_W, COVER_H)

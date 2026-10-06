@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEd
 
 from gamingcrypt.emulation.library import RomGame
 from gamingcrypt.emulation.systems import System
-from gamingcrypt.ui.game_widgets import COVER_H, COVER_W, format_size, placeholder_cover
+from gamingcrypt.ui.game_widgets import COVER_H, COVER_W, card_margins, format_size, placeholder_cover
 from gamingcrypt.ui.widgets import FlowLayout, big_button, enable_touch_scroll, set_status
 
 def load_rom_cover(label: QLabel, game: RomGame, covers, w: int, h: int) -> None:
@@ -48,7 +48,7 @@ class RomCard(QFrame):
         self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.setFixedWidth(COVER_W + 20)  # the same size as a Steam game's card
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 12)
+        card_margins(layout)
         layout.setSpacing(6)
         self.cover = QLabel()
         self.cover.setFixedSize(COVER_W, COVER_H)
