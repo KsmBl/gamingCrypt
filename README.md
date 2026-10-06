@@ -5,17 +5,27 @@ A fullscreen **touch UI for Linux gaming handhelds** whose games live on a
 password or swipe pattern**, and then you land in a console-style launcher with
 your Steam library.
 
-| Lock screen | 5×5 Pattern | Swipe pattern setup |
+| Games | Steam library | Game page |
 |---|---|---|
-| ![lock](docs/screenshots/lock.png) | ![grid5](docs/screenshots/grid5.png) | ![pattern](docs/screenshots/pattern.png) |
+| ![games](docs/screenshots/games.png) | ![steam](docs/screenshots/steam.png) | ![detail](docs/screenshots/detail.png) |
 
-| New container | Games | |
+| Movies | Movie page | Light theme |
 |---|---|---|
-| ![create](docs/screenshots/create.png) | ![games](docs/screenshots/games.png) | |
+| ![movies](docs/screenshots/movies.png) | ![movie](docs/screenshots/movie.png) | ![light](docs/screenshots/games-light.png) |
 
-| Steam library | Game page | Settings |
+| Shows | Show page | Episodes |
 |---|---|---|
-| ![steam](docs/screenshots/steam.png) | ![detail](docs/screenshots/detail.png) | ![settings](docs/screenshots/settings.png) |
+| ![shows](docs/screenshots/shows.png) | ![show](docs/screenshots/show.png) | ![episodes](docs/screenshots/episodes.png) |
+
+| Quick menu | Settings | Settings (light) |
+|---|---|---|
+| ![quickmenu](docs/screenshots/quickmenu.png) | ![settings](docs/screenshots/settings.png) | ![settings-light](docs/screenshots/settings-light.png) |
+
+| Lock screen | 5×5 Pattern | Swipe pattern | First start |
+|---|---|---|---|
+| ![lock](docs/screenshots/lock.png) | ![grid5](docs/screenshots/grid5.png) | ![pattern](docs/screenshots/pattern.png) | ![create](docs/screenshots/create.png) |
+
+The screenshots are made with `.venv/bin/python docs/screenshots.py` (sample data, no device needed).
 
 ## Features
 
@@ -24,26 +34,33 @@ your Steam library.
 - **First-start setup**: pick an existing volume, or **create a new encrypted container**, then choose your unlock method
 - **Key derivation**: every secret is hardened with scrypt and a per-volume salt before it reaches VeraCrypt
 - **Settings → Reset authentication method**: switch between PIN, password, swipe pattern and 5×5 pattern at any time
-- **Tabs**: Games, Downloads, Movies, Shows, Music, Pictures, Settings (the media tabs show *coming soon*)
-- **Power menu** (⏻): shut down, restart, or desktop mode (quit GamingCrypt)
+- **Dark and light theme** (*Settings → Device → Appearance*), switched at once; the same clean design on every page
+- **Browse with the controller like on a console**: left / right stay in their row (a grid row goes on with the
+  next one), up / down keep the column, tab rows are entered at the open tab, B goes back - and everything works by touch too
+- **Tabs**: Games, Downloads, Movies, Shows, Music, Pictures, Settings (Music and Pictures show *coming soon*)
+- **Power menu** (⏻): lock, shut down, restart, restart into another system, desktop mode
 - **Battery** next to ⏻: level, ⚡ when on external power, red when low
 - **Downloads tab**: every queued, running and paused Steam download with progress and a count in the tab bar; reorder with ▲/▼ (the top one downloads), cancel with ✕ (deletes what was downloaded)
 - **Device settings**: resolution, refresh rate, brightness, max power consumption (TDP), audio output and input device and their volume
 - **Controller**: calibrate the analog sticks and triggers and map every button; games get a virtual Xbox controller with your setup
-- **Browse with the controller**: the whole UI works with D-pad / stick, A, B, LB/RB, as well as with touch
 - **Games**
-  - Installed games below the libraries, searchable
-  - **Recently played** library: your last 10 played games
-  - **Steam** card with your whole library (installed, plus every owned game when a Web API key is set)
+  - **Continue playing** at the top, installed games below the libraries, searchable
+  - Libraries: **Favorites**, **Steam** (your whole library), **Recently played** and one per **emulated system**
   - Sort by **name, release date, playtime, price or latest update**, ascending or descending
-  - Search the whole Steam library (installed or not)
   - **🎮 Big Picture** opens Steam's console UI (e.g. for Workshop mods); GamingCrypt steps aside and comes back when you close it
-  - The title and sort bar fold away while you scroll down and come back when you scroll up (also on Games, Store and Downloads)
-  - Game page: **Play** or **Download**, plus **Options → Uninstall** (tap twice to confirm, no Steam popup)
-  - Game size: size on disk for installed games, the store's storage requirement for the others
-  - **Options → Proton**: pick the Proton version per game (official builds and custom ones like GE-Proton), or *Default*
-  - **Downloads without opening Steam**: owned games are queued straight onto the encrypted drive while Steam runs minimised, with progress shown in GamingCrypt
+  - Game page: **Play** or **Download**, plus **Options**: Proton version, power and FPS limit, **Uninstall**
+  - **Downloads without opening Steam**: owned games are queued straight onto the encrypted drive while Steam runs minimised
   - **Store**: search the Steam store, install free or owned games, or open a paid game's purchase page in Steam
+- **Emulated games** (RetroArch, Eden for Switch): NES to PS2, covers from libretro-thumbnails, cores downloaded
+  automatically, controls per system on a picture of its controller, save states, speed and disc switching in the
+  quick menu; add ROMs and BIOS files over Wi-Fi (browser with QR code, or a network share)
+- **Movies**: every video in `<drive>/Movies`, with cover, description, cast, FSK rating and length from Wikidata /
+  Wikipedia (saved next to the movie as `.jpg` and Kodi `.nfo`); search and filters; plays full screen in mpv with
+  controller and YouTube-like touch controls (double tap to skip, hold for 2x, speed menu); resume where you stopped,
+  watched marks, remove with everything that belongs to it, upload over Wi-Fi
+- **Shows**: one card per show, not per episode - episodes are recognised by their names (`S01E02`, `1x02`,
+  season folders) and grouped; show and episode info, pictures and cast from TVmaze; seasons, **Continue** with the
+  next episode, the next one starts by itself, watched marks per episode and show
 - Built for touch: big targets, kinetic flick scrolling, an on-screen keyboard and double-tap confirmation for destructive actions
 
 ## Install
