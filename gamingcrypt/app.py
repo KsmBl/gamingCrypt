@@ -177,6 +177,11 @@ class MainWindow(QMainWindow):
 
         # the performance overlay: games only (not over GamingCrypt, not over a movie)
         gs.apply_overlay(front == "game" and game is not None and not is_movie_appid(game))
+        # touches: real ones for GamingCrypt, clicks for the movie player (its touch controls)
+        clicks = front == "game" and is_movie_appid(game)
+        if clicks or getattr(self, "_touch_clicks", False):
+            self._touch_clicks = clicks
+            gs.set_touch_mode(gs.TOUCH_LEFT_CLICK if clicks else gs.TOUCH_PASSTHROUGH)
         # Every list ends with all candidates: in gamescope's Steam mode an order that
         # matches no open window would leave the screen black.
         launcher, steam = gs.LAUNCHER_APPID, gs.BIG_PICTURE_APPID

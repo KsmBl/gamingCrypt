@@ -403,6 +403,8 @@ def test_no_performance_overlay_over_movies(qtbot, window, monkeypatch):
     monkeypatch.setattr(gamescope_ctl, "apply_overlay", lambda over_game, env=None: shown.append(over_game))
     monkeypatch.setattr(gamescope_ctl, "set_focus_order", lambda order, runner=None: True)
     monkeypatch.setattr(gamescope_ctl, "set_window_appid", lambda *a, **k: True)
+    touch = []
+    monkeypatch.setattr(gamescope_ctl, "set_touch_mode", lambda mode, runner=None: touch.append(mode) or True)
     movie = window._movies.movies[0]
     window.game_watcher.appid, window.game_watcher.phase = movie.appid, "playing"
     window.game_watcher.timer.stop()
@@ -410,6 +412,14 @@ def test_no_performance_overlay_over_movies(qtbot, window, monkeypatch):
     window.game_watcher.appid = 730
     window.gamescope_focus("game")
     assert shown == [False, True]
+    # touches: clicks for the player, real touches again for everything else - and only then
+    assert touch == [gamescope_ctl.TOUCH_LEFT_CLICK, gamescope_ctl.TOUCH_PASSTHROUGH]
+    window.gamescope_focus("launcher")
+    assert len(touch) == 2
+    window.game_watcher.appid = movie.appid
+    window.gamescope_focus("game")
+    window.gamescope_focus("launcher")  # quick menu over the movie: GamingCrypt needs real touches
+    assert touch[2:] == [gamescope_ctl.TOUCH_LEFT_CLICK, gamescope_ctl.TOUCH_PASSTHROUGH]
     window.game_watcher.appid = None
     window.game_watcher.phase = "idle"
 

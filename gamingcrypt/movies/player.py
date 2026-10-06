@@ -38,7 +38,7 @@ m ignore
 """
 TOUCH_SCRIPT = Path(__file__).with_name("touch.lua")  # big buttons instead of mpv's own controls
 CONTROLS = ("A / Start: pause · B: stop · ◀ ▶: 10 s back / 30 s on · ▲ ▼: 5 min · LB / RB: chapter · "
-            "X: subtitles · Y: audio language · Touch: tap for the controls, double tap left / right: 10 s")
+            "X: subtitles · Y: audio language · Touch: tap for the controls, double tap left / right: 10 s, hold: 2x")
 
 
 def available(which: Callable[[str], str | None] = shutil.which) -> bool:

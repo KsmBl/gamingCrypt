@@ -21,6 +21,9 @@ Runner = Callable[..., subprocess.CompletedProcess]
 DYNAMIC_REFRESH = "GAMESCOPE_DYNAMIC_REFRESH"
 FOCUS_ORDER = "GAMESCOPECTRL_BASELAYER_APPID"
 FPS_LIMIT = "GAMESCOPE_FPS_LIMIT"
+TOUCH_MODE = "STEAM_TOUCH_CLICK_MODE"  # how gamescope hands on touches (Steam sets it the same way)
+TOUCH_PASSTHROUGH = 4  # real touches (Qt: GamingCrypt; the session's --default-touch-mode)
+TOUCH_LEFT_CLICK = 1  # touches as left clicks at the finger (the movie player can't read touches)
 SCREENSHOT = "GAMESCOPECTRL_REQUEST_SCREENSHOT"
 SCREENSHOT_FILE = "/tmp/gamescope.png"  # where gamescope writes it
 FULL_COMPOSITION = 2  # what's on screen, overlays included
@@ -93,6 +96,11 @@ def set_fps_limit(fps: int, runner: Runner = subprocess.run) -> bool:
     else:
         args = ["-remove", FPS_LIMIT]
     result = _xprop(args, runner)
+    return result is not None and result.returncode == 0
+
+
+def set_touch_mode(mode: int, runner: Runner = subprocess.run) -> bool:
+    result = _xprop(["-f", TOUCH_MODE, "32c", "-set", TOUCH_MODE, str(int(mode))], runner)
     return result is not None and result.returncode == 0
 
 

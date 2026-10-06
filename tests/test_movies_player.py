@@ -173,7 +173,7 @@ def test_touch_script_is_there_and_shipped():
 
     script = player.TOUCH_SCRIPT.read_text()
     assert 'add_forced_key_binding("MBTN_LEFT"' in script and '"absolute-percent"' in script
-    for label in ("« 10 s", "30 s »", "✕ Stop", "Subtitles", "Audio"):
+    for label in ("« 10", "10 »", "✕", "Subtitles", "Audio", "2x  ▶▶"):
         assert label in script
     assert "//" not in "".join(line.split("--")[0] for line in script.splitlines())  # LuaJIT: no //
     pyproject = (Path(__file__).parent.parent / "pyproject.toml").read_text()
@@ -181,3 +181,31 @@ def test_touch_script_is_there_and_shipped():
     luajit = shutil.which("luajit")
     if luajit:
         assert subprocess.run([luajit, "-b", str(player.TOUCH_SCRIPT), "/dev/null"]).returncode == 0
+
+
+def test_touch_mode_switch():
+    import subprocess
+
+    from gamingcrypt.system import gamescope_ctl
+
+    calls = []
+
+    def runner(args, **kw):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    assert gamescope_ctl.set_touch_mode(gamescope_ctl.TOUCH_LEFT_CLICK, runner)
+    assert calls == [["xprop", "-root", "-f", "STEAM_TOUCH_CLICK_MODE", "32c", "-set", "STEAM_TOUCH_CLICK_MODE", "1"]]
+    assert gamescope_ctl.TOUCH_PASSTHROUGH == 4  # the session's --default-touch-mode
+    from gamingcrypt.session.mode import DEFAULT_ARGS
+
+    assert f"--default-touch-mode {gamescope_ctl.TOUCH_PASSTHROUGH}" in DEFAULT_ARGS
+    assert not gamescope_ctl.set_touch_mode(1, lambda *a, **k: subprocess.CompletedProcess(a, 1, "", ""))
+
+
+def test_touch_script_gestures_are_there():
+    script = player.TOUCH_SCRIPT.read_text()
+    assert '{complex = true}' in script  # finger down / up: holds and drags
+    assert 'set_property_number("speed", 2)' in script  # hold: 2x like YouTube
+    assert "SEEK_STREAK_S" in script and "DOUBLE_TAP_S" in script  # double tap, further taps add 10 s
+    assert "DRAG_REST_S" in script  # gamescope's click mode lets go when the finger moves
