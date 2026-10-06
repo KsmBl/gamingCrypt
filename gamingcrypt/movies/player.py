@@ -21,12 +21,10 @@ from gamingcrypt.movies.library import Movie
 
 SOCKET_NAME = "gamingcrypt-mpv.sock"
 LOG_NAME = "mpv.log"
-# Touch, and no volume of its own: the volume buttons and the quick menu set the device's
-# volume (GamingCrypt shows it). The controller is read by GamingCrypt (remote_command): mpv
+# No volume of its own: the volume buttons and the quick menu set the device's volume
+# (GamingCrypt shows it). Touch: touch.lua. The controller is read by GamingCrypt (remote_command): mpv
 # would take the physical pad, which GamingCrypt holds - its buttons never reach mpv.
 INPUT_CONF = """\
-MBTN_LEFT cycle pause
-MBTN_LEFT_DBL ignore
 VOLUME_UP ignore
 VOLUME_DOWN ignore
 MUTE ignore
@@ -38,10 +36,9 @@ WHEEL_DOWN ignore
 * ignore
 m ignore
 """
-OSC_NO_VOLUME = ",".join(f"osc-volume_{action}_command=ignore"
-                         for action in ("mbtn_left", "mbtn_right", "wheel_up", "wheel_down"))
+TOUCH_SCRIPT = Path(__file__).with_name("touch.lua")  # big buttons instead of mpv's own controls
 CONTROLS = ("A / Start: pause · B: stop · ◀ ▶: 10 s back / 30 s on · ▲ ▼: 5 min · LB / RB: chapter · "
-            "X: subtitles · Y: audio language · tap: pause")
+            "X: subtitles · Y: audio language · Touch: tap for the controls, double tap left / right: 10 s")
 
 
 def available(which: Callable[[str], str | None] = shutil.which) -> bool:
@@ -66,8 +63,10 @@ def command(movie: Movie, reaper_path: Path, sock: Path, conf: Path, start: floa
     args = [str(reaper_path), "SteamLaunch", f"AppId={movie.appid}", "--",
             "mpv", "--fs", "--force-window=immediate", "--keep-open=no", "--idle=no", "--no-terminal",
             "--hwdec=auto-safe", "--input-gamepad=no", f"--input-conf={conf}", f"--input-ipc-server={sock}",
-            "--volume=100", "--volume-max=100", f"--script-opts={OSC_NO_VOLUME}",
-            "--save-position-on-quit=no", f"--title={movie.title}", f"--alang={','.join(languages)}",
+            "--volume=100", "--volume-max=100", "--osc=no", f"--script={TOUCH_SCRIPT}",
+            "--cursor-autohide=always",
+            "--save-position-on-quit=no", f"--title={movie.title}", f"--force-media-title={movie.title}",
+            f"--alang={','.join(languages)}",
             f"--slang={','.join(languages)}"]
     if start > 0:
         args.append(f"--start={start:.1f}")

@@ -22,9 +22,8 @@ def test_command(movie, tmp_path):
     assert args[:4] == [str(tmp_path / "reaper"), "SteamLaunch", f"AppId={movie.appid}", "--"]
     assert args[4] == "mpv" and "--fs" in args and "--input-gamepad=no" in args  # GamingCrypt reads the pad
     assert "--volume=100" in args and "--volume-max=100" in args  # no volume of its own
-    assert "--script-opts=osc-volume_mbtn_left_command=ignore,osc-volume_mbtn_right_command=ignore," \
-           "osc-volume_wheel_up_command=ignore,osc-volume_wheel_down_command=ignore" in args
-    assert f"--input-ipc-server={tmp_path / 'mpv.sock'}" in args and f"--input-conf={tmp_path / 'input.conf'}" in args
+    assert "--osc=no" in args and f"--script={player.TOUCH_SCRIPT}" in args  # big touch controls instead
+    assert "--force-media-title=The Matrix" in args
     assert "--alang=de,en" in args and "--title=The Matrix" in args
     assert not any(a.startswith("--start") for a in args)
     assert args[-2:] == ["--", str(movie.path)]  # a name starting with "-" stays a file
@@ -62,9 +61,8 @@ def test_launch_problems(movie, tmp_path):
     assert not ok and "no reaper" in message
 
 
-def test_touch_bindings_and_no_volume_keys():
+def test_no_volume_keys():
     conf = player.INPUT_CONF
-    assert "MBTN_LEFT cycle pause" in conf and "MBTN_LEFT_DBL ignore" in conf  # a double tap stays full screen
     for key in ("VOLUME_UP", "VOLUME_DOWN", "MUTE", "WHEEL_UP", "WHEEL_DOWN", "9", "0", "m"):
         assert f"\n{key} ignore\n" in "\n" + conf
     assert "GAMEPAD" not in conf
@@ -166,3 +164,20 @@ def test_unknown_length_and_no_player(tmp_path):
 def test_socket_lives_in_the_runtime_folder(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
     assert player.socket_path() == tmp_path / player.SOCKET_NAME
+
+
+def test_touch_script_is_there_and_shipped():
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    script = player.TOUCH_SCRIPT.read_text()
+    assert 'add_forced_key_binding("MBTN_LEFT"' in script and '"absolute-percent"' in script
+    for label in ("« 10 s", "30 s »", "✕ Stop", "Subtitles", "Audio"):
+        assert label in script
+    assert "//" not in "".join(line.split("--")[0] for line in script.splitlines())  # LuaJIT: no //
+    pyproject = (Path(__file__).parent.parent / "pyproject.toml").read_text()
+    assert '"gamingcrypt.movies" = ["*.lua"]' in pyproject
+    luajit = shutil.which("luajit")
+    if luajit:
+        assert subprocess.run([luajit, "-b", str(player.TOUCH_SCRIPT), "/dev/null"]).returncode == 0

@@ -20,6 +20,9 @@ gamingcrypt = "gamingcrypt.app:main"
 [tool.setuptools.packages.find]
 include = ["gamingcrypt*"]
 
+[tool.setuptools.package-data]
+"gamingcrypt.movies" = ["*.lua"]  # mpv's touch controls
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 qt_api = "pyside6"
