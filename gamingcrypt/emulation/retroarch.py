@@ -254,8 +254,10 @@ def current_disc(paths: EmulationPaths, game: RomGame, core: Path | None) -> int
     return 0
 
 
-def command(game: RomGame, core: Path, config: Path, reaper_path: Path, shader: Path | None = None) -> list[str]:
-    return [str(reaper_path), "SteamLaunch", f"AppId={game.appid}", "--",
+def command(game: RomGame, core: Path, config: Path, reaper_path: Path, shader: Path | None = None,
+            wrapper: list[str] | None = None) -> list[str]:
+    """wrapper: goes before RetroArch (upscaling's nested gamescope)."""
+    return [str(reaper_path), "SteamLaunch", f"AppId={game.appid}", "--", *(wrapper or []),
             "retroarch", "--verbose", "--appendconfig", str(config),
             *([f"--set-shader={shader}"] if shader else []), "-L", str(core), str(game.path)]
 
@@ -283,7 +285,7 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
            slow: float = DEFAULT_SLOW, memory_card: str | None = None,
            widescreen: str | None = None, input_lag: str | None = None,
            renderer: str | None = None, resolution: str | None = None,
-           shaders: list[str] | None = None, shader_dirs=None) -> tuple[bool, str]:
+           shaders: list[str] | None = None, shader_dirs=None, wrapper: list[str] | None = None) -> tuple[bool, str]:
     if not available(which):
         return False, "RetroArch isn't installed - run ./install.sh"
     core = find_core(paths, game.system, core_name)
@@ -317,7 +319,7 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
     log_dir.mkdir(parents=True, exist_ok=True)
     try:
         with open(log_dir / LOG_NAME, "wb") as log:  # this game's log (its frame rate is read from it)
-            popen(command(game, core, config, reaper(data_dir), shader), stdin=subprocess.DEVNULL, stdout=log,
+            popen(command(game, core, config, reaper(data_dir), shader, wrapper), stdin=subprocess.DEVNULL, stdout=log,
                   stderr=subprocess.STDOUT, start_new_session=True, env=dict(os.environ))
     except OSError as exc:
         return False, f"RetroArch didn't start: {exc}"

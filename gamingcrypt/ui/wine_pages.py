@@ -202,13 +202,7 @@ class WindowsGamePage(QWidget):
         return f"Runs with {self.runner_combo.currentText()}"
 
     def upscale_text(self) -> str:
-        from gamingcrypt.system import upscaling
-
-        percent = self.tab.profiles.get(self.game.appid).get("upscale")
-        if percent not in upscaling.LEVELS:
-            return ""
-        w, h = upscaling.render_size(self.screen_size(), percent)
-        return f"Renders at {w}×{h}, upscaled with FSR"
+        return self.upscale.facts()
 
     def saves_note(self) -> str:
         return (f"Saves and settings: its own Wine prefix on the drive "
@@ -267,7 +261,10 @@ class WindowsGamePage(QWidget):
         grid.setColumnStretch(1, 1)
         self.exe_combo = QComboBox()
         self.runner_combo = QComboBox()
-        self.upscale_combo = QComboBox()
+        from gamingcrypt.ui.upscale_option import UpscaleOption
+
+        self.upscale = UpscaleOption(tab.profiles, game.appid, lambda: self.screen_size(), lambda: self._show_facts())
+        self.upscale_combo, self.upscale_note = self.upscale.combo, self.upscale.note
         for line, (caption, combo) in enumerate((("Start file", self.exe_combo), ("Runs with", self.runner_combo),
                                                  ("Upscaling", self.upscale_combo))):
             label = QLabel(caption)
@@ -275,9 +272,6 @@ class WindowsGamePage(QWidget):
             grid.addWidget(label, line, 0)
             grid.addWidget(combo, line, 1)
         options.addLayout(grid)
-        self.upscale_note = QLabel("")
-        self.upscale_note.setObjectName("cardMeta")
-        self.upscale_note.setWordWrap(True)
         options.addWidget(self.upscale_note)
         self.prefix_note = QLabel(self.saves_note())
         self.prefix_note.setObjectName("cardMeta")
@@ -308,8 +302,6 @@ class WindowsGamePage(QWidget):
         self.exe_combo.currentIndexChanged.connect(self.exe_chosen)
         self.runner_combo.currentIndexChanged.connect(self.runner_chosen)
         self._fill_runners()
-        self._fill_upscaling()
-        self.upscale_combo.currentIndexChanged.connect(self.upscale_chosen)
         self._show_facts()
         run_async(lambda: (self.LIB.executables(game), library.folder_size(game.path)), self._scanned,
                   lambda _e: None, owner=self)
@@ -347,36 +339,12 @@ class WindowsGamePage(QWidget):
         self.runner_combo.blockSignals(False)
 
     def screen_size(self) -> tuple[int, int]:
-        window = self.tab.window() if hasattr(self.tab, "window") else None
-        screen = window.screen() if window is not None else None
-        size = screen.size() if screen is not None else None
-        return (size.width(), size.height()) if size is not None and size.width() > 0 else (1280, 800)
+        from gamingcrypt.ui.upscale_option import screen_size_of
+
+        return screen_size_of(self.tab if hasattr(self.tab, "window") else None)
 
     def _fill_upscaling(self) -> None:
-        """Off, or how much smaller the game renders - gamescope scales it up with FSR."""
-        import shutil
-
-        from gamingcrypt.system import upscaling
-
-        chosen = self.tab.profiles.get(self.game.appid).get("upscale")
-        screen = self.screen_size()
-        self.upscale_combo.blockSignals(True)
-        self.upscale_combo.clear()
-        self.upscale_combo.addItem(upscaling.describe(None, screen), None)
-        for percent in upscaling.LEVELS:
-            self.upscale_combo.addItem(upscaling.describe(percent, screen), percent)
-        self.upscale_combo.setCurrentIndex(max(0, self.upscale_combo.findData(chosen)))
-        self.upscale_combo.blockSignals(False)
-        there = shutil.which("gamescope") is not None
-        self.upscale_combo.setEnabled(there)
-        self.upscale_note.setText(
-            "The game renders smaller and is scaled up to the screen (AMD FSR): more FPS, or less power with an "
-            "FPS limit - the picture gets a little softer. From the next start." if there
-            else "Upscaling needs gamescope (the gaming session's compositor) - it isn't installed.")
-
-    def upscale_chosen(self, _index: int) -> None:
-        self.tab.profiles.set(self.game.appid, "upscale", self.upscale_combo.currentData())
-        self._show_facts()
+        self.upscale.fill()
 
     def exe_chosen(self, _index: int) -> None:
         self.tab.profiles.set(self.game.appid, "exe", self.exe_combo.currentData())
