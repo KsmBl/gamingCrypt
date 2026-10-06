@@ -1,6 +1,7 @@
 """Windows games outside Steam: a folder each, a start file, Proton or Wine - library, launch, pages."""
 
 import copy
+import os
 
 import pytest
 
@@ -126,6 +127,11 @@ def test_launch_like_a_steam_game(root, home, tmp_path):
     args, kw = started[0]
     assert args[1:4] == ["SteamLaunch", f"AppId={knight.appid}", "--"]  # gamescope, quick menu, Force quit
     assert kw["cwd"] == str(knight.path) and kw["start_new_session"]
+    assert kw["env"].get("SDL_GAMECONTROLLER_IGNORE_DEVICES") == os.environ.get("SDL_GAMECONTROLLER_IGNORE_DEVICES")
+    runners.launch(knight, "hollow_knight.exe", proton, tmp_path / "data", tmp_path / "logs",
+                   popen=lambda args, **kw: started.append((args, kw)), home=home, which=lambda n: None,
+                   more_env={"SDL_GAMECONTROLLER_IGNORE_DEVICES": "0x045e/0x028e"})
+    assert started[-1][1]["env"]["SDL_GAMECONTROLLER_IGNORE_DEVICES"] == "0x045e/0x028e"
     ok, message = runners.launch(knight, "gone.exe", proton, tmp_path / "d", tmp_path / "l",
                                  popen=lambda *a, **k: None, home=home)
     assert not ok and "gone.exe" in message
@@ -278,6 +284,23 @@ def test_play_time_and_continue(qtbot, window, monkeypatch):
     assert games.home.continue_card.meta.text().startswith("Windows · last played")
     games.home.continue_card.play_button.click()
     assert window._launched[-1][0] == "Hollow Knight"
+
+
+def test_wine_skips_the_grabbed_controller(qtbot, window, monkeypatch):
+    # Wine finds the grabbed (silent) real pad first - GTA's GInput listened to it as player 1
+    seen = []
+    monkeypatch.setattr(runners, "launch", lambda *a, **k: seen.append(k.get("more_env")) or (True, "Starting"))
+
+    class Pads:
+        def game_env(self):
+            return {"SDL_GAMECONTROLLER_IGNORE_DEVICES": "0x045e/0x028e"}
+
+        def stop(self):
+            pass
+
+    window.input_service = Pads()
+    assert window.launch_windows(window._games.windows_games[0])[0]
+    assert seen == [{"SDL_GAMECONTROLLER_IGNORE_DEVICES": "0x045e/0x028e"}]
 
 
 def test_no_runner_says_what_to_do(qtbot, window):

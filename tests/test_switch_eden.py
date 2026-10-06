@@ -29,8 +29,8 @@ def test_switch_is_a_system(emu):
 
 def test_sdl_guid_of_the_virtual_controller():
     # what SDL reported on the handheld for GamingCrypt's virtual controller and the Xbox pad
-    assert eden.sdl_guid() == "0300e5c95e0400008e02000010010000"
-    assert eden.sdl_guid("Microsoft X-Box 360 pad") == "030081b85e0400008e02000010010000"
+    assert eden.sdl_guid() == "0300e5c95e0400008f02000010010000"
+    assert eden.sdl_guid("Microsoft X-Box 360 pad", product=0x028E) == "030081b85e0400008e02000010010000"
 
 
 def test_controls_switch_layout():

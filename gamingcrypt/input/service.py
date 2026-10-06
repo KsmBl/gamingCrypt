@@ -89,3 +89,17 @@ class InputService:
     def resume(self, was_running: bool) -> None:
         if was_running:
             self.start()
+
+    def game_env(self) -> dict[str, str]:
+        """For games that pick a controller themselves (Wine's SDL): skip the grabbed real one - it
+        gives them nothing, and as the first one found it's often their "player 1" (GTA's GInput)."""
+        if not self.running:
+            return {}
+        info = self.remapper.info
+        try:
+            vendor, product = int(info.vendor, 16), int(info.product, 16)
+        except ValueError:
+            return {}
+        if (vendor, product) == (e.VIRTUAL_VENDOR, e.VIRTUAL_PRODUCT):
+            return {}  # the same id: skipping it would hide the virtual one too
+        return {"SDL_GAMECONTROLLER_IGNORE_DEVICES": f"0x{vendor:04x}/0x{product:04x}"}

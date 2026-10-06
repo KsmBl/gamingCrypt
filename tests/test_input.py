@@ -217,6 +217,17 @@ def test_service_errors():
     assert not svc.set_enabled(True) and "uinput" in svc.error
 
 
+def test_service_game_env_hides_the_grabbed_pad():
+    svc, *_ = service([PAD])
+    assert svc.game_env() == {}  # not grabbed: nothing to hide
+    svc.set_enabled(True)
+    assert svc.game_env() == {"SDL_GAMECONTROLLER_IGNORE_DEVICES": "0x1234/0x5678"}
+    same = e.DeviceInfo("/dev/input/event9", "Pad", f"{e.VIRTUAL_VENDOR:04x}", f"{e.VIRTUAL_PRODUCT:04x}", KEYS, AXES)
+    svc, *_ = service([same])
+    svc.set_enabled(True)
+    assert svc.game_env() == {}  # its id is the virtual one's: hiding it would hide both
+
+
 # --- real kernel round trip --------------------------------------------------------------
 
 uinput_ok = pytest.mark.skipif(not os.access("/dev/uinput", os.W_OK), reason="/dev/uinput not writable")
@@ -250,6 +261,7 @@ def test_real_remapper_end_to_end():
         remapper = Remapper(info, profile)
         assert remapper.start(), remapper.error
         virtual = wait_for_device(e.VIRTUAL_NAME)
+        assert (virtual.vendor, virtual.product) == ("045e", "028f")  # not the built-in pads' id
         out = e.InputDevice(virtual.path)
         assert out.absinfo(e.ABS_X).maximum == 32767
         out.read(0.2)  # drop the initial neutral state

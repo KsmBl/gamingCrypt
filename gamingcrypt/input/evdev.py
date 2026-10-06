@@ -38,7 +38,9 @@ EVENT_SIZE = struct.calcsize(EVENT_FORMAT)
 ABSINFO_FORMAT = "6i"  # value, minimum, maximum, fuzz, flat, resolution
 
 VIRTUAL_NAME = "GamingCrypt Virtual Controller"
-XBOX360_VENDOR, XBOX360_PRODUCT = 0x045E, 0x028E
+# An Xbox 360 pad for everyone (SDL, Steam, Wine) - but not the id of the built-in pads (0x028E,
+# wired): Wine games are told to skip the grabbed real one by its id, see InputService.game_env.
+VIRTUAL_VENDOR, VIRTUAL_PRODUCT = 0x045E, 0x028F  # the 360 wireless pad on its charging cable
 BUS_USB = 0x03
 
 
@@ -242,7 +244,7 @@ class UInput:
                 fcntl.ioctl(self.fd, UI_SET_ABSBIT, axis.code)
                 fcntl.ioctl(self.fd, UI_ABS_SETUP, struct.pack("H2x6i", axis.code, 0, axis.minimum, axis.maximum,
                                                                0, axis.flat, 0))
-            fcntl.ioctl(self.fd, UI_DEV_SETUP, struct.pack("HHHH80sI", BUS_USB, XBOX360_VENDOR, XBOX360_PRODUCT,
+            fcntl.ioctl(self.fd, UI_DEV_SETUP, struct.pack("HHHH80sI", BUS_USB, VIRTUAL_VENDOR, VIRTUAL_PRODUCT,
                                                            0x0110, name.encode()[:79], 0))
             fcntl.ioctl(self.fd, UI_DEV_CREATE)
         except OSError:

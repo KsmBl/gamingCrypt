@@ -104,8 +104,8 @@ def _crc16(data: bytes) -> int:
     return crc
 
 
-def sdl_guid(name: str = evdev.VIRTUAL_NAME, bus: int = evdev.BUS_USB, vendor: int = evdev.XBOX360_VENDOR,
-             product: int = evdev.XBOX360_PRODUCT, version: int = 0x0110) -> str:
+def sdl_guid(name: str = evdev.VIRTUAL_NAME, bus: int = evdev.BUS_USB, vendor: int = evdev.VIRTUAL_VENDOR,
+             product: int = evdev.VIRTUAL_PRODUCT, version: int = 0x0110) -> str:
     """SDL's id of a controller (what Eden's input settings name it by)."""
     crc = _crc16(name.encode())
     raw = b"".join(v.to_bytes(2, "little") for v in (bus, crc, vendor, 0, product, 0, version, 0))

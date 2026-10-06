@@ -783,7 +783,8 @@ class MainWindow(QMainWindow):
                            "Compatibility) or Wine")
         if runner.kind == "proton" and runners.is_32bit(game.path / exe) and not runners.vulkan_32bit():
             return False, runners.VULKAN_32.format(game=game.name)  # it would quit after 2 s without a word
-        ok, message = runners.launch(game, exe, runner, data_dir(), config_mod.cache_dir() / "logs")
+        pads = self.input_service.game_env() if self.input_service is not None else {}
+        ok, message = runners.launch(game, exe, runner, data_dir(), config_mod.cache_dir() / "logs", more_env=pads)
         if ok:
             log.info("starting Windows game %s: %s with %s", game.name, exe, runner.label)
             self._windows_started = getattr(self, "_windows_started", {})
