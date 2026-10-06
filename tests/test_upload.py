@@ -413,3 +413,16 @@ def test_place_rejects_unknown_kinds(paths, tmp_path):
     upload = tmp_path / "x.bin"
     upload.write_bytes(b"x")
     assert bios.place(paths, "snes", upload)[0] is False and not upload.exists()
+
+
+def test_share_passwords_are_never_too_short_for_the_helper(monkeypatch):
+    """About one in twenty word pairs ("OakFox") was shorter than the 8 characters the helper
+    takes - the share then didn't start ("bad password")."""
+    from gamingcrypt.emulation import words
+    from gamingcrypt.emulation.sharing import new_password
+
+    picks = iter(["Oak", "Fox", "Oak", "Fox", "Maple", "Otter"])
+    monkeypatch.setattr(words.secrets, "choice", lambda seq: next(picks))
+    assert words.phrase() == "MapleOtter"  # the short ones were drawn again
+    monkeypatch.undo()
+    assert all(len(new_password()) >= 8 for _ in range(500))

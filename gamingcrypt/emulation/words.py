@@ -27,6 +27,12 @@ winter wizard wolf wood yarn yeti zebra
 """.split()
 
 
-def phrase(count: int = 2) -> str:
-    """Words with a capital first letter each, e.g. "MapleOtter"."""
-    return "".join(secrets.choice(WORDS).capitalize() for _ in range(count))
+MIN_LENGTH = 8  # the network share's helper takes no shorter password ("OakFox" made it fail)
+
+
+def phrase(count: int = 2, min_length: int = MIN_LENGTH) -> str:
+    """Words with a capital first letter each, e.g. "MapleOtter" - at least ``min_length`` long."""
+    while True:
+        text = "".join(secrets.choice(WORDS).capitalize() for _ in range(count))
+        if len(text) >= min_length:
+            return text
