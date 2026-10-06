@@ -83,6 +83,66 @@ def available(home: Path | None = None, which: Callable[[str], str | None] = shu
     return sorted(proton_runners(home, extra_libraries) + wine_runners(home, which), key=_version_key)
 
 
+ICD_DIRS = (Path("/usr/share/vulkan/icd.d"), Path("/etc/vulkan/icd.d"))
+
+
+def is_32bit(exe: Path) -> bool:
+    """A 32-bit Windows program (PE machine i386) - old games like GTA San Andreas."""
+    try:
+        with open(exe, "rb") as f:
+            head = f.read(4096)
+    except OSError:
+        return False
+    if head[:2] != b"MZ" or len(head) < 0x40:
+        return False
+    pe = int.from_bytes(head[0x3C:0x40], "little")
+    return head[pe:pe + 4] == b"PE\0\0" and int.from_bytes(head[pe + 4:pe + 6], "little") == 0x14C
+
+
+DRIVER_VENDORS = {"radeon": "0x1002", "amd": "0x1002", "intel": "0x8086", "nvidia": "0x10de"}
+
+
+def gpu_vendors(drm: Path = Path("/sys/class/drm")) -> set[str]:
+    found = set()
+    for vendor in drm.glob("card*/device/vendor"):
+        try:
+            found.add(vendor.read_text().strip().lower())
+        except OSError:
+            pass
+    return found
+
+
+def vulkan_32bit(icd_dirs=ICD_DIRS, lib32: Path = Path("/usr/lib32"), vendors: set[str] | None = None) -> bool:
+    """Is there a 32-bit Vulkan driver for this device's GPU? Proton draws 32-bit games through it
+    (DXVK): without one they find no GPU and quit right after starting. (A driver for a GPU that
+    isn't there doesn't count - the handheld had NVIDIA's installed next to its AMD GPU.)"""
+    import json
+
+    vendors = gpu_vendors() if vendors is None else vendors
+    for folder in icd_dirs:
+        try:
+            files = list(Path(folder).glob("*.json"))
+        except OSError:
+            continue
+        for file in files:
+            try:
+                library = json.loads(file.read_text()).get("ICD", {}).get("library_path", "")
+            except (OSError, ValueError, AttributeError):
+                continue
+            needs = next((v for name, v in DRIVER_VENDORS.items() if name in library.lower()), None)
+            if needs is None or needs not in vendors:
+                continue  # software rendering, or another GPU's driver
+            if "/lib32/" in library or "i386" in library:
+                return True  # e.g. radeon_icd.i686.json -> /usr/lib32/libvulkan_radeon.so
+            if library and "/" not in library and (lib32 / library).exists():
+                return True  # one name for both (e.g. NVIDIA's): its 32-bit library is there
+    return False
+
+
+VULKAN_32 = ("{game} is a 32-bit game - Proton needs the 32-bit Vulkan driver for it, which isn't installed. "
+             "Run ./install.sh again (or: sudo pacman -S lib32-vulkan-radeon on AMD, lib32-vulkan-intel on Intel).")
+
+
 def pick(runners: list[Runner], wanted: str | None) -> Runner | None:
     """The chosen one - or the default (the newest Proton, else a Wine)."""
     return next((r for r in runners if r.id == wanted), runners[0] if runners else None)

@@ -347,3 +347,73 @@ def test_runner_launch_failure(root, home, tmp_path):
     ok, message = runners.launch(knight, "hollow_knight.exe", runners.Runner("wine:x", "W", "wine", home),
                                  tmp_path / "d", tmp_path / "l", popen=fails, home=home)
     assert not ok and "no reaper" in message
+
+
+# --- 32-bit games need a 32-bit Vulkan driver (GTA San Andreas quit after 2 s on the handheld) ----
+def pe(machine: int) -> bytes:
+    head = bytearray(512)
+    head[:2] = b"MZ"
+    head[0x3C:0x40] = (0x80).to_bytes(4, "little")
+    head[0x80:0x84] = b"PE\0\0"
+    head[0x84:0x86] = machine.to_bytes(2, "little")
+    return bytes(head)
+
+
+def test_32bit_programs_are_recognised(tmp_path):
+    (tmp_path / "gta_sa.exe").write_bytes(pe(0x14C))
+    (tmp_path / "game64.exe").write_bytes(pe(0x8664))
+    (tmp_path / "not.exe").write_bytes(b"hello")
+    assert runners.is_32bit(tmp_path / "gta_sa.exe")
+    assert not runners.is_32bit(tmp_path / "game64.exe") and not runners.is_32bit(tmp_path / "not.exe")
+    assert not runners.is_32bit(tmp_path / "missing.exe")
+
+
+def test_32bit_vulkan_driver(tmp_path):
+    icd = tmp_path / "icd.d"
+    icd.mkdir()
+    lib32 = tmp_path / "lib32"
+    lib32.mkdir()
+    amd = {"0x1002"}
+    # as on the handheld: AMD's 64-bit driver (a bare name), NVIDIA's for both - but no NVIDIA GPU
+    (icd / "radeon_icd.json").write_text('{"ICD": {"library_path": "libvulkan_radeon.so"}}')
+    (icd / "nvidia_icd.json").write_text('{"ICD": {"library_path": "libGLX_nvidia.so.0"}}')
+    (lib32 / "libGLX_nvidia.so.0").write_text("x")
+    assert not runners.vulkan_32bit([icd], lib32, amd)
+    assert runners.vulkan_32bit([icd], lib32, {"0x10de"})  # with an NVIDIA GPU it would be the one
+    (icd / "radeon_icd.i686.json").write_text('{"ICD": {"library_path": "/usr/lib32/libvulkan_radeon.so"}}')
+    assert runners.vulkan_32bit([icd], lib32, amd)  # lib32-vulkan-radeon installed
+    (icd / "radeon_icd.i686.json").unlink()
+    (lib32 / "libvulkan_radeon.so").write_text("x")
+    assert runners.vulkan_32bit([icd], lib32, amd)  # bare name, its 32-bit library there
+    (icd / "lvp_icd.json").write_text('{"ICD": {"library_path": "/usr/lib32/libvulkan_lvp.so"}}')
+    (icd / "broken.json").write_text("{")
+    assert not runners.vulkan_32bit([icd], tmp_path / "none", amd)  # software rendering doesn't count
+
+
+def test_gpu_vendors(tmp_path):
+    (tmp_path / "card1" / "device").mkdir(parents=True)
+    (tmp_path / "card1" / "device" / "vendor").write_text("0x1002\n")
+    assert runners.gpu_vendors(tmp_path) == {"0x1002"}
+
+
+def test_a_32bit_game_without_the_driver_says_why(qtbot, window, root, monkeypatch):
+    games = window._games
+    knight = next(g for g in games.windows_games if g.name == "Hollow Knight")
+    (knight.path / "hollow_knight.exe").write_bytes(pe(0x14C))
+    window.game_profiles.set(knight.appid, "exe", "hollow_knight.exe")
+    monkeypatch.setattr(runners, "vulkan_32bit", lambda *a, **k: False)
+    ok, message = window.launch_windows(knight)
+    assert not ok and "32-bit" in message and "lib32-vulkan-radeon" in message and "install.sh" in message
+    assert window._launched == []
+    window.game_profiles.set(knight.appid, "runner", "wine:system")  # Wine draws with OpenGL: no need
+    assert window.launch_windows(knight)[0]
+    monkeypatch.setattr(runners, "vulkan_32bit", lambda *a, **k: True)
+    window.game_profiles.set(knight.appid, "runner", None)
+    assert window.launch_windows(knight)[0]
+
+
+def test_install_script_installs_the_32bit_vulkan_driver():
+    from pathlib import Path
+
+    script = (Path(__file__).parent.parent / "install.sh").read_text()
+    assert "lib32-vulkan-radeon" in script and "lib32-vulkan-intel" in script and "0x1002" in script

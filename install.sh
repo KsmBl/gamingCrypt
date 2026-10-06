@@ -318,10 +318,24 @@ install_player() {
 
 install_windows_games() {
     # Windows games outside Steam: umu-launcher runs Proton with Steam's runtime, as Steam does
-    command -v umu-run >/dev/null && return 0
-    if command -v pacman >/dev/null; then
+    command -v pacman >/dev/null || return 0
+    if ! command -v umu-run >/dev/null; then
         sudo pacman -S --needed --noconfirm umu-launcher >/dev/null \
             || warn "could not install umu-launcher (Windows games then start with Proton's own script)"
+    fi
+    # 32-bit Windows games (e.g. GTA San Andreas) draw through a 32-bit Vulkan driver (DXVK):
+    # without it they find no GPU and quit right after starting
+    local vendor driver=""
+    for vendor in /sys/class/drm/card*/device/vendor; do
+        case "$(cat "$vendor" 2>/dev/null)" in
+            0x1002) driver=lib32-vulkan-radeon ;;
+            0x8086) [[ -z $driver ]] && driver=lib32-vulkan-intel ;;
+        esac
+    done
+    if [[ -n $driver ]] && ! pacman -Q "$driver" >/dev/null 2>&1; then
+        info "Installing the 32-bit Vulkan driver for older Windows games ($driver, needs sudo)"
+        sudo pacman -S --needed --noconfirm "$driver" >/dev/null \
+            || warn "could not install $driver - 32-bit Windows games won't start (needs the multilib repository)"
     fi
 }
 

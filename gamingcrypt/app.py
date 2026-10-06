@@ -781,6 +781,8 @@ class MainWindow(QMainWindow):
         if runner is None:
             return False, ("No Proton or Wine on this device - install a Proton in Steam (any game: Properties → "
                            "Compatibility) or Wine")
+        if runner.kind == "proton" and runners.is_32bit(game.path / exe) and not runners.vulkan_32bit():
+            return False, runners.VULKAN_32.format(game=game.name)  # it would quit after 2 s without a word
         ok, message = runners.launch(game, exe, runner, data_dir(), config_mod.cache_dir() / "logs")
         if ok:
             log.info("starting Windows game %s: %s with %s", game.name, exe, runner.label)
