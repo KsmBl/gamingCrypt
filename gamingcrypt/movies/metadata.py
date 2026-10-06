@@ -26,6 +26,7 @@ FILM_CLASSES = ("Q11424", "Q202866", "Q24869", "Q506240", "Q229390")  # film, an
 UNITS = {"Q7727": 1, "Q25235": 60, "Q11574": 1 / 60}  # minute, hour, second -> minutes
 MAX_ACTORS, MAX_GENRES = 15, 4
 RETRY_DAYS = 30  # not found: asked again after this long
+MATCHING_CHANGED = 1791279216  # not found before the name matching got better: asked again
 
 
 class Offline(Exception):
@@ -38,8 +39,19 @@ def _plain(text: str) -> str:
     return " ".join(re.findall(r"[^\W_]+", text))
 
 
+ARTICLES = {"the", "a", "an", "der", "die", "das", "le", "la", "les", "el", "il"}
+
+
+def _loose(text: str) -> str:
+    """"The Matrix Revolutions" ~ "Matrix Revolution": no leading article, no plural s."""
+    words = text.split()
+    if len(words) > 1 and words[0] in ARTICLES:
+        words = words[1:]
+    return " ".join(w[:-1] if len(w) > 3 and w.endswith("s") else w for w in words)
+
+
 def name_score(title: str, names: list[str]) -> int:
-    """3: the same name, 2: one contains the other word by word, 0: different."""
+    """3: the same name, 2: nearly (articles, plural, one contains the other word by word), 0: different."""
     wanted = _plain(title)
     if not wanted:
         return 0
@@ -50,7 +62,8 @@ def name_score(title: str, names: list[str]) -> int:
             continue
         if plain == wanted:
             return 3
-        if f" {wanted} " in f" {plain} " or f" {plain} " in f" {wanted} ":
+        a, b = _loose(wanted), _loose(plain)
+        if a == b or f" {a} " in f" {b} " or f" {b} " in f" {a} ":
             best = 2
     return best
 
@@ -265,7 +278,8 @@ def needs_lookup(movie: Movie, now: float) -> bool:
     info = movie.info
     if info.wikidata:
         return False
-    return not info.looked_up or now - info.looked_up > RETRY_DAYS * 86400
+    return (not info.looked_up or info.looked_up < MATCHING_CHANGED
+            or now - info.looked_up > RETRY_DAYS * 86400)
 
 
 def update(movie: Movie, lookup: Lookup, now: Callable[[], float] = time.time) -> bool:

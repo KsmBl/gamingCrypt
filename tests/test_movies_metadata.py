@@ -155,6 +155,9 @@ def test_name_score():
     assert metadata.name_score("Amelie", ["Amélie"]) == 3
     assert metadata.name_score("Fast & Furious", ["Fast and Furious"]) == 3
     assert metadata.name_score("Matrix", ["Matrixx"]) == 0 and metadata.name_score("", ["x"]) == 0
+    # the file says it a bit differently
+    assert metadata.name_score("Matrix Revolution", ["The Matrix Revolutions"]) == 2
+    assert metadata.name_score("Schuh des Manitu", ["Der Schuh des Manitu"]) == 2
 
 
 def test_lengths_in_other_units_and_genre_names():
@@ -188,13 +191,21 @@ def test_update_keeps_what_was_watched(web, matrix_file):
 def test_not_found_keeps_the_file_name_and_asks_again_later(web, tmp_path):
     (tmp_path / "Holiday 2019.mp4").write_bytes(b"v")
     movie = library.scan(tmp_path)[0]
-    assert metadata.needs_lookup(movie, 1750000000)
-    assert metadata.update(movie, metadata.Lookup(web), now=lambda: 1750000000)
+    now = metadata.MATCHING_CHANGED + 1000
+    assert metadata.needs_lookup(movie, now)
+    assert metadata.update(movie, metadata.Lookup(web), now=lambda: now)
     info = library.read_info(movie.info_path)
     assert info.title == "Holiday" and info.year == 2019 and not info.wikidata
     assert not movie.cover_path.exists()
-    assert not metadata.needs_lookup(movie, 1750000000 + 86400)
-    assert metadata.needs_lookup(movie, 1750000000 + 31 * 86400)
+    assert not metadata.needs_lookup(movie, now + 86400)
+    assert metadata.needs_lookup(movie, now + 31 * 86400)
+
+
+def test_not_found_with_the_old_matching_is_asked_again(web, tmp_path):
+    (tmp_path / "Matrix Revolution.mp4").write_bytes(b"v")
+    movie = library.scan(tmp_path)[0]
+    library.set_metadata(movie, MovieInfo(title="Matrix Revolution", looked_up=metadata.MATCHING_CHANGED - 3600))
+    assert metadata.needs_lookup(movie, metadata.MATCHING_CHANGED + 3600)
 
 
 def test_offline_changes_nothing(web, matrix_file):
