@@ -96,3 +96,26 @@ def test_every_list_page_has_a_folding_header(qtbot):
     qtbot.addWidget(downloads)
     for page in (tab.home, StorePage(tab), downloads):
         assert isinstance(page.folding, FoldingHeader) and page.folding.header is page.header
+
+
+def test_short_list_does_not_fold_away_for_good(qtbot, page):
+    """Movies tab, few movies: folding made everything fit - no scroll bar left to bring it back."""
+    root, header, scroll, fold = page
+    header.setFixedHeight(150)
+    content = scroll.widget()
+    content.setMinimumHeight(10)
+    content.resize(content.width(), scroll.viewport().height() + 100)  # scrolls only with the header there
+    bar = scroll.verticalScrollBar()
+    qtbot.waitUntil(lambda: bar.maximum() == 100)
+    bar.setValue(bar.maximum())
+    assert not fold.folded and header.isVisible()
+
+
+def test_unfolds_when_the_list_gets_short_while_folded(qtbot, page):
+    root, header, scroll, fold = page
+    bar = scroll.verticalScrollBar()
+    bar.setValue(400)
+    qtbot.waitUntil(header.isHidden)
+    scroll.widget().setMinimumHeight(10)  # e.g. a search left one card
+    scroll.widget().resize(scroll.widget().width(), 10)
+    qtbot.waitUntil(lambda: not fold.folded and header.isVisible())

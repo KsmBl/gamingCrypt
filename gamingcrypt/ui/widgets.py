@@ -382,6 +382,7 @@ class FoldingHeader(QObject):
         self.anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.anim.finished.connect(self._finished)
         self.bar.valueChanged.connect(self._scrolled)
+        self.bar.rangeChanged.connect(self._range_changed)
 
     def _scrolled(self, value: int) -> None:
         if self.settle.isValid() and self.settle.elapsed() < self.SETTLE_MS:
@@ -402,6 +403,10 @@ class FoldingHeader(QObject):
         self.last = value
 
     def fold(self) -> None:
+        # A short list that fits once the header is gone: nothing would be left to scroll
+        # up with - the header could never come back.
+        if self.bar.maximum() - self.header.height() <= self.UP_PX:
+            return
         self.folded = True
         self.settle.start()
         self.anim.stop()
@@ -419,8 +424,17 @@ class FoldingHeader(QObject):
         self.anim.setEndValue(max(self.header.sizeHint().height(), 1))
         self.anim.start()
 
+    def _range_changed(self, _minimum: int, maximum: int) -> None:
+        """The list got short while folded (filtered, rotated): no way to scroll up - unfold."""
+        from PySide6.QtCore import QAbstractAnimation
+
+        if self.folded and maximum <= 0 and self.anim.state() != QAbstractAnimation.State.Running:
+            self.unfold()
+
     def _finished(self) -> None:
         if self.folded:
             self.header.hide()  # hidden widgets can't get controller focus
+            if self.bar.maximum() <= 0:
+                self.unfold()
         else:
             self.header.setMaximumHeight(16777215)
