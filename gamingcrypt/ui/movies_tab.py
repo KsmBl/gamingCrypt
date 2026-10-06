@@ -22,7 +22,7 @@ from gamingcrypt.ui import theme
 from gamingcrypt.ui.game_widgets import COVER_H, COVER_W, Tappable, card_margins, format_size, placeholder_cover
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.upload_page import UploadPage
-from gamingcrypt.ui.widgets import (FlowLayout, FoldingHeader, KeyboardFocusFilter, OnScreenKeyboard, big_button,
+from gamingcrypt.ui.widgets import (FlowLayout, KeyboardFocusFilter, OnScreenKeyboard, SlidingHeader, big_button,
                                    enable_touch_scroll, focus_and_reveal, set_status)
 
 POLL_MS = 5000  # how often the player is asked where it is
@@ -108,10 +108,9 @@ class MoviesHome(QWidget):
         self.watch_state = "all"
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 16, 30, 10)
-        self.header = QWidget()
+        self.header = QWidget()  # lies over the list, slides away when scrolling (SlidingHeader)
         header = QVBoxLayout(self.header)
-        header.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.header)
+        header.setContentsMargins(0, 0, 0, 10)
         top = QHBoxLayout()
         title = QLabel("Movies")
         title.setObjectName("title")
@@ -165,7 +164,9 @@ class MoviesHome(QWidget):
         enable_touch_scroll(scroll)
         content = QWidget()
         box = QVBoxLayout(content)
-        box.setContentsMargins(0, 10, 0, 10)
+        box.setContentsMargins(0, 0, 0, 10)
+        self.header_room = QWidget()  # where the header lies while it's all there
+        box.addWidget(self.header_room)
         self.grid_widget = QWidget()
         self.grid = FlowLayout(self.grid_widget)
         box.addWidget(self.grid_widget)
@@ -176,7 +177,7 @@ class MoviesHome(QWidget):
         box.addStretch()
         scroll.setWidget(content)
         layout.addWidget(scroll, 1)
-        self.folding = FoldingHeader(scroll, self.header)
+        self.folding = SlidingHeader(scroll, self.header, self.header_room)
 
         self.keyboard = OnScreenKeyboard(self.search)
         self.keyboard.submitted.connect(self.keyboard.hide)

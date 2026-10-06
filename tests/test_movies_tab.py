@@ -500,23 +500,106 @@ def test_volume_popup_is_cleared_when_the_movie_ends(qtbot, window):
     assert dismissed == [True]
 
 
-def test_filters_fold_away_when_scrolling_down(qtbot, root, monkeypatch):
-    """As on the Games tab - even with only a few movies (one row more than fits)."""
-    from gamingcrypt.ui.widgets import FoldingHeader
+def sliding_tab(qtbot, root, count, monkeypatch):
+    from gamingcrypt.ui.widgets import SlidingHeader
 
-    monkeypatch.setattr(FoldingHeader, "DURATION_MS", 10)
-    monkeypatch.setattr(FoldingHeader, "SETTLE_MS", 0)
-    for n in range(4):
+    monkeypatch.setattr(SlidingHeader, "SNAP_MS", 10)
+    monkeypatch.setattr(SlidingHeader, "SNAP_DELAY_MS", 20)
+    for n in range(count):
         put(root, f"Movie {n}.mkv", title=f"Movie {n}", wikidata=f"Q{n + 10}")
     tab = make_tab(qtbot, root)
+    tab.resize(1280, 740)
+    sliding = tab.home.folding
+    qtbot.waitUntil(lambda: sliding.bar.maximum() > 0)
+    return tab, sliding
+
+
+def scroll_to(bar, target, step=10):
+    """As a finger does: many small steps."""
+    direction = 1 if target > bar.value() else -1
+    for value in range(bar.value(), target + direction, direction * step):
+        bar.setValue(value)
+    bar.setValue(target)
+
+
+def test_filters_slide_away_when_scrolling_down(qtbot, root, monkeypatch):
+    """As on the Games tab - even with only a few movies."""
+    tab, sliding = sliding_tab(qtbot, root, 4, monkeypatch)
+    header, bar = tab.home.header, sliding.bar
+    assert header.isVisible() and sliding.offset == 0
+    scroll_to(bar, bar.maximum())
+    assert sliding.hidden and not header.isVisible()  # out of the way - and of the controller's reach
+    scroll_to(bar, 0)
+    viewport = sliding.scroll_area.viewport()
+    assert header.isVisible() and sliding.offset == 0
+    assert header.y() == viewport.mapTo(tab.home, viewport.rect().topLeft()).y()  # right on top of the list
+
+
+def test_the_list_never_changes_size_while_sliding(qtbot, root, monkeypatch):
+    """What made it buggy: folding shrank the scroll range under the finger, the position got
+    pushed back and the list jumped."""
+    tab, sliding = sliding_tab(qtbot, root, 8, monkeypatch)
+    bar = sliding.bar
+    ranges, values = [], []
+    bar.rangeChanged.connect(lambda lo, hi: ranges.append(hi))
+    bar.valueChanged.connect(values.append)
+    top = bar.maximum()
+    scroll_to(bar, top)
+    scroll_to(bar, 0)
+    scroll_to(bar, top)
+    qtbot.wait(100)
+    assert ranges == [] and bar.maximum() == top
+    downs = values[:values.index(top) + 1]
+    assert downs == sorted(downs)  # never pushed back while going down
+    assert bar.value() == top  # the whole list can be reached
+
+
+def test_header_keeps_its_room_at_the_top(qtbot, root, monkeypatch):
+    tab, sliding = sliding_tab(qtbot, root, 8, monkeypatch)
     home = tab.home
-    bar = home.folding.bar
-    qtbot.waitUntil(lambda: bar.maximum() > FoldingHeader.START_PX)
-    bar.setValue(bar.maximum())
-    qtbot.waitUntil(home.header.isHidden)  # search and filters out of the way
-    assert bar.maximum() > 0
-    bar.setValue(0)
-    qtbot.waitUntil(home.header.isVisible)
+    first = home.cards[home.shown[0]]
+    viewport = sliding.scroll_area.viewport()
+    card_top = first.mapTo(home, first.rect().topLeft()).y()
+    assert home.header_room.height() == sliding.height
+    assert card_top >= home.header.geometry().bottom()  # nothing covered at the start
+    assert viewport.isAncestorOf(first)
+
+
+def test_scrolling_up_brings_it_back_all_the_way(qtbot, root, monkeypatch):
+    tab, sliding = sliding_tab(qtbot, root, 12, monkeypatch)
+    bar = sliding.bar
+    scroll_to(bar, 600)
+    assert sliding.hidden
+    scroll_to(bar, 560)  # a little up: partly back
+    assert 0 < sliding.offset < sliding.height
+    qtbot.waitUntil(lambda: sliding.offset == 0)  # then all of it, like YouTube
+    scroll_to(bar, 590)  # a little down again
+    qtbot.waitUntil(lambda: sliding.hidden)
+
+
+def test_controller_scrolling_up_does_not_cover_the_selected_card(qtbot, root, monkeypatch):
+    from gamingcrypt.ui.widgets import FoldingHeader
+
+    tab, sliding = sliding_tab(qtbot, root, 12, monkeypatch)
+    bar = sliding.bar
+    scroll_to(bar, 600)
+    monkeypatch.setattr(FoldingHeader, "programmatic", True)
+    scroll_to(bar, 450, step=50)
+    assert sliding.hidden  # stays away while the controller steps up
+    scroll_to(bar, 100, step=50)
+    assert sliding.offset == 100  # near the top: it comes back with the list, never over it
+    scroll_to(bar, 0, step=50)
+    assert sliding.offset == 0
+
+
+def test_focus_on_the_search_brings_it_back(qtbot, root, monkeypatch):
+    tab, sliding = sliding_tab(qtbot, root, 12, monkeypatch)
+    scroll_to(sliding.bar, 600)
+    assert sliding.hidden
+    tab.window().activateWindow()
+    tab.home.header.show()
+    tab.home.search.setFocus()
+    qtbot.waitUntil(lambda: sliding.offset == 0)
 
 
 def test_movie_page_fits_the_screen(qtbot, root):

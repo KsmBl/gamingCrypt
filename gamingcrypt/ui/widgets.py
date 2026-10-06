@@ -456,3 +456,109 @@ class FoldingHeader(QObject):
                 self.unfold()
         else:
             self.header.setMaximumHeight(16777215)
+
+
+class SlidingHeader(QObject):
+    """The header lies over the top of a scroll area and slides away with the scrolling - back
+    as soon as it scrolls up (like YouTube's top bar).
+
+    Unlike FoldingHeader the list keeps its size: nothing is re-laid out while scrolling, so a
+    short list doesn't jump or fight the finger (folding shrank its scroll range under the
+    finger). ``spacer`` is the first widget in the scroll content: it keeps the header's room.
+    """
+
+    SNAP_MS = 160  # partly shown when scrolling stops: all the way in or out, as it was going
+    SNAP_DELAY_MS = 220
+
+    def __init__(self, scroll_area: QAbstractScrollArea, header: QWidget, spacer: QWidget):
+        super().__init__(header)
+        from PySide6.QtCore import QTimer, QVariantAnimation
+
+        self.scroll_area, self.header, self.spacer = scroll_area, header, spacer
+        self.bar = scroll_area.verticalScrollBar()
+        header.setParent(scroll_area.parentWidget())
+        header.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)  # hides what's beneath
+        self.offset = 0  # how far it's slid up (0: all there)
+        self.last = self.bar.value()
+        self.going_up = False  # the last scroll direction decides how a partly shown header snaps
+        self.snap_timer = QTimer(self)
+        self.snap_timer.setSingleShot(True)
+        self.snap_timer.setInterval(self.SNAP_DELAY_MS)
+        self.snap_timer.timeout.connect(self._snap)
+        self.anim = QVariantAnimation(self)
+        self.anim.setDuration(self.SNAP_MS)
+        self.anim.valueChanged.connect(lambda v: self._set_offset(int(v)))
+        self.bar.valueChanged.connect(self._scrolled)
+        for watched in (scroll_area, header):
+            watched.installEventFilter(self)
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.instance().focusChanged.connect(self._focus_changed)
+        self.place()
+
+    @property
+    def height(self) -> int:
+        width = self.scroll_area.width()
+        if self.header.hasHeightForWidth():
+            return self.header.heightForWidth(width)
+        return self.header.sizeHint().height()
+
+    @property
+    def hidden(self) -> bool:
+        return self.offset >= self.height
+
+    def place(self) -> None:
+        area, viewport = self.scroll_area, self.scroll_area.viewport()
+        height = self.height
+        if self.spacer.height() != height:
+            self.spacer.setFixedHeight(height)
+        self.offset = max(0, min(self.offset, height))
+        top = area.mapTo(area.parentWidget(), viewport.geometry().topLeft())
+        self.header.setGeometry(area.x(), top.y() - self.offset, area.width(), height)
+        # slid away completely: out of reach for the controller too
+        self.header.setVisible(self.offset < height)
+        self.header.raise_()
+
+    def _set_offset(self, offset: int) -> None:
+        self.offset = offset
+        self.place()
+
+    def _scrolled(self, value: int) -> None:
+        delta, self.last = value - self.last, value
+        if delta:
+            self.going_up = delta < 0
+        height = self.height
+        offset = max(0, min(height, self.offset + delta))
+        if FoldingHeader.programmatic:
+            # controller navigation: never cover the card it just scrolled to
+            offset = max(offset, min(value, height)) if delta < 0 else offset
+        offset = min(offset, max(0, value))  # at the top it's always all there
+        self.anim.stop()
+        self._set_offset(offset)
+        self.snap_timer.start()
+
+    def _snap(self) -> None:
+        height = self.height
+        if 0 < self.offset < height:
+            # up: all of it back (like YouTube); down: away - unless that would leave a gap at the top
+            hide = not self.going_up and self.bar.value() >= height
+            self._animate_to(height if hide else 0)
+
+    def _animate_to(self, target: int) -> None:
+        self.anim.stop()
+        self.anim.setStartValue(self.offset)
+        self.anim.setEndValue(target)
+        self.anim.start()
+
+    def show_header(self) -> None:
+        if self.offset:
+            self._animate_to(0)
+
+    def _focus_changed(self, _old, new) -> None:
+        if new is not None and self.header.isAncestorOf(new):
+            self.show_header()  # e.g. the controller went up to the search field
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt API
+        if event.type() in (QEvent.Type.Resize, QEvent.Type.Move, QEvent.Type.LayoutRequest):
+            self.place()
+        return False
