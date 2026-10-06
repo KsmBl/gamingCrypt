@@ -21,23 +21,25 @@ from gamingcrypt.movies.library import Movie
 
 SOCKET_NAME = "gamingcrypt-mpv.sock"
 LOG_NAME = "mpv.log"
-# Controller (mpv reads it through SDL) and touch. The keyboard keeps mpv's own keys.
+# Touch, and no volume of its own: the volume buttons and the quick menu set the device's
+# volume (GamingCrypt shows it). The controller is read by GamingCrypt (remote_command): mpv
+# would take the physical pad, which GamingCrypt holds - its buttons never reach mpv.
 INPUT_CONF = """\
-GAMEPAD_ACTION_DOWN cycle pause
-GAMEPAD_START cycle pause
-GAMEPAD_ACTION_RIGHT quit
-GAMEPAD_BACK show-progress
-GAMEPAD_DPAD_LEFT seek -10
-GAMEPAD_DPAD_RIGHT seek 30
-GAMEPAD_DPAD_UP seek 300
-GAMEPAD_DPAD_DOWN seek -300
-GAMEPAD_LEFT_SHOULDER add chapter -1
-GAMEPAD_RIGHT_SHOULDER add chapter 1
-GAMEPAD_ACTION_LEFT cycle sub
-GAMEPAD_ACTION_UP cycle audio
 MBTN_LEFT cycle pause
 MBTN_LEFT_DBL ignore
+VOLUME_UP ignore
+VOLUME_DOWN ignore
+MUTE ignore
+WHEEL_UP ignore
+WHEEL_DOWN ignore
+9 ignore
+0 ignore
+/ ignore
+* ignore
+m ignore
 """
+OSC_NO_VOLUME = ",".join(f"osc-volume_{action}_command=ignore"
+                         for action in ("mbtn_left", "mbtn_right", "wheel_up", "wheel_down"))
 CONTROLS = ("A / Start: pause · B: stop · ◀ ▶: 10 s back / 30 s on · ▲ ▼: 5 min · LB / RB: chapter · "
             "X: subtitles · Y: audio language · tap: pause")
 
@@ -63,7 +65,8 @@ def command(movie: Movie, reaper_path: Path, sock: Path, conf: Path, start: floa
             languages: tuple[str, ...] = ("en", "de")) -> list[str]:
     args = [str(reaper_path), "SteamLaunch", f"AppId={movie.appid}", "--",
             "mpv", "--fs", "--force-window=immediate", "--keep-open=no", "--idle=no", "--no-terminal",
-            "--hwdec=auto-safe", "--input-gamepad=yes", f"--input-conf={conf}", f"--input-ipc-server={sock}",
+            "--hwdec=auto-safe", "--input-gamepad=no", f"--input-conf={conf}", f"--input-ipc-server={sock}",
+            "--volume=100", "--volume-max=100", f"--script-opts={OSC_NO_VOLUME}",
             "--save-position-on-quit=no", f"--title={movie.title}", f"--alang={','.join(languages)}",
             f"--slang={','.join(languages)}"]
     if start > 0:
@@ -125,3 +128,39 @@ def position(sock: Path) -> tuple[float, float] | None:
     if not isinstance(now, (int, float)):
         return None
     return float(now), float(length) if isinstance(length, (int, float)) else 0.0
+
+
+# --- the controller, read by GamingCrypt while a movie is in front ------------------------
+
+def _codes():
+    from gamingcrypt.input import evdev as e
+
+    buttons = {e.BTN_SOUTH: "osd-msg cycle pause", e.BTN_START: "osd-msg cycle pause", e.BTN_EAST: "quit",
+               e.BTN_NORTH: "osd-msg cycle sub", e.BTN_WEST: "osd-msg cycle audio",  # X, Y (xpad layout)
+               e.BTN_SELECT: "show-progress", e.BTN_TL: "osd-msg-bar add chapter -1",
+               e.BTN_TR: "osd-msg-bar add chapter 1"}
+    hats = {(e.ABS_HAT0X, -1): "osd-msg-bar seek -10", (e.ABS_HAT0X, 1): "osd-msg-bar seek 30",
+            (e.ABS_HAT0Y, -1): "osd-msg-bar seek 300", (e.ABS_HAT0Y, 1): "osd-msg-bar seek -300"}
+    return e, buttons, hats
+
+
+def remote_command(ev_type: int, code: int, value: int) -> str | None:
+    """A controller event -> the mpv command for it (None: nothing to do)."""
+    e, buttons, hats = _codes()
+    if ev_type == e.EV_KEY and value == 1:
+        return buttons.get(code)
+    if ev_type == e.EV_ABS and value:
+        return hats.get((code, value))
+    return None
+
+
+def send(sock: Path, text: str, timeout: float = 1.0) -> bool:
+    """One command to the running player, as a line like in input.conf."""
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
+            conn.settimeout(timeout)
+            conn.connect(str(sock))
+            conn.sendall(text.encode() + b"\n")
+        return True
+    except OSError:
+        return False

@@ -439,3 +439,49 @@ def test_card_is_a_movie_card(qtbot, root):
     card.clicked.connect(clicked.append)
     card.tapped.emit()
     assert clicked == [card.movie]
+
+
+def test_the_controller_steers_the_movie(qtbot, window, monkeypatch):
+    from gamingcrypt.input import evdev as e
+
+    sent = []
+    monkeypatch.setattr(player, "send", lambda sock, text, timeout=1.0: sent.append(text) or True)
+    movies = window._movies
+    matrix = next(m for m in movies.movies if m.title == "The Matrix")
+    movies.play(matrix)
+    window.game_watcher.phase = "playing"
+    assert not window.pad_hotkey(e.EV_KEY, e.BTN_SOUTH, 1)  # GamingCrypt still in front: it navigates
+    window.hide()  # the movie is on screen
+    assert window.movie_in_front()
+    assert window.pad_hotkey(e.EV_KEY, e.BTN_SOUTH, 1) and window.pad_hotkey(e.EV_KEY, e.BTN_SOUTH, 0)
+    assert window.pad_hotkey(e.EV_ABS, e.ABS_HAT0X, 1) and window.pad_hotkey(e.EV_ABS, e.ABS_HAT0X, 0)
+    window.pad_hotkey(e.EV_KEY, e.BTN_EAST, 1)
+    qtbot.waitUntil(lambda: len(sent) == 3)
+    assert sorted(sent) == sorted(["osd-msg cycle pause", "osd-msg-bar seek 30", "quit"])
+    window.game_watcher.appid = None  # over
+    window.game_watcher.phase = "idle"
+    assert not window.movie_in_front() and not window.pad_hotkey(e.EV_KEY, e.BTN_SOUTH, 1)
+
+
+def test_the_quick_menu_button_still_works_during_a_movie(qtbot, window, monkeypatch):
+    from gamingcrypt.input import evdev as e
+
+    monkeypatch.setattr(player, "send", lambda *a, **k: True)
+    window.config["input"]["hotkeys"] = {"quick_menu": {"source": "pad", "codes": [e.BTN_MODE]}}
+    window.reload_hotkeys()
+    movies = window._movies
+    movies.play(movies.movies[0])
+    window.game_watcher.phase = "playing"
+    window.hide()
+    opened = []
+    monkeypatch.setattr(window, "toggle_quick_menu", lambda: opened.append(True))
+    window.pad_hotkey(e.EV_KEY, e.BTN_MODE, 1)
+    window.pad_hotkey(e.EV_KEY, e.BTN_MODE, 0)
+    assert opened == [True]
+
+
+def test_volume_popup_is_cleared_when_the_movie_ends(qtbot, window):
+    dismissed = []
+    window.game_volume_osd = type("Overlay", (), {"dismiss": lambda self: dismissed.append(True)})()
+    window.game_over(window._movies.movies[0].appid)
+    assert dismissed == [True]

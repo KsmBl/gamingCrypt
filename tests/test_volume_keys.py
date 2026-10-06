@@ -284,3 +284,33 @@ def test_external_overlay_property():
     assert gamescope_ctl.set_external_overlay(42, runner=run)
     assert calls[0][:3] == ["xprop", "-id", "42"] and calls[0][-8:] == ["-id", "42", "-f", "GAMESCOPE_EXTERNAL_OVERLAY", "32c",
                                                        "-set", "GAMESCOPE_EXTERNAL_OVERLAY", "1"]
+
+
+def test_game_overlay_is_drawn_empty_before_it_is_hidden(qtbot, monkeypatch):
+    """gamescope keeps showing an overlay's last picture after it's hidden (seen on the handheld:
+    the volume popup stayed over GamingCrypt after a movie)."""
+    from PySide6.QtWidgets import QWidget
+
+    from gamingcrypt.ui import volume_osd
+    from gamingcrypt.ui.volume_osd import GameOverlay
+
+    monkeypatch.setattr(volume_osd, "UNMAP_DELAY_MS", 150)
+    overlay = GameOverlay(mark_overlay=lambda window: True)
+    qtbot.addWidget(overlay)
+    events = []
+    original_hide = QWidget.hide
+    monkeypatch.setattr(GameOverlay, "hide", lambda self: (events.append(("hide", self.osd.isVisible())),
+                                                           original_hide(self))[1])
+    overlay.show_level(40)
+    overlay.dismiss()
+    assert not overlay.osd.isVisible() and overlay.isVisible()  # empty, still mapped
+    qtbot.waitUntil(lambda: not overlay.isVisible(), timeout=2000)
+    assert events == [("hide", False)]
+    overlay.show_level(40)
+    overlay.dismiss()
+    overlay.show_level(50)  # shown again before it was hidden: stays
+    qtbot.wait(300)
+    assert overlay.isVisible() and overlay.osd.isVisible()
+    overlay.dismiss()
+    overlay.dismiss()  # twice is fine
+    qtbot.waitUntil(lambda: not overlay.isVisible(), timeout=2000)

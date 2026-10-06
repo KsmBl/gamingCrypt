@@ -20,7 +20,10 @@ def test_command(movie, tmp_path):
     args = player.command(movie, tmp_path / "reaper", tmp_path / "mpv.sock", tmp_path / "input.conf", 0,
                           ("de", "en"))
     assert args[:4] == [str(tmp_path / "reaper"), "SteamLaunch", f"AppId={movie.appid}", "--"]
-    assert args[4] == "mpv" and "--fs" in args and "--input-gamepad=yes" in args
+    assert args[4] == "mpv" and "--fs" in args and "--input-gamepad=no" in args  # GamingCrypt reads the pad
+    assert "--volume=100" in args and "--volume-max=100" in args  # no volume of its own
+    assert "--script-opts=osc-volume_mbtn_left_command=ignore,osc-volume_mbtn_right_command=ignore," \
+           "osc-volume_wheel_up_command=ignore,osc-volume_wheel_down_command=ignore" in args
     assert f"--input-ipc-server={tmp_path / 'mpv.sock'}" in args and f"--input-conf={tmp_path / 'input.conf'}" in args
     assert "--alang=de,en" in args and "--title=The Matrix" in args
     assert not any(a.startswith("--start") for a in args)
@@ -59,11 +62,49 @@ def test_launch_problems(movie, tmp_path):
     assert not ok and "no reaper" in message
 
 
-def test_controller_and_touch_bindings():
+def test_touch_bindings_and_no_volume_keys():
     conf = player.INPUT_CONF
-    assert "GAMEPAD_ACTION_DOWN cycle pause" in conf and "GAMEPAD_ACTION_RIGHT quit" in conf
-    assert "GAMEPAD_DPAD_LEFT seek -10" in conf and "MBTN_LEFT cycle pause" in conf
-    assert "MBTN_LEFT_DBL ignore" in conf  # a double tap must not leave full screen
+    assert "MBTN_LEFT cycle pause" in conf and "MBTN_LEFT_DBL ignore" in conf  # a double tap stays full screen
+    for key in ("VOLUME_UP", "VOLUME_DOWN", "MUTE", "WHEEL_UP", "WHEEL_DOWN", "9", "0", "m"):
+        assert f"\n{key} ignore\n" in "\n" + conf
+    assert "GAMEPAD" not in conf
+
+
+def test_controller_buttons_become_player_commands():
+    from gamingcrypt.input import evdev as e
+
+    key = lambda code, value=1: player.remote_command(e.EV_KEY, code, value)  # noqa: E731
+    assert key(e.BTN_SOUTH) == key(e.BTN_START) == "osd-msg cycle pause"
+    assert key(e.BTN_EAST) == "quit"
+    assert key(e.BTN_NORTH) == "osd-msg cycle sub" and key(e.BTN_WEST) == "osd-msg cycle audio"
+    assert key(e.BTN_TL) == "osd-msg-bar add chapter -1" and key(e.BTN_TR) == "osd-msg-bar add chapter 1"
+    assert key(e.BTN_SELECT) == "show-progress"
+    assert key(e.BTN_SOUTH, 0) is None and key(e.BTN_SOUTH, 2) is None  # release, auto repeat
+    hat = lambda code, value: player.remote_command(e.EV_ABS, code, value)  # noqa: E731
+    assert hat(e.ABS_HAT0X, -1) == "osd-msg-bar seek -10" and hat(e.ABS_HAT0X, 1) == "osd-msg-bar seek 30"
+    assert hat(e.ABS_HAT0Y, -1) == "osd-msg-bar seek 300" and hat(e.ABS_HAT0Y, 1) == "osd-msg-bar seek -300"
+    assert hat(e.ABS_HAT0X, 0) is None and hat(e.ABS_X, 30000) is None
+
+
+def test_send_a_command(tmp_path):
+    sock = tmp_path / "mpv.sock"
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(str(sock))
+    server.listen()
+    got = []
+
+    def serve():
+        conn, _ = server.accept()
+        with conn:
+            got.append(conn.makefile().readline())
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    assert player.send(sock, "osd-msg-bar seek 30")
+    thread.join(2)
+    server.close()
+    assert got == ["osd-msg-bar seek 30\n"]
+    assert not player.send(tmp_path / "nothing.sock", "quit")
 
 
 class FakeMpv:

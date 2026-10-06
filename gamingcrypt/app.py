@@ -241,12 +241,28 @@ class MainWindow(QMainWindow):
         from gamingcrypt.input import evdev as e
         from gamingcrypt.input import hotkeys
 
-        if ev_type != e.EV_KEY or value == 2:
-            return False
-        actions, consumed = self.pad_tracker.feed(code, value == 1)
-        for action in actions:
-            self.hardware_key(hotkeys.ACTION_CODES[action])
+        consumed = False
+        if ev_type == e.EV_KEY and value != 2:
+            actions, consumed = self.pad_tracker.feed(code, value == 1)
+            for action in actions:
+                self.hardware_key(hotkeys.ACTION_CODES[action])
+        if not consumed and self.movie_in_front():
+            self.movie_remote(ev_type, code, value)
+            return True  # the controller steers the movie
         return consumed
+
+    def movie_in_front(self) -> bool:
+        return not self.isVisible() and self.running_movie() is not None
+
+    def movie_remote(self, ev_type: int, code: int, value: int) -> None:
+        """mpv can't read the controller (GamingCrypt holds the physical one): its buttons are
+        sent to the player as commands."""
+        from gamingcrypt.movies import player
+
+        command = player.remote_command(ev_type, code, value)
+        if command is not None:
+            sock = player.socket_path()
+            run_async(lambda: player.send(sock, command), owner=self)
 
     def hardware_key(self, code: int) -> None:
         from gamingcrypt.input import evdev as e
@@ -928,6 +944,9 @@ class MainWindow(QMainWindow):
             self.notify("State saved" if text == "SAVE_STATE" else "State loaded", "💾")
 
     def game_over(self, appid: int | None = None, failed: bool = False) -> None:
+        overlay = getattr(self, "game_volume_osd", None)
+        if overlay is not None:
+            overlay.dismiss()  # gamescope would keep drawing it over GamingCrypt
         menu = getattr(self, "quick_menu", None)
         if menu is not None and menu.isVisible():
             menu.hide()  # the game is gone - nothing to go back to

@@ -21,6 +21,7 @@ def clamp_step(value) -> int:
     except (TypeError, ValueError):
         return STEP
 SHOW_MS = 1500
+UNMAP_DELAY_MS = 300  # gamescope has the empty picture by then
 
 
 class VolumeOsd(QFrame):
@@ -75,7 +76,20 @@ class GameOverlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.osd = VolumeOsd(self)
-        self.osd.timer.timeout.connect(self.hide)
+        self.osd.timer.timeout.connect(self.dismiss)
+
+    def dismiss(self) -> None:
+        """Gamescope keeps drawing an overlay's last picture after it's hidden: draw it empty
+        first, then hide it."""
+        self.osd.timer.stop()
+        self.osd.hide()
+        if self.isVisible():
+            self.repaint()
+            QTimer.singleShot(UNMAP_DELAY_MS, self._unmap)
+
+    def _unmap(self) -> None:
+        if not self.osd.isVisible():  # not shown again meanwhile
+            self.hide()
 
     def show_level(self, percent: int | None, muted: bool = False) -> None:
         from PySide6.QtGui import QGuiApplication
