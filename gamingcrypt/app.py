@@ -498,9 +498,9 @@ class MainWindow(QMainWindow):
         from gamingcrypt.emulation.library import EMU_APPID_BASE
 
         self.end_game_refresh()  # the screen's own refresh rate again
-        movies = self.shell.pages.get("Movies") if self.shell is not None else None
-        if appid is not None and hasattr(movies, "movie_ended"):
-            movies.movie_ended(appid)  # watched? where it was stopped
+        for tab in self.video_tabs():
+            if appid is not None:
+                tab.movie_ended(appid)  # watched? where it was stopped
 
         games = self.shell.pages.get("Games") if self.shell is not None else None
         play_log = getattr(games, "play_log", None)
@@ -746,12 +746,18 @@ class MainWindow(QMainWindow):
         """Steam shows its own volume indicator over its games - over emulators and movies nobody does."""
         return not self.isVisible() and (self.running_rom() is not None or self.running_movie() is not None)
 
+    def video_tabs(self) -> list:
+        """Movies and Shows: what the player plays."""
+        pages = self.shell.pages if self.shell is not None else {}
+        return [pages[n] for n in ("Movies", "Shows") if hasattr(pages.get(n), "movie_ended")]
+
     def running_movie(self, appid: int | None = None):
-        movies = self.shell.pages.get("Movies") if self.shell else None
+        """The movie or episode playing (or with that app id)."""
         if appid is None:
             appid = self.game_watcher.appid if self.game_watcher.active else None
-        finder = getattr(movies, "by_appid", None)
-        return finder(appid) if finder is not None and appid is not None else None
+        if appid is None:
+            return None
+        return next((found for tab in self.video_tabs() for found in [tab.by_appid(appid)] if found), None)
 
     def launch_movie(self, movie, start: float = 0) -> tuple[bool, str]:
         """A movie: mpv full screen, like a game (quick menu, volume, Force quit)."""
@@ -1210,9 +1216,9 @@ class MainWindow(QMainWindow):
                 self.download_notifier.message.connect(lambda icon, text: self.notify(text, icon))
         from gamingcrypt.session.mode import in_gaming_session
 
-        movies = pages.get("Movies")
-        if hasattr(movies, "player_launcher"):
-            movies.player_launcher = self.launch_movie
+        for name in ("Movies", "Shows"):
+            if hasattr(pages.get(name), "player_launcher"):
+                pages[name].player_launcher = self.launch_movie
         self.shell = Shell(pages, show_hints=in_gaming_session())
         self.shell.exit_requested.connect(self.desktop_mode)
         self.shell.power_requested.connect(self.power_action)
@@ -1370,8 +1376,12 @@ def default_pages(config: dict) -> dict[str, QWidget]:
     from gamingcrypt.movies.metadata import languages_for
     from gamingcrypt.ui.movies_tab import MoviesTab
 
-    movies = MoviesTab(os.path.join(mount_point, "Movies") if mount_point else "", languages=languages_for(config))
-    return {"Games": games, "Downloads": DownloadsTab(service), "Movies": movies}
+    from gamingcrypt.ui.shows_tab import ShowsTab
+
+    languages = languages_for(config)
+    movies = MoviesTab(os.path.join(mount_point, "Movies") if mount_point else "", languages=languages)
+    shows = ShowsTab(os.path.join(mount_point, "Shows") if mount_point else "", languages=languages)
+    return {"Games": games, "Downloads": DownloadsTab(service), "Movies": movies, "Shows": shows}
 
 
 SECRET_FORMAT_HINT = {
