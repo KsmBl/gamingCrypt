@@ -1,6 +1,6 @@
 """What the ticked shaders do, drawn on a picture of the game - the look of each one rebuilt with
 QPainter (RetroArch's slang shaders only run in RetroArch): scanlines, color mask and glow, the
-LCD grid, Scale2x smoothing, sharpen / blur, colors.
+LCD grid, sharpen / blur, colors.
 
 The picture: the newest screenshot of the game (or of the system's games), else a little scene.
 """
@@ -8,7 +8,6 @@ The picture: the newest screenshot of the game (or of the system's games), else 
 from __future__ import annotations
 
 import re
-from array import array
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt
@@ -190,32 +189,6 @@ def sharpen(image: QImage) -> QImage:
     return _image(bytearray(_clamp(a + (a - b) * 3 // 4) for a, b in zip(data, soft)), w, h)
 
 
-def scale2x(image: QImage) -> QImage:
-    """EPX / Scale2x: the pixel-art smoothing family xBRZ and ScaleFX belong to."""
-    image = image.convertToFormat(FORMAT)
-    w, h = image.width(), image.height()
-    src = array("I")
-    src.frombytes(bytes(image.constBits())[:w * h * 4])
-    out = array("I", bytes(w * h * 16))
-    ow = w * 2
-    for y in range(h):
-        row, up, down = y * w, max(y - 1, 0) * w, min(y + 1, h - 1) * w
-        o = y * 2 * ow
-        for x in range(w):
-            p = src[row + x]
-            a, d = src[up + x], src[down + x]
-            c, b = src[row + max(x - 1, 0)], src[row + min(x + 1, w - 1)]
-            i = o + x * 2
-            if c == a and c != d and a != b:
-                out[i] = a
-            else:
-                out[i] = p
-            out[i + 1] = b if a == b and a != c and b != d else p
-            out[i + ow] = c if d == c and d != b and c != a else p
-            out[i + ow + 1] = d if b == d and b != a and d != c else p
-    return QImage(out.tobytes(), ow, h * 2, ow * 4, FORMAT).copy()
-
-
 GB_SHADES = [QColor(15, 56, 15), QColor(48, 98, 48), QColor(139, 172, 15), QColor(155, 188, 15)]
 
 
@@ -291,15 +264,8 @@ def render(picture: QImage, ids, size: QSize) -> QImage:
         picture = sharpen(picture)
     if "gameboy" in ids:
         picture = gameboy_shades(picture)
-    look = next((i for i in ids if shaders.BY_ID[i].final), None)  # the upscaler or screen effect
-    smooth = look in ("sharp_pixels", "xbrz", "scalefx", "crt", "crt_curved")
-    if look in ("xbrz", "scalefx"):
-        picture = scale2x(picture)
-        if look == "scalefx" and picture.width() <= MAX_WIDTH:
-            picture = scale2x(picture)
-    elif look == "sharp_pixels":
-        factor = max(1, min(size.width() // picture.width(), size.height() // picture.height()))
-        picture = picture.scaled(picture.width() * factor, picture.height() * factor)  # whole pixels first
+    look = next((i for i in ids if shaders.BY_ID[i].final), None)  # the screen effect
+    smooth = look in ("crt", "crt_curved")
     # the screen's lines on an exact grid (4 canvas pixels per console pixel), then made smaller
     canvas = QImage(columns * GRID, rows * GRID, FORMAT)
     whole = canvas.rect()

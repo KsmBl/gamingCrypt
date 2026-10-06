@@ -264,13 +264,14 @@ SHADER_PRESET = "gamingcrypt.slangp"  # in config/shaders: the ticked shaders of
 
 
 def shader_settings(paths: EmulationPaths, ids: list[str] | None, extra: dict[str, str],
-                    dirs=None) -> Path | None:
-    """The ticked shaders as one preset; RetroArch's "gl" driver can't run slang shaders -
-    glcore (or Vulkan, when the game needs it) can."""
+                    dirs=None, scaler: str | None = None, factor: str | None = None) -> Path | None:
+    """The ticked shaders - and a 2D game's upscaling algorithm at its factor - as one preset;
+    RetroArch's "gl" driver can't run slang shaders - glcore (or Vulkan, when the game needs it) can."""
     from gamingcrypt.emulation import shaders
 
-    root = shaders.folder(dirs or shaders.SHADER_DIRS) if ids else None
-    preset = shaders.write_preset(ids, paths.config / "shaders" / SHADER_PRESET, root) if root else None
+    root = shaders.folder(dirs or shaders.SHADER_DIRS) if ids or scaler else None
+    preset = (shaders.write_preset(ids, paths.config / "shaders" / SHADER_PRESET, root, scaler, factor)
+              if root else None)
     if preset is not None:
         extra["video_shader_enable"] = "true"
         extra.setdefault("video_driver", "glcore")
@@ -283,7 +284,7 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
            slow: float = DEFAULT_SLOW, memory_card: str | None = None,
            widescreen: str | None = None, input_lag: str | None = None,
            renderer: str | None = None, resolution: str | None = None,
-           shaders: list[str] | None = None, shader_dirs=None) -> tuple[bool, str]:
+           shaders: list[str] | None = None, shader_dirs=None, scaler: str | None = None) -> tuple[bool, str]:
     if not available(which):
         return False, "RetroArch isn't installed - run ./install.sh"
     core = find_core(paths, game.system, core_name)
@@ -301,15 +302,22 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
         resolution = None  # paraLLEl-GS: as a PS2 draws it
     choices = [(table, choice) for table, choice in ((WIDESCREEN, widescreen), (RENDERERS, renderer),
                                                      (UPSCALE, resolution)) if short in table]
+    from gamingcrypt.emulation import scalers
+
+    # 3D consoles: the upscaling algorithm smooths the textures (when the core has it)
+    textures = scalers.is_3d(short) and scaler in scalers.choices(short)
     # nothing chosen for the game: RetroArch's own options (the core's defaults - native resolution
     # and so on); something chosen: the game's file with every choice written out (undoes an earlier one)
-    if options or short in ALWAYS_OPTIONS or any(choice for _t, choice in choices):
+    if options or short in ALWAYS_OPTIONS or textures or any(choice for _t, choice in choices):
         for table, choice in choices:  # all of them explicit: an earlier choice is undone
             options.update(table[short].get(choice, table[short][None]))
+        options.update(scalers.texture_options(short, scaler if textures else None, resolution))
     if options:  # the game's own core options file
         extra["global_core_options"] = "true"
         extra["core_options_path"] = write_core_options(core_options_file(paths, game), options)
-    shader = shader_settings(paths, shaders, extra, shader_dirs)
+    # 2D consoles: the algorithm draws the whole picture, at its factor (Resolution)
+    flat = None if scalers.is_3d(short) else scaler
+    shader = shader_settings(paths, shaders, extra, shader_dirs, flat, scalers.fit_resolution(short, flat, resolution))
     config = write_config(paths, extra)
     from gamingcrypt.emulation import layouts
 

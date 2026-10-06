@@ -23,9 +23,8 @@ def test_ticking_keeps_the_chain_order_and_one_final_picture():
     ids = shaders.toggle(ids, "sharpen", True)
     assert ids == ["ntsc", "sharpen", "lcd"]
     assert shaders.toggle(ids, "ntsc", False) == ["sharpen", "lcd"]
-    assert shaders.clean(["crt", "nope", "xbrz"]) == ["xbrz"]  # unknown ones go, the last final one wins
-    assert shaders.toggle(["ntsc", "crt"], "scalefx", True) == ["ntsc", "scalefx"]  # an upscaler unticks the CRT
-    assert shaders.toggle(["xbrz"], "sharp_pixels", True) == ["sharp_pixels"]  # and the other upscaler
+    assert shaders.clean(["crt", "nope", "xbrz", "lcd"]) == ["lcd"]  # unknown ones go (the upscalers moved to
+    # a game's Options), the last screen effect wins
     assert shaders.describe(["ntsc", "crt"]) == "TV signal (NTSC) + CRT TV" and shaders.describe([]) == "None"
 
 
@@ -89,9 +88,7 @@ def test_presets_chained_into_one(slang, monkeypatch, tmp_path):
 
 def test_every_shader_is_in_a_group():
     assert {s.group for s in shaders.SHADERS} == set(shaders.GROUPS)
-    upscalers = [s.id for s in shaders.SHADERS if s.group == "upscale"]
-    assert upscalers == ["sharp_pixels", "xbrz", "scalefx"]  # apart from the screen effects
-    assert all(s.final for s in shaders.SHADERS if s.group in ("upscale", "screen"))
+    assert all(s.final for s in shaders.SHADERS if s.group == "screen")
     assert not any(s.final for s in shaders.SHADERS if s.group in ("color", "3d"))
     assert len(shaders.BY_ID) == len(shaders.SHADERS)
 
@@ -170,17 +167,6 @@ def test_preview_colors(qtbot):
     assert shader_preview.sharpen(picture()).size() == QSize(64, 48)
     assert shader_preview.fxaa(picture()).size() == QSize(64, 48)
     assert shader_preview.ntsc(picture()).size() == QSize(64, 48)
-
-
-def test_scale2x_rounds_a_diagonal(qtbot):
-    image = QImage(2, 2, shader_preview.FORMAT)
-    black, white = QColor(0, 0, 0), QColor(255, 255, 255)
-    for (x, y), color in {(0, 0): black, (1, 0): white, (0, 1): white, (1, 1): white}.items():
-        image.setPixelColor(x, y, color)
-    big = shader_preview.scale2x(image)
-    assert big.size() == QSize(4, 4)
-    assert big.pixelColor(0, 0) == black and big.pixelColor(1, 1) == white  # the stair's corner filled in
-    assert big.pixelColor(3, 3) == white
 
 
 def test_the_picture_is_the_newest_screenshot(qtbot, tmp_path):
@@ -266,11 +252,11 @@ def test_game_options_choose_own_or_the_systems(qtbot, tab):
     page.about.clear()
     page.rows["lcd"].setFocus()
     assert "LCD grid" in page.about.text()  # what the focused one does
-    assert "one upscaler or screen effect at a time" in page.about.text()
+    assert "one screen effect at a time" in page.about.text()
     from PySide6.QtWidgets import QLabel
 
     headings = [label.text() for label in page.findChildren(QLabel) if label.objectName() == "section"]
-    assert headings == ["Colors", "3D games", "Upscalers", "Screen effects"]
+    assert headings == ["Colors", "3D games", "Screen effects"]  # upscaling: the game's Options
 
 
 def test_app_starts_with_the_games_shaders(qtbot, emu, monkeypatch):

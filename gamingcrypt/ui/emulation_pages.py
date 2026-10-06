@@ -328,36 +328,96 @@ class RomGamePage(QWidget):
         self.renderer_combo.currentIndexChanged.connect(
             lambda _i: self.tab.profiles.set(appid, "renderer", self.renderer_combo.currentData()))
 
-        # 3D games sharper: rendered at 2x / 3x / 4x the console's resolution (the GPU has to keep up)
+        # Upscaling: a classic pixel-art algorithm - on the whole picture (2D consoles) or the textures
+        # (3D consoles, when the core has it); Resolution: its factor (2D) or the internal one (3D)
+        from gamingcrypt.emulation import scalers
+
+        self.scaler_combo = QComboBox()
+        self.scaler_caption = row("Upscaling", self.scaler_combo)
         self.resolution_combo = QComboBox()
         self.resolution_caption = row("Resolution", self.resolution_combo)
-        self.resolution_combo.currentIndexChanged.connect(
-            lambda _i: self.resolution_combo.isEnabled() and self.tab.profiles.set(
-                appid, "resolution", self.resolution_combo.currentData()))
+        self.scaling_info = QLabel("")
+        self.scaling_info.setObjectName("cardMeta")
+        self.scaling_info.setWordWrap(True)
+        grid.addWidget(self.scaling_info, grid.rowCount(), 1, 1, 2)
+
+        def current_core() -> str:
+            return self.core_combo.currentData() or cores[0]
+
+        def show_info() -> None:
+            core = current_core()
+            profile_now = self.tab.profiles.get(appid)
+            text = scalers.describe(self.game.system.id, core, profile_now.get("scaler"),
+                                    profile_now.get("resolution") if self.resolution_combo.isEnabled() else None,
+                                    self.screen_size())
+            from gamingcrypt.emulation import shaders as shader_mod
+
+            if profile_now.get("scaler") and not scalers.is_3d(core) and shader_mod.folder() is None:
+                text += " - the shaders for it aren't installed (./install.sh)"
+            self.scaling_info.setText(text)
+
+        def fill_scalers(core: str) -> None:
+            chosen = self.tab.profiles.get(appid).get("scaler")
+            combo = self.scaler_combo
+            combo.blockSignals(True)
+            combo.clear()
+            available = scalers.choices(core)
+            combo.addItem("None" if available or not scalers.is_3d(core)
+                          else "None - this core has no texture upscaling", None)
+            for sid in available:
+                combo.addItem(scalers.BY_ID[sid].name, sid)
+            combo.setCurrentIndex(max(0, combo.findData(chosen)))
+            combo.setEnabled(bool(available))
+            combo.blockSignals(False)
 
         def fill_resolutions(core: str) -> None:
-            chosen = self.tab.profiles.get(appid).get("resolution")
+            profile_now = self.tab.profiles.get(appid)
+            chosen, scaler = profile_now.get("resolution"), profile_now.get("scaler")
             combo = self.resolution_combo
             combo.blockSignals(True)
             combo.clear()
-            for scale in retroarch.scales(core):
-                combo.addItem("Native (like the console)" if scale == "1x" else f"{scale} - sharper, needs more power",
-                              None if scale == "1x" else scale)
-            parallel = core == "pcsx2" and self.renderer_combo.currentData() == "accurate"
-            if parallel:
-                combo.clear()
-                combo.addItem("Native - paraLLEl-GS draws as a PS2 does", None)
-            combo.setEnabled(not parallel)
+            if scalers.is_3d(core):
+                for scale in retroarch.scales(core):
+                    combo.addItem("Native (like the console)" if scale == "1x"
+                                  else f"{scale} - sharper, needs more power", None if scale == "1x" else scale)
+                parallel = core == "pcsx2" and self.renderer_combo.currentData() == "accurate"
+                if parallel:
+                    combo.clear()
+                    combo.addItem("Native - paraLLEl-GS draws as a PS2 does", None)
+                combo.setEnabled(not parallel)
+            else:  # 2D: the algorithm's factors
+                options = scalers.resolutions(core, scaler if scaler in scalers.choices(core) else None)
+                for scale in options:
+                    combo.addItem("Native (like the console)" if scale == "1x" else f"{scale} - drawn by the algorithm",
+                                  None if scale == "1x" else scale)
+                combo.setEnabled(options != ["1x"])
+                fitted = scalers.fit_resolution(core, scaler, chosen)
+                if fitted != chosen and scaler:
+                    self.tab.profiles.set(appid, "resolution", fitted)  # the algorithm needs one it has
+                chosen = fitted
             combo.setCurrentIndex(max(0, combo.findData(chosen)))
             combo.blockSignals(False)
+            show_info()
+
+        def scaler_chosen(_index: int = 0) -> None:
+            self.tab.profiles.set(appid, "scaler", self.scaler_combo.currentData())
+            fill_resolutions(current_core())
+
+        def resolution_chosen(_index: int = 0) -> None:
+            if self.resolution_combo.isEnabled():
+                self.tab.profiles.set(appid, "resolution", self.resolution_combo.currentData())
+            show_info()
+
+        self.scaler_combo.currentIndexChanged.connect(scaler_chosen)
+        self.resolution_combo.currentIndexChanged.connect(resolution_chosen)
 
         def core_chosen_screen() -> None:
-            core = self.core_combo.currentData() or cores[0]
+            core = current_core()
             for combo, caption, table in ((self.screen_combo, self.screen_caption, retroarch.WIDESCREEN),
-                                          (self.renderer_combo, self.renderer_caption, retroarch.RENDERERS),
-                                          (self.resolution_combo, self.resolution_caption, retroarch.UPSCALE)):
+                                          (self.renderer_combo, self.renderer_caption, retroarch.RENDERERS)):
                 combo.setVisible(core in table)
                 caption.setVisible(core in table)
+            fill_scalers(core)
             fill_resolutions(core)
 
         self.renderer_combo.currentIndexChanged.connect(
@@ -407,6 +467,11 @@ class RomGamePage(QWidget):
         grid.addLayout(speeds, line, 1, 1, 2)
         grid.setColumnStretch(3, 1)
         return grid
+
+    def screen_size(self) -> tuple[int, int]:
+        from gamingcrypt.ui.upscale_option import screen_size_of
+
+        return screen_size_of(self.tab if hasattr(self.tab, "window") else None)
 
     def show_shaders(self) -> None:
         from gamingcrypt.emulation import shaders

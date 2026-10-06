@@ -22,18 +22,17 @@ class Shader:
     name: str
     description: str
     preset: str  # in the slang shaders' folder
-    group: str  # "color", "3d", "upscale", "screen"
+    group: str  # "color", "3d", "screen"
 
     @property
     def final(self) -> bool:
-        """An upscaler or a screen effect: it draws the final picture - one of them at a time
-        (a CRT effect on an already upscaled picture draws its lines at the wrong size)."""
-        return self.group in FINAL
+        """A screen effect: it draws the final picture, on the screen - one at a time."""
+        return self.group == "screen"
 
 
-GROUPS = {"color": "Colors", "3d": "3D games", "upscale": "Upscalers", "screen": "Screen effects"}
-FINAL = {"upscale", "screen"}  # one of these at a time
-# in the order they're chained: colors first, the upscaler or screen effect last
+# Upscaling algorithms (xBRZ, HQx …) are a game's Options (emulation/scalers), with its Resolution.
+GROUPS = {"color": "Colors", "3d": "3D games", "screen": "Screen effects"}
+# in the order they're chained: colors first, then the game's upscaling algorithm, the screen effect last
 SHADERS: tuple[Shader, ...] = (
     Shader("handheld_colors", "Handheld colors", "The softer colors of a Game Boy Advance / Color screen",
            "handheld/color-mod/gba-color.slangp", "color"),
@@ -42,12 +41,6 @@ SHADERS: tuple[Shader, ...] = (
     Shader("fxaa", "Smooth 3D edges (FXAA)", "Fewer jagged edges in 3D games",
            "anti-aliasing/fxaa.slangp", "3d"),
     Shader("sharpen", "Sharpen", "Crisper details, for blurry games", "sharpen/adaptive-sharpen.slangp", "3d"),
-    Shader("sharp_pixels", "Sharp pixels", "Every pixel the same size and crisp, without shimmering",
-           "pixel-art-scaling/sharp-bilinear-simple.slangp", "upscale"),
-    Shader("xbrz", "Smooth pixel art (xBRZ)", "Rounds the stairs of pixel art", "edge-smoothing/xbrz/xbrz-freescale.slangp",
-           "upscale"),
-    Shader("scalefx", "Smooth pixel art (ScaleFX)", "Rounder, cleaner pixel art - needs more power",
-           "edge-smoothing/scalefx/scalefx.slangp", "upscale"),
     Shader("scanlines", "Scanlines", "Dark lines between the rows, as on an old TV", "scanlines/scanline.slangp", "screen"),
     Shader("crt", "CRT TV", "Scanlines, glow and the color mask of a tube TV", "crt/crt-easymode.slangp", "screen"),
     Shader("crt_curved", "Curved CRT TV", "A tube TV with its curved glass", "crt/crt-geom.slangp", "screen"),
@@ -63,14 +56,14 @@ def folder(dirs=SHADER_DIRS) -> Path | None:
 
 
 def clean(ids) -> list[str]:
-    """Known ids, in chain order, one upscaler or screen effect at most (the last one given)."""
+    """Known ids, in chain order, one screen effect at most (the last one given)."""
     given = [i for i in ids or () if i in BY_ID]
     finals = [i for i in given if BY_ID[i].final]
     return [s.id for s in SHADERS if s.id in given and (not s.final or s.id == finals[-1])]
 
 
 def toggle(ids, shader_id: str, on: bool) -> list[str]:
-    """Tick / untick one; ticking an upscaler or screen effect unticks the one there was."""
+    """Tick / untick one; ticking a screen effect unticks the one there was."""
     chosen = [i for i in clean(ids) if i != shader_id]
     if on:
         if BY_ID[shader_id].final:
@@ -191,13 +184,28 @@ def combine(presets: list[Preset]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_preset(ids, target: Path, root: Path) -> Path | None:
-    """The ticked shaders as one preset file (None: nothing ticked, or a preset is missing)."""
+def write_preset(ids, target: Path, root: Path, scaler: str | None = None,
+                 resolution: str | None = None) -> Path | None:
+    """The ticked shaders - and the game's upscaling algorithm (2D consoles) - as one preset file:
+    colors, the algorithm at its factor, the 3D ones, then the screen effect or the rest of the way
+    to the screen. None: nothing to do, or a preset is missing."""
+    from gamingcrypt.emulation import scalers
+
     ids = clean(ids)
-    if not ids:
+    passes, textures, values = scalers.preset(scaler, resolution, root)
+    if not ids and not passes:
         return None
     try:
-        presets = [read_preset(Path(root) / BY_ID[i].preset) for i in ids]
+        def load(group: str) -> list[Preset]:
+            return [read_preset(Path(root) / BY_ID[i].preset) for i in ids if BY_ID[i].group == group]
+
+        presets = load("color")
+        if passes:
+            presets.append(Preset(passes, textures, values))
+        presets += load("3d") + load("screen")
+        if passes and not any(BY_ID[i].final for i in ids):
+            to_screen = dict(scalers.TO_SCREEN, shader=str(Path(root) / scalers.TO_SCREEN["shader"]))
+            presets.append(Preset([to_screen]))
     except (OSError, ValueError):
         return None
     target.parent.mkdir(parents=True, exist_ok=True)
