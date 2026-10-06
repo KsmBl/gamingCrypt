@@ -517,3 +517,24 @@ def test_filters_fold_away_when_scrolling_down(qtbot, root, monkeypatch):
     assert bar.maximum() > 0
     bar.setValue(0)
     qtbot.waitUntil(home.header.isVisible)
+
+
+def test_movie_page_fits_the_screen(qtbot, root):
+    """Long title, resumable and watched (all four buttons): nothing wider than the screen."""
+    from gamingcrypt.ui import theme
+
+    long = put(root, "The Lord of the Rings The Return of the King Extended (2003).mkv",
+               title="The Lord of the Rings: The Return of the King", year=2003, runtime=201, fsk="FSK 12",
+               watched=True, playcount=1, position=3000, total=12000, wikidata="Q99")
+    tab = make_tab(qtbot, root)
+    tab.setStyleSheet(theme.STYLESHEET)
+    tab.resize(1280, 740)
+    tab.open_movie(next(m for m in tab.movies if m.path == long))
+    page = tab.currentWidget()
+    page.options_button.click()
+    assert page.restart_button.isVisible()
+    viewport = page.scroll.viewport()
+    qtbot.waitUntil(lambda: page.scroll.widget().width() <= viewport.width())
+    assert page.scroll.widget().minimumSizeHint().width() <= viewport.width()
+    right = page.options_button.mapTo(viewport, page.options_button.rect().topRight()).x()
+    assert right <= viewport.width() and page.cover.mapTo(viewport, page.cover.rect().topLeft()).x() >= 0

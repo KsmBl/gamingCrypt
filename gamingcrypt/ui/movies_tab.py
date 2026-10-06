@@ -326,9 +326,11 @@ class MoviePage(QWidget):
         self.progress = QLabel()
         self.progress.setObjectName("cardTitle")
         info.addWidget(self.progress)
-        actions = QHBoxLayout()
+        self.actions = QWidget()  # wraps to a second row when the screen is too narrow for all
+        actions = FlowLayout(self.actions, spacing=16)
+        actions.setContentsMargins(0, 0, 0, 0)
         self.main_button = big_button("", "primary")
-        self.main_button.setMinimumWidth(260)
+        self.main_button.setMinimumWidth(220)
         self.main_button.clicked.connect(lambda: self.play(from_start=False))
         actions.addWidget(self.main_button)
         self.restart_button = big_button("⟲  From the start")
@@ -340,8 +342,7 @@ class MoviePage(QWidget):
         self.options_button = big_button("⚙ Options", checkable=True)
         self.options_button.toggled.connect(self.toggle_options)
         actions.addWidget(self.options_button)
-        actions.addStretch()
-        info.addLayout(actions)
+        info.addWidget(self.actions)
         self.options_panel = QFrame()
         self.options_panel.setObjectName("card")
         self.options_layout = QVBoxLayout(self.options_panel)
@@ -401,6 +402,7 @@ class MoviePage(QWidget):
         self.main_button.setText(f"▶  Resume at {library.format_time(resume)}" if resume else "▶  Play")
         self.restart_button.setVisible(bool(resume))
         self.watched_button.setText("Mark as unwatched" if info.watched else "✓ Mark as watched")
+        self.actions.layout().invalidate()  # buttons shown / hidden, other texts: new rows
         self.plot.setText(info.plot or "No description found.")
         lines = []
         if info.directors:
