@@ -173,66 +173,20 @@ def test_without_gamescope_the_choice_is_off(qtbot, window, monkeypatch):
     assert not page.upscale_combo.isEnabled() and "isn't installed" in page.upscale_note.text()
 
 
-def test_emulated_games_upscale_and_render_higher_together(qtbot, tmp_path, monkeypatch):
-    from gamingcrypt.app import MainWindow
+def test_emulated_games_have_no_upscaling(qtbot, tmp_path):
+    """Their work is the emulator's internal resolution (Options -> Resolution), not the picture's size."""
+    import copy as _copy
+
     from gamingcrypt.config import DEFAULTS
-    from gamingcrypt.emulation import retroarch
     from gamingcrypt.ui.games_tab import GamesTab
     from tests.fakes import FakeService
 
-    monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
-    gamescope(monkeypatch)
-    seen = []
-    monkeypatch.setattr(retroarch, "launch", lambda *a, **k: seen.append(k) or (True, "Starting"))
-    monkeypatch.setattr(retroarch, "available", lambda *a: True)
     emu = tmp_path / "Emulation"
     (emu / "roms" / "ps2").mkdir(parents=True)
     (emu / "roms" / "ps2" / "Need for Speed Underground 2.iso").write_bytes(b"x")
-    (emu / "cores").mkdir()
-    (emu / "cores" / "pcsx2_libretro.so").write_bytes(b"x")
-    pages = {}
-
-    def factory(cfg):
-        pages["Games"] = GamesTab(FakeService(), library_settings=cfg["libraries"], emulation_root=str(emu))
-        return dict(pages)
-
-    w = MainWindow(copy.deepcopy(DEFAULTS), lambda c: None, page_factory=factory)
-    qtbot.addWidget(w)
-    w.windowed, w.update_check_enabled = True, False
-    w.show_shell()
-    monkeypatch.setattr(w, "screen_size", lambda: SCREEN)
-    games = pages["Games"]
-    qtbot.waitUntil(lambda: "ps2" in games.roms)
-    game = games.roms["ps2"][0]
-    games.open_rom(game)
-    page = games.currentWidget()
-    assert page.upscale_combo.isEnabled() and page.upscale_combo.count() == 5
-    assert "Resolution" in page.upscale.note.text()
-    page.resolution_combo.setCurrentIndex(page.resolution_combo.findData("2x"))  # sharper 3D ...
-    page.upscale_combo.setCurrentIndex(page.upscale_combo.findData(60))  # ... in a smaller picture
-    profile = w.game_profiles.get(game.appid)
-    assert profile["resolution"] == "2x" and profile["upscale"] == 60
-    w.launch_rom(game)
-    assert seen[-1]["resolution"] == "2x"
-    assert seen[-1]["more_env"] == {"DISPLAY": ":1"}
-    w.game_ended(game.appid)
-    page.upscale_combo.setCurrentIndex(0)
-    w.launch_rom(game)
-    assert seen[-1]["more_env"] == {} and seen[-1]["resolution"] == "2x"
-
-
-def test_retroarch_gets_the_display(tmp_path, monkeypatch):
-    from gamingcrypt.emulation import retroarch
-    from gamingcrypt.emulation.library import EmulationPaths, scan
-    from gamingcrypt.emulation.systems import BY_ID
-
-    monkeypatch.setattr(retroarch, "CORE_DIRS", ())
-    paths = EmulationPaths(tmp_path / "Emulation")
-    paths.ensure()
-    (paths.roms / "snes" / "Mario.sfc").write_text("x")
-    (paths.cores / "snes9x_libretro.so").write_text("x")
-    game = scan(paths, BY_ID["snes"])[0]
-    started = []
-    assert retroarch.launch(game, paths, tmp_path / "d", tmp_path / "l", popen=lambda cmd, **kw: started.append(kw),
-                            which=lambda n: "/usr/bin/retroarch", more_env={"DISPLAY": ":1"})[0]
-    assert started[-1]["env"]["DISPLAY"] == ":1"
+    tab = GamesTab(FakeService(), library_settings=_copy.deepcopy(DEFAULTS)["libraries"], emulation_root=str(emu))
+    qtbot.addWidget(tab)
+    qtbot.waitUntil(lambda: "ps2" in tab.roms)
+    tab.open_rom(tab.roms["ps2"][0])
+    page = tab.currentWidget()
+    assert not hasattr(page, "upscale_combo") and page.resolution_combo is not None

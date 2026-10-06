@@ -283,7 +283,7 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
            slow: float = DEFAULT_SLOW, memory_card: str | None = None,
            widescreen: str | None = None, input_lag: str | None = None,
            renderer: str | None = None, resolution: str | None = None,
-           shaders: list[str] | None = None, shader_dirs=None, more_env: dict[str, str] | None = None) -> tuple[bool, str]:
+           shaders: list[str] | None = None, shader_dirs=None) -> tuple[bool, str]:
     if not available(which):
         return False, "RetroArch isn't installed - run ./install.sh"
     core = find_core(paths, game.system, core_name)
@@ -318,7 +318,7 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
     try:
         with open(log_dir / LOG_NAME, "wb") as log:  # this game's log (its frame rate is read from it)
             popen(command(game, core, config, reaper(data_dir), shader), stdin=subprocess.DEVNULL, stdout=log,
-                  stderr=subprocess.STDOUT, start_new_session=True, env={**os.environ, **(more_env or {})})
+                  stderr=subprocess.STDOUT, start_new_session=True, env=dict(os.environ))
     except OSError as exc:
         return False, f"RetroArch didn't start: {exc}"
     return True, f"Starting {game.name}…"

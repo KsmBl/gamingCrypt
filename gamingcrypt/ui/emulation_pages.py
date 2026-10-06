@@ -144,10 +144,6 @@ class SystemPage(QWidget):
         self.grid.invalidate()
 
 
-ROM_UPSCALE_NOTE = ("RetroArch's picture renders smaller and is scaled up to the screen (AMD FSR): less work for "
-                    "the GPU, a little softer - together with Resolution if you like. From the next start.")
-
-
 class RomGamePage(QWidget):
     """An emulated game: Play (RetroArch), favorite."""
 
@@ -338,16 +334,6 @@ class RomGamePage(QWidget):
         self.resolution_combo.currentIndexChanged.connect(
             lambda _i: self.resolution_combo.isEnabled() and self.tab.profiles.set(
                 appid, "resolution", self.resolution_combo.currentData()))
-
-        # upscaling: RetroArch's picture rendered smaller, scaled up to the screen - with Resolution
-        # (how sharp the console's 3D is drawn) or without it
-        from gamingcrypt.ui.upscale_option import UpscaleOption, screen_size_of
-
-        self.upscale = UpscaleOption(self.tab.profiles, appid, lambda: screen_size_of(
-            self.tab if hasattr(self.tab, "window") else None), note=ROM_UPSCALE_NOTE)
-        self.upscale_combo = self.upscale.combo
-        row("Upscaling", self.upscale_combo)
-        grid.addWidget(self.upscale.note, grid.rowCount(), 1, 1, 2)
 
         def fill_resolutions(core: str) -> None:
             chosen = self.tab.profiles.get(appid).get("resolution")

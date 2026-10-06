@@ -1,5 +1,5 @@
-"""The Upscaling choice in a game's Options (Windows, Linux and emulated games): Off, or how much
-smaller the game renders - a nested gamescope scales it up with FSR (system/upscaling)."""
+"""The Upscaling choice in a game's Options (Windows and Linux games): Off, or how much
+smaller the game renders - gamescope scales it up with FSR (system/upscaling)."""
 
 from __future__ import annotations
 

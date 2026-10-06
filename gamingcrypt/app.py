@@ -751,9 +751,7 @@ class MainWindow(QMainWindow):
                                        widescreen=profile.get("widescreen"),
                                        input_lag=profile.get("input_lag"), renderer=profile.get("renderer"),
                                        resolution=profile.get("resolution"),
-                                       shaders=shader_choice.for_game(self.config, profile, game.system.id),
-                                       more_env=self.start_upscaling(profile))
-        self.upscaling_started(ok)
+                                       shaders=shader_choice.for_game(self.config, profile, game.system.id))
         if ok:
             self.follow_game_refresh(config_mod.cache_dir() / "logs" / retroarch.LOG_NAME)
             self.speed_mode = "normal"  # RetroArch starts at normal speed

@@ -61,7 +61,7 @@ The screenshots are made with `.venv/bin/python docs/screenshots.py` (sample dat
   or `<drive>/Linux Games`, pick its start file; Windows games run with any Proton (Steam's, GE-Proton …) or Wine in
   their own prefix on the drive, Linux games directly or in Steam's runtime; covers from Steam's store, play time,
   Continue, Recently played and Favorites like every other game
-  - **Upscaling** per game (Options, also for emulated games - together with their Resolution): Light / Medium /
+  - **Upscaling** per game (Options of Windows and Linux games): Light / Medium /
     Strong / Maximum renders the game at 85–50% of the screen's
     resolution and gamescope scales it up with FSR (the game on its second display, as Steam does it) - more FPS,
     or less power with an FPS limit
