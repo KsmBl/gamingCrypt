@@ -40,7 +40,13 @@ def big_button(text: str, object_name: str = "", checkable: bool = False) -> QPu
     button.setCheckable(checkable)
     # Reachable with the controller, but a finger tap doesn't steal focus from text fields.
     button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+    if object_name in ("", "primary", "danger") and "\n" not in text:
+        # one height for every button in a row: a colour emoji ("🗑", "⚙") made its button taller
+        button.setMaximumHeight(BUTTON_HEIGHT)
     return button
+
+
+BUTTON_HEIGHT = 68  # 42 + padding + the focus ring's room (theme)
 
 
 class ComingSoon(QWidget):

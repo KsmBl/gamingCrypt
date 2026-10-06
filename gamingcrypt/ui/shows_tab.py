@@ -18,7 +18,7 @@ from gamingcrypt.movies import library as movies
 from gamingcrypt.shows import library
 from gamingcrypt.shows.library import Episode, Show
 from gamingcrypt.ui import theme
-from gamingcrypt.ui.game_widgets import COVER_H, COVER_W, Tappable, card_margins, format_size, placeholder_cover
+from gamingcrypt.ui.game_widgets import COVER_H, COVER_W, Cover, Tappable, card_margins, format_size, placeholder_cover
 from gamingcrypt.ui.movies_tab import (MoviesHome, MoviesTab, MovieUploadPage, RemoveMovieConfirm, movie_cover)
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import FlowLayout, big_button, enable_touch_scroll, set_status
@@ -88,7 +88,7 @@ class ShowCard(Tappable):
         layout = QVBoxLayout(self)
         card_margins(layout)
         layout.setSpacing(6)
-        self.cover = QLabel()
+        self.cover = Cover()
         self.cover.setFixedSize(COVER_W, COVER_H)
         layout.addWidget(self.cover)
         self.title = QLabel()
@@ -123,7 +123,7 @@ class ShowCard(Tappable):
 
 
 class ShowsHome(MoviesHome):
-    TITLE, ADD, SEARCH = "Shows", "⬆  Add shows", "🔍  Search show, actor"
+    ADD, SEARCH = "⬆  Add shows", "🔍  Search show, actor"
     NOUN, NOUNS = "show", "shows"
     EMPTY = ("No shows yet - add episodes with ⬆ Add shows (from a PC or phone in the same Wi-Fi), or put them "
              "into the Shows folder on your drive: one folder per show, or named like \"Show S01E02.mkv\"")
@@ -157,7 +157,7 @@ class EpisodeRow(Tappable):
         row = QHBoxLayout(self)
         row.setContentsMargins(12, 12, 16, 12)
         row.setSpacing(18)
-        self.thumb = QLabel()
+        self.thumb = Cover()
         self.thumb.setFixedSize(THUMB_W, THUMB_H)
         row.addWidget(self.thumb, alignment=Qt.AlignmentFlag.AlignTop)
         text = QVBoxLayout()
@@ -227,7 +227,7 @@ class ShowPage(QWidget):
         page.setSpacing(18)
         body = QHBoxLayout()
         body.setSpacing(36)
-        self.cover = QLabel()
+        self.cover = Cover()
         self.cover.setFixedSize(300, 450)
         body.addWidget(self.cover, alignment=Qt.AlignmentFlag.AlignTop)
         info = QVBoxLayout()

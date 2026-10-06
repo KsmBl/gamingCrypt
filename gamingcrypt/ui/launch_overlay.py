@@ -7,7 +7,7 @@ from PySide6.QtGui import QColor, QConicalGradient, QPainter, QPen
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from gamingcrypt.ui import theme
-from gamingcrypt.ui.game_widgets import load_cover, placeholder_cover
+from gamingcrypt.ui.game_widgets import Cover, load_cover, placeholder_cover
 from gamingcrypt.ui.widgets import big_button
 
 COVER_W, COVER_H = 240, 360
@@ -60,11 +60,10 @@ class LaunchOverlay(QWidget):
     def __init__(self, parent: QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet(f"LaunchOverlay {{ background: {theme.BG}; }}")
         layout = QVBoxLayout(self)
         layout.setSpacing(18)
         layout.addStretch()
-        self.cover = QLabel()
+        self.cover = Cover()
         self.cover.setFixedSize(COVER_W, COVER_H)
         layout.addWidget(self.cover, alignment=Qt.AlignmentFlag.AlignCenter)
         self.label = QLabel()

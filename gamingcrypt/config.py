@@ -48,6 +48,10 @@ DEFAULTS: dict[str, Any] = {
         # boot entry like "0000", "none", or None = every system found.
         "other_os": None,
     },
+    "appearance": {
+        # "dark" or "light" (Settings -> Device -> Appearance).
+        "theme": "dark",
+    },
     "libraries": {
         # Libraries not shown on the Games tab (Settings -> Games -> Libraries).
         "hidden": [],

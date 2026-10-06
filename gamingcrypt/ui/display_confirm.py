@@ -17,7 +17,6 @@ class DisplayConfirm(QWidget):
     def __init__(self, parent: QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet("DisplayConfirm { background: rgba(0, 0, 0, 190); }")
         outer = QVBoxLayout(self)
         outer.addStretch()
         card = QFrame()

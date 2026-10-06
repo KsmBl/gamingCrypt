@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QScroll
 from gamingcrypt.steam.installer import Download, InstallResult
 from gamingcrypt.system.io_stats import rate
 from gamingcrypt.ui.progress_estimate import ACTIVE_RATE, ProgressEstimator
-from gamingcrypt.ui.game_widgets import format_size, load_cover, placeholder_cover
+from gamingcrypt.ui.game_widgets import Cover, format_size, load_cover, placeholder_cover
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import FoldingHeader, big_button, enable_touch_scroll, set_status
 
@@ -50,7 +50,7 @@ class DownloadRow(QFrame):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 10, 16, 10)
         layout.setSpacing(18)
-        cover = QLabel()
+        cover = Cover()
         cover.setFixedSize(COVER_W, COVER_H)
         cover.setPixmap(placeholder_cover(download.name, COVER_W, COVER_H))
         load_cover(service, download.appid, cover, COVER_W, COVER_H)

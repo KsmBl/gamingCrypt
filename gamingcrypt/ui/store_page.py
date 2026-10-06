@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QVBoxLayout, QWidget
 
 from gamingcrypt.steam.webapi import StoreItem, format_price
-from gamingcrypt.ui.game_widgets import load_cover, placeholder_cover
+from gamingcrypt.ui.game_widgets import Cover, load_cover, placeholder_cover
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import (
     FoldingHeader,
@@ -37,7 +37,7 @@ class StoreRow(QFrame):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 10, 16, 10)
         layout.setSpacing(18)
-        cover = QLabel()
+        cover = Cover()
         cover.setFixedSize(ROW_COVER_W, ROW_COVER_H)
         cover.setPixmap(placeholder_cover(item.name, ROW_COVER_W, ROW_COVER_H))
         load_cover(page.service, item.appid, cover, ROW_COVER_W, ROW_COVER_H)

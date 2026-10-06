@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
 
 from gamingcrypt.system.controls import SystemControls
@@ -61,6 +61,50 @@ class Section(QFrame):
             value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             line.addWidget(value)
         self.body.addLayout(line)
+
+
+class AppearanceSection(Section):
+    """Dark or light - switched at once, everywhere."""
+
+    changed = Signal(str)
+
+    def __init__(self, config: dict, save: Callable[[dict], None]):
+        super().__init__("Appearance")
+        from gamingcrypt.ui import theme
+
+        self.config, self.save = config, save
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        self.buttons = {}
+        for name, label in (("dark", "🌙  Dark"), ("light", "☀  Light")):
+            button = big_button(label, checkable=True)
+            button.setMinimumWidth(180)
+            button.clicked.connect(lambda _=False, n=name: self.choose(n))
+            row.addWidget(button)
+            self.buttons[name] = button
+        row.addStretch()
+        caption = QLabel("Theme")
+        caption.setFixedWidth(220)
+        line = QHBoxLayout()
+        line.addWidget(caption)
+        line.addLayout(row, 1)
+        self.body.addLayout(line)
+        self._show(theme.current)
+
+    def _show(self, name: str) -> None:
+        for key, button in self.buttons.items():
+            button.setChecked(key == name)
+
+    def choose(self, name: str) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        from gamingcrypt.ui import theme
+
+        self.config.setdefault("appearance", {})["theme"] = name
+        self.save(self.config)
+        theme.apply(name, QApplication.instance())
+        self._show(name)
+        self.changed.emit(name)
 
 
 class DisplaySection(Section):

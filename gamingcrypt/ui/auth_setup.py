@@ -297,6 +297,7 @@ class AuthSetupWizard(QWidget):
         for method, label in METHOD_LABELS.items():
             button = big_button(label)
             button.setStyleSheet("min-height: 140px; min-width: 200px;")
+            button.setMaximumHeight(16777215)  # a big tile, not a row button
             button.clicked.connect(lambda _=False, m=method: self.choose_method(m))
             self.method_buttons[method] = button
             h.addWidget(button)

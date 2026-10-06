@@ -389,7 +389,6 @@ class MainWindow(QMainWindow):
         lock = self.sleep_lock = LockScreen(VerifyUnlocker(self.verifier), self.config["unlock"]["method"], self)
         lock.setAutoFillBackground(True)
         lock.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        lock.setStyleSheet("LockScreen { background: %s; }" % theme.BG)
         lock.unlocked.connect(self._sleep_unlocked)
         lock.power_requested.connect(self.power_action)
         self.load_other_systems(lock)
@@ -936,7 +935,6 @@ class MainWindow(QMainWindow):
             layouts.Store(self.config, self.save), game.system.id, parent=self,
             note=f"Changes apply the next time {game.name} starts - save your state, quit and start it again.")
         page.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        page.setStyleSheet(f"ControlsPage {{ background: {theme.BG}; }}")
         page.closed.connect(self._running_controls_closed)
         page.setGeometry(self.rect())
         page.raise_()
@@ -1220,6 +1218,7 @@ class MainWindow(QMainWindow):
             if hasattr(pages.get(name), "player_launcher"):
                 pages[name].player_launcher = self.launch_movie
         self.shell = Shell(pages, show_hints=in_gaming_session())
+        theme.on_change(self.retheme)
         self.shell.exit_requested.connect(self.desktop_mode)
         self.shell.power_requested.connect(self.power_action)
         settings = pages.get("Settings")
@@ -1239,6 +1238,15 @@ class MainWindow(QMainWindow):
         if self.update_check_enabled and not getattr(self, "_update_checked", False):
             self._update_checked = True
             QTimer.singleShot(60_000, self.check_for_update)  # once per start, after things settled
+
+    def retheme(self) -> None:
+        """Dark / light switched: what draws its own pictures draws them again."""
+        if self.shell is None:
+            return
+        for widget in [self.shell, *self.shell.findChildren(QWidget)]:
+            hook = getattr(widget, "retheme", None)
+            if callable(hook) and widget is not self:
+                hook()
 
     update_check_enabled = True  # tests switch it off
 
@@ -1476,7 +1484,7 @@ def main(argv: list[str] | None = None) -> int:
         wait_and_activate()
         return 0
     log_path = setup_log(config_mod.cache_dir())
-    app.setStyleSheet(theme.STYLESHEET)
+    theme.apply(theme.from_config(cfg), app)  # dark or light (Settings -> Device)
     from gamingcrypt.system.controls import SystemControls
     from gamingcrypt.ui.tasks import run_async
 

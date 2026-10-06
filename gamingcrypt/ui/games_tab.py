@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollAr
 
 from gamingcrypt.steam.models import SteamGame
 from gamingcrypt.steam.sorting import filter_games, sort_games
-from gamingcrypt.ui.game_widgets import (GameCard, SourceCard, format_date, format_playtime, load_cover,
+from gamingcrypt.ui.game_widgets import (Cover, GameCard, SourceCard, format_date, format_playtime, load_cover,
                                         placeholder_cover)
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import (
@@ -30,7 +30,7 @@ LIBRARIES = {"favorites": "Favorites", "steam": "Steam", "recent": "Recently pla
 
 def heading(text: str) -> QLabel:
     label = QLabel(text)
-    label.setObjectName("cardTitle")
+    label.setObjectName("section")  # the same headings everywhere
     return label
 
 
@@ -45,7 +45,7 @@ class ContinueCard(QFrame):
         row = QHBoxLayout(self)
         row.setContentsMargins(18, 16, 18, 16)
         row.setSpacing(20)
-        self.cover = QLabel()
+        self.cover = Cover()
         self.cover.setFixedSize(150, 225)
         row.addWidget(self.cover)
         text = QVBoxLayout()
@@ -208,6 +208,17 @@ class GamesHome(QWidget):
         self._focus_filter = KeyboardFocusFilter(self.keyboard, self)
         self._focus_filter.watch(self.search)
         layout.addWidget(self.keyboard)
+
+    def retheme(self) -> None:
+        """Dark / light: the cards (covers without artwork are drawn) and icons again."""
+        for card in self.cards.values():
+            card.deleteLater()
+        self.cards.clear()
+        for card in self.library_cards().values():
+            card._paint_icon()
+        self.add_card._paint_icon()
+        self.update_continue()
+        self.refresh_results()
 
     def update_continue(self) -> None:
         roms = [game for games in self.tab.roms.values() for game in games]

@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEd
 
 from gamingcrypt.emulation.library import RomGame
 from gamingcrypt.emulation.systems import System
-from gamingcrypt.ui.game_widgets import COVER_H, COVER_W, card_margins, format_size, placeholder_cover
+from gamingcrypt.ui.game_widgets import COVER_H, COVER_W, Cover, card_margins, format_size, placeholder_cover
 from gamingcrypt.ui.widgets import FlowLayout, big_button, enable_touch_scroll, set_status
 
 def load_rom_cover(label: QLabel, game: RomGame, covers, w: int, h: int) -> None:
@@ -50,7 +50,7 @@ class RomCard(QFrame):
         layout = QVBoxLayout(self)
         card_margins(layout)
         layout.setSpacing(6)
-        self.cover = QLabel()
+        self.cover = Cover()
         self.cover.setFixedSize(COVER_W, COVER_H)
         self.cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
         load_rom_cover(self.cover, game, covers, COVER_W, COVER_H)
@@ -154,12 +154,13 @@ class RomGamePage(QWidget):
         layout.addLayout(top)
         body = QHBoxLayout()
         body.setSpacing(36)
-        self.cover = QLabel()
+        self.cover = Cover()
         self.cover.setFixedSize(300, 400)
         self.cover.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
         load_rom_cover(self.cover, game, getattr(tab, "covers", None), 300, 400)
         body.addWidget(self.cover, alignment=Qt.AlignmentFlag.AlignTop)
         info = QVBoxLayout()
+        info.setSpacing(14)
         self.title = QLabel(game.name)
         self.title.setObjectName("detailTitle")
         self.title.setWordWrap(True)
@@ -172,7 +173,6 @@ class RomGamePage(QWidget):
         self.facts = QLabel(f"{game.system.name}\n{files}\n{format_size(game.size)}\n{played}")
         self.facts.setObjectName("detailMeta")
         info.addWidget(self.facts)
-        info.addStretch()
         actions = QHBoxLayout()
         self.main_button = big_button("▶  Play", "primary")
         self.main_button.setMinimumWidth(260)
@@ -206,6 +206,7 @@ class RomGamePage(QWidget):
         self.status.setObjectName("status")
         self.status.setWordWrap(True)
         info.addWidget(self.status)
+        info.addStretch()  # next to the cover, from the top - like every other page
         body.addLayout(info, 1)
         # scrolls when the options don't fit (800 px high screens)
         content = QWidget()

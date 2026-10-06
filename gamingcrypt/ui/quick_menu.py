@@ -59,7 +59,6 @@ class QuickMenu(QWidget):
         self.remaining = 0
         self._quit_armed = False
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet("QuickMenu { background: rgba(0, 0, 0, 200); }")
 
         outer = QHBoxLayout(self)
         outer.addStretch()

@@ -635,7 +635,7 @@ def test_controller_scrolling_up_does_not_cover_the_selected_card(qtbot, root, m
     scroll_to(bar, 450, step=50)
     assert sliding.hidden  # stays away while the controller steps up
     scroll_to(bar, 100, step=50)
-    assert sliding.offset == 100  # near the top: it comes back with the list, never over it
+    assert sliding.offset == min(100, sliding.height)  # near the top: back with the list, never over it
     scroll_to(bar, 0, step=50)
     assert sliding.offset == 0
 

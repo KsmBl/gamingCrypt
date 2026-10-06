@@ -19,7 +19,6 @@ class PowerMenu(QWidget):
     def __init__(self, parent: QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet("PowerMenu { background: rgba(0, 0, 0, 170); }")
         outer = QVBoxLayout(self)
         outer.addStretch()
         card = QFrame()

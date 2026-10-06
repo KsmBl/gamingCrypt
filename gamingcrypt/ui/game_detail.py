@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabe
 from gamingcrypt.steam.installer import InstallResult
 from gamingcrypt.steam.models import SteamGame
 from gamingcrypt.steam.webapi import format_price
-from gamingcrypt.ui.game_widgets import format_date, format_playtime, format_size, load_cover, placeholder_cover
+from gamingcrypt.ui.game_widgets import Cover, format_date, format_playtime, format_size, load_cover, placeholder_cover
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import big_button, enable_touch_scroll, set_status
 
@@ -34,14 +34,14 @@ class GameDetailPage(QWidget):
 
         body = QHBoxLayout()
         body.setSpacing(36)
-        self.cover = QLabel()
+        self.cover = Cover()
         self.cover.setFixedSize(DETAIL_W, DETAIL_H)
         self.cover.setPixmap(placeholder_cover(game.name, DETAIL_W, DETAIL_H))
         load_cover(self.service, game.appid, self.cover, DETAIL_W, DETAIL_H)
         body.addWidget(self.cover, alignment=Qt.AlignmentFlag.AlignTop)
 
         info = QVBoxLayout()
-        info.setSpacing(10)
+        info.setSpacing(14)
         self.title = QLabel(game.name)
         self.title.setObjectName("detailTitle")
         self.title.setWordWrap(True)
@@ -53,8 +53,8 @@ class GameDetailPage(QWidget):
         self.description = QLabel(game.description)
         self.description.setWordWrap(True)
         self.description.setObjectName("detailMeta")
+        self.description.setVisible(bool(game.description))
         info.addWidget(self.description)
-        info.addStretch()
 
         actions = QHBoxLayout()
         self.main_button = big_button("", "primary")
@@ -107,6 +107,7 @@ class GameDetailPage(QWidget):
         self.status = QLabel("")
         self.status.setObjectName("status")
         info.addWidget(self.status)
+        info.addStretch()  # all of it at the top, next to the cover - like a movie's page
         body.addLayout(info, 1)
         # scrolls when the options don't fit (handheld screens are only 800 px high)
         content = QWidget()

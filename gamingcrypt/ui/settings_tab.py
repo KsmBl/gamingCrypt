@@ -139,6 +139,10 @@ class SettingsTab(QStackedWidget):
 
         # Device
         layout = page("Device")
+        from gamingcrypt.ui.system_settings import AppearanceSection
+
+        self.appearance_section = AppearanceSection(config, save)
+        layout.addWidget(self.appearance_section)
         self.display_section = DisplaySection(self.system, config, save, restart_gaming)
         self.power_section = PowerSection(self.system, config, save)
         self.audio_section = AudioSection(self.system, config, save)

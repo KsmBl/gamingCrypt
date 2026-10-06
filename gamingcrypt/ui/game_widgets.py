@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from PySide6.QtCore import QPoint, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QVBoxLayout, QWidget
 
 from gamingcrypt.steam.models import SteamGame
@@ -61,13 +61,52 @@ def meta_text(game: SteamGame, sort_key: str = "name") -> str:
     return "Not installed"
 
 
+class Cover(QLabel):
+    """A picture (cover, poster, still) with rounded corners - everywhere the same."""
+
+    RADIUS = 12
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
+        pixmap = self.pixmap()
+        if pixmap is None or pixmap.isNull():
+            super().paintEvent(event)
+            return
+        ratio = pixmap.devicePixelRatio() or 1
+        w, h = int(pixmap.width() / ratio), int(pixmap.height() / ratio)
+        align = self.alignment()
+        x = (self.width() - w) // 2 if align & (Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignCenter) else 0
+        y = 0 if align & Qt.AlignmentFlag.AlignTop else (self.height() - h) // 2
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(x, y, w, h), self.RADIUS, self.RADIUS)
+        painter.setClipPath(path)
+        painter.drawPixmap(x, y, pixmap)
+        painter.end()
+
+
 def placeholder_cover(name: str, w: int = COVER_W, h: int = COVER_H) -> QPixmap:
+    """No artwork (yet): a soft gradient in a colour of its own (from the name) and its initial."""
+    import zlib
+
+    from PySide6.QtGui import QLinearGradient
+
+    hue = zlib.crc32(name.encode()) % 360
+    dark = theme.current == "dark"
+    top = QColor.fromHsl(hue, 70 if dark else 110, 62 if dark else 210)
+    bottom = QColor.fromHsl((hue + 30) % 360, 60 if dark else 100, 36 if dark else 185)
     pix = QPixmap(w, h)
-    pix.fill(QColor(theme.SURFACE_HI))
     painter = QPainter(pix)
-    painter.setPen(QColor(theme.TEXT_DIM))
+    gradient = QLinearGradient(0, 0, w * 0.4, h)
+    gradient.setColorAt(0, top)
+    gradient.setColorAt(1, bottom)
+    painter.fillRect(0, 0, w, h, gradient)
+    color = QColor(theme.TEXT)
+    color.setAlpha(150)
+    painter.setPen(color)
     font = QFont()
-    font.setPixelSize(int(h * 0.3))
+    font.setPixelSize(int(min(w, h) * 0.42))
     font.setBold(True)
     painter.setFont(font)
     painter.drawText(QRectF(0, 0, w, h), Qt.AlignmentFlag.AlignCenter, (name[:1] or "?").upper())
@@ -127,7 +166,7 @@ class GameCard(Tappable):
         layout = QVBoxLayout(self)
         card_margins(layout)
         layout.setSpacing(6)
-        self.cover = QLabel()
+        self.cover = Cover()
         self.cover.setFixedSize(COVER_W, COVER_H)
         self.cover.setPixmap(placeholder_cover(game.name))
         layout.addWidget(self.cover)

@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit
 from gamingcrypt.movies import library
 from gamingcrypt.movies.library import Movie
 from gamingcrypt.ui import theme
-from gamingcrypt.ui.game_widgets import COVER_H, COVER_W, Tappable, card_margins, format_size, placeholder_cover
+from gamingcrypt.ui.game_widgets import COVER_H, COVER_W, Cover, Tappable, card_margins, format_size, placeholder_cover
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.upload_page import UploadPage
 from gamingcrypt.ui.widgets import (FlowLayout, KeyboardFocusFilter, OnScreenKeyboard, SlidingHeader, big_button,
@@ -78,7 +78,7 @@ class MovieCard(Tappable):
         layout = QVBoxLayout(self)
         card_margins(layout)
         layout.setSpacing(6)
-        self.cover = QLabel()
+        self.cover = Cover()
         self.cover.setFixedSize(COVER_W, COVER_H)
         layout.addWidget(self.cover)
         self.title = QLabel()
@@ -106,7 +106,7 @@ class MovieCard(Tappable):
 class MoviesHome(QWidget):
     """A tab's list: the cards, search, filters (Shows reuses it - see shows_tab)."""
 
-    TITLE, ADD, SEARCH = "Movies", "⬆  Add movies", "🔍  Search title, actor or director"
+    ADD, SEARCH = "⬆  Add movies", "🔍  Search title, actor or director"
     NOUN, NOUNS = "movie", "movies"
     EMPTY = ("No movies yet - add some with ⬆ Add movies (from a PC or phone in the same Wi-Fi), or put them "
              "into the Movies folder on your drive")
@@ -137,25 +137,24 @@ class MoviesHome(QWidget):
         self.header = QWidget()  # lies over the list, slides away when scrolling (SlidingHeader)
         header = QVBoxLayout(self.header)
         header.setContentsMargins(0, 0, 0, 10)
+        header.setSpacing(12)
+        # as on every tab: search first, what the tab adds on the right (the tab bar names the page)
         top = QHBoxLayout()
-        title = QLabel(self.TITLE)
-        title.setObjectName("title")
-        top.addWidget(title)
-        self.count_label = QLabel("")
-        self.count_label.setObjectName("subtitle")
-        top.addWidget(self.count_label)
-        top.addStretch()
-        self.add_button = big_button(self.ADD, "primary")
-        self.add_button.clicked.connect(tab.open_upload)
-        top.addWidget(self.add_button)
-        header.addLayout(top)
-
+        top.setSpacing(16)
         self.search = QLineEdit()
         self.search.setPlaceholderText(self.SEARCH)
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(lambda _t: self.refresh())
-        header.addWidget(self.search)
+        top.addWidget(self.search, 1)
+        self.count_label = QLabel("")
+        self.count_label.setObjectName("subtitle")
+        top.addWidget(self.count_label)
+        self.add_button = big_button(self.ADD, "primary")
+        self.add_button.clicked.connect(tab.open_upload)
+        top.addWidget(self.add_button)
+        header.addLayout(top)
         filters = QHBoxLayout()
+        filters.setSpacing(10)
         self.state_buttons = {}
         for key, label in library.STATES.items():
             button = big_button(label, checkable=True)
@@ -217,6 +216,11 @@ class MoviesHome(QWidget):
     def show_notice(self, text: str, error: bool = False) -> None:
         set_status(self.notice, text, error=error)
         self.notice.setVisible(bool(text))
+
+    def retheme(self) -> None:
+        """Dark / light: the covers (drawn ones, the marks on them) again."""
+        for card in self.cards.values():
+            card.set_item(card.movie)
 
     def set_state(self, key: str) -> None:
         self.watch_state = key
@@ -337,7 +341,7 @@ class MoviePage(QWidget):
         layout.addLayout(top)
         body = QHBoxLayout()
         body.setSpacing(36)
-        self.cover = QLabel()
+        self.cover = Cover()
         self.cover.setFixedSize(300, 450)
         body.addWidget(self.cover, alignment=Qt.AlignmentFlag.AlignTop)
         info = QVBoxLayout()

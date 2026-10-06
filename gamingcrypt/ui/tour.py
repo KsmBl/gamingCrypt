@@ -38,7 +38,6 @@ class _Overlay(QWidget):
     def __init__(self, parent: QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet(f"{type(self).__name__} {{ background: rgba(0, 0, 0, 200); }}")
         outer = QVBoxLayout(self)
         outer.addStretch()
         self.card = QFrame()

@@ -26,7 +26,6 @@ class BatteryWarning(QWidget):
     def __init__(self, parent: QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet("BatteryWarning { background: rgba(0, 0, 0, 200); }")
         outer = QVBoxLayout(self)
         outer.addStretch()
         card = QFrame()
