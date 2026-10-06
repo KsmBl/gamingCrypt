@@ -789,7 +789,8 @@ class MainWindow(QMainWindow):
         if runner.kind == "proton" and runners.is_32bit(game.path / exe) and not runners.vulkan_32bit():
             return False, runners.VULKAN_32.format(game=game.name)  # it would quit after 2 s without a word
         pads = self.input_service.game_env() if self.input_service is not None else {}
-        ok, message = runners.launch(game, exe, runner, data_dir(), config_mod.cache_dir() / "logs", more_env=pads)
+        ok, message = runners.launch(game, exe, runner, data_dir(), config_mod.cache_dir() / "logs", more_env=pads,
+                                     wrapper=self.upscaling(profile))
         if ok:
             log.info("starting Windows game %s: %s with %s", game.name, exe, runner.label)
             self._windows_started = getattr(self, "_windows_started", {})
@@ -817,7 +818,8 @@ class MainWindow(QMainWindow):
         found = games.linux_runners() if hasattr(games, "linux_runners") else runners.available()
         runner = runners.pick(found, profile.get("runner"))
         pads = self.input_service.game_env() if self.input_service is not None else {}  # SDL games too
-        ok, message = runners.launch(game, exe, runner, data_dir(), config_mod.cache_dir() / "logs", more_env=pads)
+        ok, message = runners.launch(game, exe, runner, data_dir(), config_mod.cache_dir() / "logs", more_env=pads,
+                                     wrapper=self.upscaling(profile))
         if ok:
             log.info("starting Linux game %s: %s (%s)", game.name, exe, runner.label)
             self._windows_started = getattr(self, "_windows_started", {})
@@ -826,6 +828,17 @@ class MainWindow(QMainWindow):
         else:
             log.warning("Linux game %s: %s", game.name, message)
         return ok, message
+
+    def screen_size(self) -> tuple[int, int]:
+        screen = self.screen()
+        size = screen.size() if screen is not None else None
+        return (size.width(), size.height()) if size is not None and size.width() > 0 else (1280, 800)
+
+    def upscaling(self, profile: dict) -> list[str]:
+        """The game's Upscaling choice: a nested gamescope rendering it smaller ([] when off)."""
+        from gamingcrypt.system import upscaling
+
+        return upscaling.command(profile.get("upscale"), self.screen_size(), int(profile.get("fps") or 0))
 
     def windows_game_ended(self, appid: int | None) -> None:
         """Play time and "last played" of a Windows or Linux game (Steam keeps its own games')."""
