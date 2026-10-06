@@ -324,12 +324,40 @@ class RomGamePage(QWidget):
         self.renderer_combo.currentIndexChanged.connect(
             lambda _i: self.tab.profiles.set(appid, "renderer", self.renderer_combo.currentData()))
 
+        # 3D games sharper: rendered at 2x / 3x / 4x the console's resolution (the GPU has to keep up)
+        self.resolution_combo = QComboBox()
+        self.resolution_caption = row("Resolution", self.resolution_combo)
+        self.resolution_combo.currentIndexChanged.connect(
+            lambda _i: self.resolution_combo.isEnabled() and self.tab.profiles.set(
+                appid, "resolution", self.resolution_combo.currentData()))
+
+        def fill_resolutions(core: str) -> None:
+            chosen = self.tab.profiles.get(appid).get("resolution")
+            combo = self.resolution_combo
+            combo.blockSignals(True)
+            combo.clear()
+            for scale in retroarch.scales(core):
+                combo.addItem("Native (like the console)" if scale == "1x" else f"{scale} - sharper, needs more power",
+                              None if scale == "1x" else scale)
+            parallel = core == "pcsx2" and self.renderer_combo.currentData() == "accurate"
+            if parallel:
+                combo.clear()
+                combo.addItem("Native - paraLLEl-GS draws as a PS2 does", None)
+            combo.setEnabled(not parallel)
+            combo.setCurrentIndex(max(0, combo.findData(chosen)))
+            combo.blockSignals(False)
+
         def core_chosen_screen() -> None:
             core = self.core_combo.currentData() or cores[0]
             for combo, caption, table in ((self.screen_combo, self.screen_caption, retroarch.WIDESCREEN),
-                                          (self.renderer_combo, self.renderer_caption, retroarch.RENDERERS)):
+                                          (self.renderer_combo, self.renderer_caption, retroarch.RENDERERS),
+                                          (self.resolution_combo, self.resolution_caption, retroarch.UPSCALE)):
                 combo.setVisible(core in table)
                 caption.setVisible(core in table)
+            fill_resolutions(core)
+
+        self.renderer_combo.currentIndexChanged.connect(
+            lambda _i: fill_resolutions(self.core_combo.currentData() or cores[0]))
 
         if self.game.system.id in retroarch.LOW_LAG_SYSTEMS:
             self.lag_combo = QComboBox()

@@ -242,3 +242,71 @@ def test_memory_card_shows_the_cores_default(qtbot, window, emu):
     assert ff7.card_combo.currentData() == "own"  # SwanStation: per game
     page.card_combo.setCurrentIndex(page.card_combo.findData("own"))
     assert window.game_profiles.get(nfs.appid)["memory_card"] == "own"
+
+
+# --- internal resolution of 3D games (upscaling) ---------------------------------------------
+def test_upscale_values_are_the_cores_own():
+    """The values were read from the cores themselves (their option lists): the PS2 core knows
+    1x / 2x / 4x / 8x, no 3x."""
+    assert retroarch.scales("pcsx2") == ["1x", "2x", "4x"]
+    assert retroarch.scales("swanstation") == ["1x", "2x", "3x", "4x"]
+    assert retroarch.scales("snes9x") == []  # 2D: nothing to raise
+    assert retroarch.UPSCALE["pcsx2"]["2x"] == {"pcsx2_upscale_multiplier": "2x"}
+    assert retroarch.UPSCALE["pcsx2"][None] == {"pcsx2_upscale_multiplier": "1x (Native)"}
+    assert retroarch.UPSCALE["flycast"]["3x"] == {"reicast_internal_resolution": "1920x1440"}
+    assert retroarch.UPSCALE["mupen64plus_next"]["2x"] == {"mupen64plus-EnableNativeResFactor": "2"}
+
+
+def test_nfsu2_at_twice_the_resolution(emu, tmp_path):
+    (emu.cores / "pcsx2_libretro.so").write_text("x")
+    (emu.roms / "ps2").mkdir(exist_ok=True)
+    (emu.roms / "ps2" / "NFSU2.iso").write_text("x")
+    nfs = scan(emu, BY_ID["ps2"])[0]
+    run = dict(popen=lambda cmd, **k: None, which=lambda n: "/usr/bin/retroarch")
+    retroarch.launch(nfs, emu, tmp_path / "d", tmp_path / "l", resolution="2x", **run)
+    options = retroarch.core_options_file(emu, nfs)
+    assert 'pcsx2_upscale_multiplier = "2x"' in options.read_text()
+    retroarch.launch(nfs, emu, tmp_path / "d", tmp_path / "l", resolution="3x", **run)  # not a PS2 one
+    assert 'pcsx2_upscale_multiplier = "1x (Native)"' in options.read_text()
+    retroarch.launch(nfs, emu, tmp_path / "d", tmp_path / "l", resolution="4x", renderer="accurate", **run)
+    assert 'pcsx2_upscale_multiplier = "1x (Native)"' in options.read_text()  # paraLLEl-GS: as a PS2
+    retroarch.launch(nfs, emu, tmp_path / "d", tmp_path / "l", **run)
+    assert 'pcsx2_upscale_multiplier = "1x (Native)"' in options.read_text()  # back to native
+
+
+def test_ps1_at_three_times(emu, tmp_path):
+    (emu.cores / "swanstation_libretro.so").write_text("x")
+    crash = scan(emu, BY_ID["psx"])[0]
+    run = dict(popen=lambda cmd, **k: None, which=lambda n: "/usr/bin/retroarch")
+    retroarch.launch(crash, emu, tmp_path / "d", tmp_path / "l", resolution="3x", **run)
+    assert 'swanstation_GPU_ResolutionScale = "3"' in retroarch.core_options_file(emu, crash).read_text()
+
+
+def test_resolution_choice_on_the_page(qtbot, window, emu, monkeypatch):
+    from gamingcrypt.ui.emulation_pages import RomGamePage
+
+    (emu.roms / "ps2").mkdir(exist_ok=True)
+    (emu.roms / "ps2" / "NFSU2.iso").write_text("x")
+    nfs = scan(emu, BY_ID["ps2"])[0]
+    page = RomGamePage(window._games, nfs)
+    qtbot.addWidget(page)
+    page.show()
+    page.options_button.click()
+    combo = page.resolution_combo
+    assert combo.isVisible() and [combo.itemData(i) for i in range(combo.count())] == [None, "2x", "4x"]
+    combo.setCurrentIndex(combo.findData("2x"))
+    assert window.game_profiles.get(nfs.appid)["resolution"] == "2x"
+    page.renderer_combo.setCurrentIndex(1)  # paraLLEl-GS
+    assert not combo.isEnabled() and combo.count() == 1
+    assert window.game_profiles.get(nfs.appid)["resolution"] == "2x"  # kept for the GPU renderer
+    page.renderer_combo.setCurrentIndex(0)
+    assert combo.isEnabled() and combo.currentData() == "2x"
+    passed = {}
+    monkeypatch.setattr(retroarch, "launch", lambda game, *a, **k: passed.update(k) or (True, "Starting"))
+    window.launch_rom(nfs)
+    assert passed["resolution"] == "2x"
+    ps1 = RomGamePage(window._games, window._ff7)
+    qtbot.addWidget(ps1)
+    ps1.show()
+    ps1.options_button.click()
+    assert [ps1.resolution_combo.itemData(i) for i in range(ps1.resolution_combo.count())] == [None, "2x", "3x", "4x"]

@@ -180,6 +180,37 @@ RENDERER_VIDEO = {"accurate": "vulkan"}
 ALWAYS_OPTIONS = {"pcsx2"}  # the renderer has to match the video driver: always written
 
 
+def _scales(key: str, values: dict[str, str]) -> dict:
+    """{"2x": {key: value}, …, None: {key: native}} for UPSCALE."""
+    table = {scale: {key: value} for scale, value in values.items() if scale != "1x"}
+    table[None] = {key: values["1x"]}
+    return table
+
+
+# Internal resolution of 3D games (the values as each core names them - read from the cores).
+# The PS2 core knows no 3x; paraLLEl-GS (the "like a PS2" renderer) stays at its native size.
+UPSCALE = {
+    "pcsx2": _scales("pcsx2_upscale_multiplier", {"1x": "1x (Native)", "2x": "2x", "4x": "4x"}),
+    "swanstation": _scales("swanstation_GPU_ResolutionScale", {"1x": "1", "2x": "2", "3x": "3", "4x": "4"}),
+    "mednafen_psx_hw": _scales("beetle_psx_hw_internal_resolution", {"1x": "1x(native)", "2x": "2x", "4x": "4x"}),
+    "mupen64plus_next": _scales("mupen64plus-EnableNativeResFactor", {"1x": "1", "2x": "2", "3x": "3", "4x": "4"}),
+    "parallel_n64": _scales("parallel-n64-screensize", {"1x": "320x240", "2x": "640x480", "3x": "960x720",
+                                                        "4x": "1280x960"}),
+    "flycast": _scales("reicast_internal_resolution", {"1x": "640x480", "2x": "1280x960", "3x": "1920x1440",
+                                                       "4x": "2560x1920"}),
+    "ppsspp": _scales("ppsspp_internal_resolution", {"1x": "480x272", "2x": "960x544", "3x": "1440x816",
+                                                     "4x": "1920x1088"}),
+    "desmume": _scales("desmume_internal_resolution", {"1x": "256x192", "2x": "512x384", "3x": "768x576",
+                                                       "4x": "1024x768"}),
+}
+
+
+def scales(core: str) -> list[str]:
+    """The resolutions a core can render at, "1x" (native) first; [] when it can't be raised."""
+    table = UPSCALE.get(core)
+    return ["1x"] + sorted(k for k in table if k) if table else []
+
+
 def core_options_file(paths: EmulationPaths, game: RomGame) -> Path:
     return paths.config / "core-options" / game.system.id / f"{game.path.stem}.opt"
 
@@ -233,7 +264,7 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
            layout: dict[str, str] | None = None, fast: float = DEFAULT_FAST,
            slow: float = DEFAULT_SLOW, memory_card: str | None = None,
            widescreen: str | None = None, input_lag: str | None = None,
-           renderer: str | None = None) -> tuple[bool, str]:
+           renderer: str | None = None, resolution: str | None = None) -> tuple[bool, str]:
     if not available(which):
         return False, "RetroArch isn't installed - run ./install.sh"
     core = find_core(paths, game.system, core_name)
@@ -247,9 +278,13 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
     if video or game.system.video:
         extra["video_driver"] = video or game.system.video
     options = dict(MEMORY_CARDS.get(short, {}).get(memory_card or "", {}))
-    choices = [(table, choice) for table, choice in ((WIDESCREEN, widescreen), (RENDERERS, renderer)) if short in table]
-    if (options or short in ALWAYS_OPTIONS or core_options_file(paths, game).exists()
-            or any(choice for _t, choice in choices)):
+    if short == "pcsx2" and renderer == "accurate":
+        resolution = None  # paraLLEl-GS: as a PS2 draws it
+    choices = [(table, choice) for table, choice in ((WIDESCREEN, widescreen), (RENDERERS, renderer),
+                                                     (UPSCALE, resolution)) if short in table]
+    # nothing chosen for the game: RetroArch's own options (the core's defaults - native resolution
+    # and so on); something chosen: the game's file with every choice written out (undoes an earlier one)
+    if options or short in ALWAYS_OPTIONS or any(choice for _t, choice in choices):
         for table, choice in choices:  # all of them explicit: an earlier choice is undone
             options.update(table[short].get(choice, table[short][None]))
     if options:  # the game's own core options file
