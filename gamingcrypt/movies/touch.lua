@@ -7,7 +7,8 @@
 --
 -- gamescope's click mode lets go of the "mouse button" as soon as a finger moves, but the
 -- pointer keeps following the finger: a drag on the time bar goes on until the finger rests.
---   controls          ✕ (stop), subtitles, audio language, 10 s back, play / pause, 10 s forward
+--   controls          ✕ (stop), speed, subtitles, audio language, 10 s back, play / pause, 10 s forward
+--   speed             the "1x" button: a menu from 0.25x to 2x
 --
 -- GamingCrypt switches gamescope's touch to "left click" while a movie is in front: taps
 -- arrive here as MBTN_LEFT down / up at the touched position. LuaJIT: no // operator.
@@ -19,6 +20,7 @@ local DOUBLE_TAP_S = 0.3
 local SEEK_STREAK_S = 0.8 -- further taps on that side keep seeking this long
 local HOLD_S = 0.5
 local SEEK_STEP = 10
+local SPEEDS = {0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2}
 local DRAG_REST_S = 0.35 -- a drag on the time bar ends when the finger rests this long
 local ACCENT = "&HFF8C4F&" -- #4f8cff (ASS colours are BGR)
 local WHITE = "&HFFFFFF&"
@@ -35,10 +37,15 @@ local state = {
     tap_timer = nil, last_tap = nil, -- for double taps
     streak = nil, -- {side, total, until}
     ripple = nil, -- {side, text, until}
-    fast = false,
+    fast = false, speed_before = 1, -- holding: 2x, then back to the chosen speed
+    menu = false, -- the speed menu is open
 }
 
 local function floor(x) return math.floor(x) end
+
+local function speed_label(speed)
+    return (string.format("%.2f", speed):gsub("0+$", ""):gsub("%.$", "")) .. "x"
+end
 local end_drag_later -- below
 
 local function clock(seconds)
@@ -123,14 +130,38 @@ local function draw()
             mp.osd_message("Audio: " .. (mp.get_property("current-tracks/audio/lang")
                 or mp.get_property("aid", "")), 2)
         end)
-        pill(x, "Subtitles", function()
+        x = pill(x, "Subtitles", function()
             mp.commandv("cycle", "sub")
             mp.osd_message("Subtitles: " .. (mp.get_property("current-tracks/sub/lang")
                 or mp.get_property("sid", "off")), 2)
         end)
+        pill(x, speed_label(mp.get_property_number("speed", 1)), function() state.menu = not state.menu end)
+        if state.menu then
+            -- the speed menu instead of the middle buttons
+            local current = mp.get_property_number("speed", 1)
+            local bw, bh, gap = floor(unit * 1.25), floor(unit * 1.0), floor(unit * 0.2)
+            local total = #SPEEDS * bw + (#SPEEDS - 1) * gap
+            local x1, cy = floor((w - total) / 2), floor(h / 2)
+            add(rect(x1 - gap * 2, cy - bh - unit * 0.3, x1 + total + gap * 2, cy + bh * 0.5 + gap * 2,
+                "&H000000&", "50"))
+            add(text(w / 2, cy - bh * 0.5 - unit * 0.25, unit * 0.36, "Playback speed"))
+            for i, speed in ipairs(SPEEDS) do
+                local bx = x1 + (i - 1) * (bw + gap)
+                local chosen = math.abs(speed - current) < 0.001
+                add(rect(bx, cy, bx + bw, cy + bh * 0.9, chosen and ACCENT or "&H382A25&", "00"))
+                add(text(bx + bw / 2, cy + bh * 0.45, unit * 0.32, speed_label(speed)))
+                button(bx, cy - gap, bx + bw, cy + bh, function()
+                    mp.set_property_number("speed", speed)
+                    state.speed_before = speed
+                    state.menu = false
+                    mp.osd_message("Speed " .. speed_label(speed), 1)
+                end)
+            end
+        end
         -- middle: 10 s back, play / pause, 10 s forward
         local cx, cy, r = floor(w / 2), floor(h / 2), floor(unit * 0.8)
         local gap = floor(unit * 2.6)
+        if state.menu then goto middle_done end
         add(circle(cx, cy, r, "&H000000&", "70"))
         if mp.get_property_bool("pause", false) then add(play_icon(cx, cy, r)) else add(pause_icon(cx, cy, r)) end
         button(cx - r, cy - r, cx + r, cy + r, function() mp.commandv("cycle", "pause") end)
@@ -140,6 +171,7 @@ local function draw()
             add(text(sx, cy, unit * 0.36, side < 0 and "« 10" or "10 »"))
             button(sx - r, cy - r, sx + r, cy + r, function() mp.commandv("seek", tostring(side * SEEK_STEP)) end)
         end
+        ::middle_done::
     end
 
     -- the time bar: shown with the controls and while dragging
@@ -194,7 +226,7 @@ local function ensure_tick()
 end
 
 local function hide()
-    state.shown = false
+    state.shown, state.menu = false, false
     if state.hide_timer then state.hide_timer:kill() end
     draw()
 end
@@ -202,7 +234,7 @@ end
 local function keep_shown()
     if state.hide_timer then state.hide_timer:kill() end
     state.hide_timer = mp.add_timeout(HIDE_S, function()
-        if mp.get_property_bool("pause", false) or state.scrub then
+        if mp.get_property_bool("pause", false) or state.scrub or state.menu then
             keep_shown() -- paused: the controls stay, like YouTube
         else
             hide()
@@ -271,6 +303,11 @@ local function tapped(x, y)
                 return
             end
         end
+        if state.menu then -- outside the menu: just close it
+            state.menu = false
+            show()
+            return
+        end
     end
     local side = side_of(x)
     local now = mp.get_time()
@@ -329,6 +366,7 @@ local function finger(event)
             if state.down == down then -- still pressed: fast forward like YouTube
                 down.held = true
                 state.fast = true
+                state.speed_before = mp.get_property_number("speed", 1)
                 mp.set_property_number("speed", 2)
                 draw()
                 ensure_tick()
@@ -351,7 +389,7 @@ local function finger(event)
         end
         if down.held then
             state.fast = false
-            mp.set_property_number("speed", 1)
+            mp.set_property_number("speed", state.speed_before)
             draw()
             return
         end

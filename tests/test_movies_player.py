@@ -209,3 +209,9 @@ def test_touch_script_gestures_are_there():
     assert 'set_property_number("speed", 2)' in script  # hold: 2x like YouTube
     assert "SEEK_STREAK_S" in script and "DOUBLE_TAP_S" in script  # double tap, further taps add 10 s
     assert "DRAG_REST_S" in script  # gamescope's click mode lets go when the finger moves
+
+
+def test_touch_script_has_a_speed_menu():
+    script = player.TOUCH_SCRIPT.read_text()
+    assert "SPEEDS = {0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2}" in script and "Playback speed" in script
+    assert 'mp.set_property_number("speed", state.speed_before)' in script  # holding 2x goes back to it
