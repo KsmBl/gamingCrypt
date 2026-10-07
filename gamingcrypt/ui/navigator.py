@@ -32,6 +32,7 @@ SCROLL_MS = 140  # shorter than the repeat rate: holding the D-pad glides contin
 
 _paused = False
 _TO_TOP = object()  # nearest(): scroll the list to its top first
+TRIGGER_PRESS, TRIGGER_RELEASE = 128, 64  # analog triggers (0-255)
 
 
 def set_paused(paused: bool) -> None:
@@ -62,6 +63,7 @@ class GamepadNavigator(QObject):
         self.held: tuple[int, int] | None = None
         self.repeat = QTimer(self)
         self.repeat.timeout.connect(self._repeat)
+        self.triggers: dict[int, bool] = {}  # analog trigger pulled (LT / RT page)
         self._scroll_anims: dict[int, QPropertyAnimation] = {}
         self._scroll_targets: dict[int, int] = {}
         self.hotkey_filter: Callable[[int, int, int], bool] | None = None
@@ -86,12 +88,21 @@ class GamepadNavigator(QObject):
         if ev_type == e.EV_KEY and value == 1:
             action = {e.BTN_SOUTH: self.activate, e.BTN_EAST: self.back, e.BTN_START: self.start,
                       e.BTN_NORTH: lambda: self.hook("gamepad_north"), e.BTN_WEST: lambda: self.hook("gamepad_west"),
-                      e.BTN_TL: lambda: self.switch_tab(-1), e.BTN_TR: lambda: self.switch_tab(1)}.get(code)
+                      e.BTN_TL: lambda: self.switch_tab(-1), e.BTN_TR: lambda: self.switch_tab(1),
+                      e.BTN_TL2: lambda: self.page(-1), e.BTN_TR2: lambda: self.page(1)}.get(code)
             if action is not None:
                 action()
         elif ev_type == e.EV_ABS and code in (e.ABS_HAT0X, e.ABS_HAT0Y):
             self.hat[code - e.ABS_HAT0X] = value
             self._direction_changed()
+        elif ev_type == e.EV_ABS and code in (e.ABS_Z, e.ABS_RZ):
+            # analog triggers: a press when pulled more than halfway (0-255), let go below a quarter
+            pulled = self.triggers.get(code, False)
+            if not pulled and value > TRIGGER_PRESS:
+                self.triggers[code] = True
+                self.page(-1 if code == e.ABS_Z else 1)
+            elif pulled and value < TRIGGER_RELEASE:
+                self.triggers[code] = False
         elif ev_type == e.EV_ABS and code in (e.ABS_X, e.ABS_Y):
             self.stick[code - e.ABS_X] = value / 32767
             self._direction_changed()
@@ -554,6 +565,35 @@ class GamepadNavigator(QObject):
 
     def start(self) -> None:
         self.hook("gamepad_start")
+
+    def page(self, direction: int) -> None:
+        """LT / RT: a screen up / down in a list - the highlight goes to what's there, in the
+        same column (the end of the list when there's less than a screen left)."""
+        current = self.focused()
+        area = self._scroll_area(current)
+        if current is None or area is None or area.widget() is None:
+            return
+        content = area.widget()
+        items = [w for w in self.candidates() if content.isAncestorOf(w) and w is not current]
+        mine = self._center(current)
+        ahead = [w for w in items if (self._center(w).y() - mine.y()) * direction > self.ROW_TOLERANCE]
+        if not ahead:
+            return  # already at that end
+        goal = mine.y() + direction * area.viewport().height()
+        column = self._anchor(current)
+
+        def distance(w: QWidget) -> tuple[float, float]:
+            centre = self._center(w)
+            past = max(0.0, (centre.y() - goal) * direction)  # beyond a screen: only if nothing closer
+            return (abs(centre.y() - goal) + past, abs(centre.x() - column))
+
+        rows = sorted(ahead, key=distance)
+        best_row_y = self._center(rows[0]).y()
+        row = [w for w in ahead if abs(self._center(w).y() - best_row_y) <= self.ROW_TOLERANCE]
+        target = min(row, key=lambda w: abs(self._center(w).x() - column))
+        anchor = self.anchor_x
+        self.focus(target)
+        self.anchor_x = anchor if anchor is not None else column  # the column is kept
 
     def hook(self, name: str) -> bool:
         """Y / X / Start: the highlighted widget, or the nearest page / tab above it, that has

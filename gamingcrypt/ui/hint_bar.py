@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import QAbstractButton, QApplication, QComboBox, QLabel, QLineEdit, QSlider, QWidget
 
 COMMON = "LB / RB  Tabs     ⊞  Quick menu"
+PAGES = "LT / RT  Page"  # in long lists (navigator.page)
 
 
 def card_hint(widget: QWidget | None) -> str | None:
@@ -42,7 +43,26 @@ def hints_for(widget: QWidget | None) -> str:
         first = "Ⓐ  Select     Ⓑ  Back"
     if has_picture(widget):
         first += "     Ⓨ  Picture"
+    if in_list(widget):
+        first += f"     {PAGES}"
     return f"{first}     {COMMON}"
+
+
+def in_list(widget: QWidget | None) -> bool:
+    """A card in a grid or list that scrolls: the triggers page through it."""
+    from PySide6.QtWidgets import QScrollArea
+
+    from gamingcrypt.ui.cover_picker import ChoiceCard
+    from gamingcrypt.ui.game_widgets import Tappable
+
+    if not isinstance(widget, (Tappable, ChoiceCard)) and card_hint(widget) is None:
+        return False
+    node = widget.parentWidget()
+    while node is not None:
+        if isinstance(node, QScrollArea):
+            return node.verticalScrollBar().maximum() > 0
+        node = node.parentWidget()
+    return False
 
 
 def has_picture(widget: QWidget | None) -> bool:
