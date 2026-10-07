@@ -275,7 +275,10 @@ class GamepadNavigator(QObject):
                 current.setValue(current.value() + dx * step)
                 return
         node = current.parentWidget() if current is not None else None
+        root = self.root()
         while node is not None:  # a container that knows its own order (e.g. the quick menu's grid)
+            if node is not root and not root.isAncestorOf(node):
+                break  # outside what the controller is in (a question over the quick menu)
             navigate = getattr(node, "gamepad_navigate", None)
             if callable(navigate):
                 target = navigate(current, dx, dy)
