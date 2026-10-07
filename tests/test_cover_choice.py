@@ -188,7 +188,7 @@ def test_holding_a_cover_opens_the_picker_not_the_game(qtbot, tab):
     card = next(iter(tab.currentWidget().cards.values()))
     hold(qtbot, card.cover)
     picker = tab.currentWidget()
-    assert isinstance(picker, CoverPicker) and picker.game == card.game
+    assert isinstance(picker, CoverPicker) and picker.item == card.game
     assert picker.search.text() == "Super Mario World"
     qtbot.waitUntil(lambda: len(picker.cards) == 2 and all(c.data for c in picker.cards))
     assert [c.choice.name for c in picker.cards] == ["Super Mario World (Germany)", "Super Mario World (USA)"]

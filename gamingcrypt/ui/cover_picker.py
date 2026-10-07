@@ -1,4 +1,5 @@
-"""Hold a game's picture (card, Continue playing, game page) to choose another one."""
+"""Hold a picture (a game's, movie's or show's card or page) to choose another one - or
+⚙ Options → Change picture on its page."""
 
 from __future__ import annotations
 
@@ -37,6 +38,29 @@ def game_of(widget: QWidget | None, stop: QWidget):
     return None
 
 
+def media_of(widget: QWidget | None, stop: QWidget):
+    """The movie or show a cover belongs to (an episode's picture isn't the show's)."""
+    from gamingcrypt.movies.library import Movie
+    from gamingcrypt.shows.library import Show
+
+    while widget is not None and widget is not stop:
+        if hasattr(widget, "episode"):
+            return None
+        for attribute in ("show_item", "movie"):
+            item = getattr(widget, attribute, None)
+            if isinstance(item, (Movie, Show)):
+                return item
+        widget = widget.parentWidget()
+    return None
+
+
+def picture_button(open_picker) -> QWidget:
+    """⚙ Options → Change picture: the same as holding the picture (and with the controller)."""
+    button = big_button("🖼  Change picture")
+    button.clicked.connect(open_picker)
+    return button
+
+
 def load_game_cover(label: QLabel, game, tab, w: int, h: int) -> None:
     """Draw the game's cover into the label again - as its card does."""
     from gamingcrypt.emulation.library import RomGame
@@ -56,7 +80,7 @@ def load_game_cover(label: QLabel, game, tab, w: int, h: int) -> None:
 
 
 class HoldToChoose(QObject):
-    """Watches every press in the Games tab: held on a game's picture -> ``held(game)``.
+    """Watches every press in a tab: held on a picture -> ``held(item)`` (``find`` says whose).
 
     The press is taken where it reaches the window: the touch-scroll areas hold presses
     back until the finger lifts (or scrolls), so the picture itself would get it too late.
@@ -65,9 +89,9 @@ class HoldToChoose(QObject):
 
     held = Signal(object)
 
-    def __init__(self, tab: QWidget):
+    def __init__(self, tab: QWidget, find=game_of):
         super().__init__(tab)
-        self.tab = tab
+        self.tab, self.find = tab, find
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.setInterval(HOLD_MS)
@@ -112,7 +136,12 @@ class HoldToChoose(QObject):
             cover = cover.parentWidget()
             if cover is self.tab:
                 return
-        game = game_of(cover, self.tab) if cover is not None else None
+        parent = cover
+        while parent is not None and parent is not self.tab:
+            if isinstance(parent, CoverPicker):
+                return  # the pictures to choose from
+            parent = parent.parentWidget()
+        game = self.find(cover, self.tab) if cover is not None else None
         if game is None:
             return
         self.game, self.start = game, pos
@@ -156,9 +185,9 @@ class ChoiceCard(Tappable):
 class CoverPicker(QWidget):
     chosen = Signal(bytes)  # a picture, or cover_choice.DRAWN
 
-    def __init__(self, tab, game, source: Source, get=None, parent: QWidget | None = None):
+    def __init__(self, tab, item, source: Source, get=None, parent: QWidget | None = None, title: str = ""):
         super().__init__(parent)
-        self.tab, self.game, self.source = tab, game, source
+        self.tab, self.item, self.source = tab, item, source
         self.get = get or cover_choice._default_get
         self.cards: list[ChoiceCard] = []
         self.searching = False
@@ -168,11 +197,11 @@ class CoverPicker(QWidget):
         layout.setContentsMargins(30, 16, 30, 10)
         top = QHBoxLayout()
         top.addWidget(tab.back_button())
-        title = QLabel(f"Picture for {game.name}")
+        title = QLabel(f"Picture for {title or item.name}")
         title.setObjectName("title")
         top.addWidget(title, 1)
         self.drawn_button = big_button("Drawn cover")
-        self.drawn_button.setToolTip("No picture: the card shows the game's first letter")
+        self.drawn_button.setToolTip("No picture: the card shows the first letter")
         self.drawn_button.clicked.connect(lambda: self.chosen.emit(cover_choice.DRAWN))
         top.addWidget(self.drawn_button)
         layout.addLayout(top)
@@ -233,7 +262,7 @@ class CoverPicker(QWidget):
             self.cards.append(card)
             run_async(lambda c=choice: cover_choice.download(c, self.get), lambda data, c=card: self._loaded(c, data),
                       lambda _e, c=card: self._loaded(c, None), owner=self, pool=self.pool)
-        set_status(self.status, "Tap a picture to use it for this game" if result
+        set_status(self.status, "Tap a picture to use it" if result
                    else "Nothing found - try another name, or use the drawn cover")
 
     def _loaded(self, card: ChoiceCard, data) -> None:
@@ -249,3 +278,30 @@ class CoverPicker(QWidget):
             set_status(self.status, "That picture is still loading")
             return
         self.chosen.emit(card.data)
+
+
+def open_picker(tab, item, refresh, notice, title: str = "") -> CoverPicker | None:
+    """The picker on the tab's stack; the chosen picture is saved, then ``refresh(item)``
+    draws it again where it's shown. ``notice(text)``: why it can't be changed."""
+    from PySide6.QtGui import QPixmapCache
+
+    source = cover_choice.source_for(item, tab)
+    if source is None:
+        notice("This picture can't be changed while the drive is locked")
+        return None
+    page = CoverPicker(tab, item, source, title=title)
+
+    def chosen(data: bytes) -> None:
+        try:
+            cover_choice.save(source.path, data)
+        except OSError as exc:
+            set_status(page.status, f"Couldn't save the picture: {exc}", error=True)
+            return
+        QPixmapCache.clear()  # the same file name, a new picture
+        tab.back()
+        refresh(item)
+
+    page.chosen.connect(chosen)
+    tab.push(page)
+    page.search.setFocus()
+    return page

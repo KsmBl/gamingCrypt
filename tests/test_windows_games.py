@@ -468,6 +468,6 @@ def test_hold_the_picture_to_choose_another(qtbot, window, monkeypatch):
     games.open_windows_game(knight)
     hold(qtbot, games.currentWidget().cover)
     picker = games.currentWidget()
-    assert isinstance(picker, CoverPicker) and picker.game is knight and picker.search.text() == "Hollow Knight"
+    assert isinstance(picker, CoverPicker) and picker.item is knight and picker.search.text() == "Hollow Knight"
     assert picker.source.path == games.windows_covers.path(knight)
     qtbot.waitUntil(lambda: "Nothing found" in picker.status.text())

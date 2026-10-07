@@ -383,6 +383,10 @@ class MoviePage(QWidget):
         self.file_label.setObjectName("cardMeta")
         self.file_label.setWordWrap(True)
         self.options_layout.addWidget(self.file_label)
+        from gamingcrypt.ui.cover_picker import picture_button
+
+        self.picture_button = picture_button(lambda: tab.open_cover_picker(self.movie))
+        self.options_layout.addWidget(self.picture_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.remove_button = big_button("🗑 Remove", "danger")
         self.remove_button.clicked.connect(self.ask_remove)
         self.options_layout.addWidget(self.remove_button, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -599,6 +603,10 @@ class MoviesTab(QStackedWidget):
         self._came_from: list = []
         self.home = self.HOME(self)
         self.addWidget(self.home)
+        from gamingcrypt.ui.cover_picker import HoldToChoose, media_of
+
+        self.hold = HoldToChoose(self, media_of)  # hold a poster: choose another one
+        self.hold.held.connect(self.open_cover_picker)
         self.reload()
 
     HOME = MoviesHome
@@ -661,6 +669,15 @@ class MoviesTab(QStackedWidget):
         page = MoviePage(self, movie)
         self.push(page)
         page.main_button.setFocus()
+
+    def open_cover_picker(self, item) -> None:
+        from gamingcrypt.ui.cover_picker import open_picker
+
+        open_picker(self, item, self.cover_changed, lambda text: self.home.show_notice(text, error=True),
+                    title=item.title)
+
+    def cover_changed(self, item) -> None:
+        self.movie_changed(item)  # its card and page
 
     def open_upload(self) -> None:
         if self.root is None:

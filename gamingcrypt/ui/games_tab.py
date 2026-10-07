@@ -819,31 +819,9 @@ class GamesTab(QStackedWidget):
 
     # a game's picture, chosen by hand ----------------------------------------
     def open_cover_picker(self, game) -> None:
-        from gamingcrypt.cover_choice import source_for
-        from gamingcrypt.ui.cover_picker import CoverPicker
+        from gamingcrypt.ui.cover_picker import open_picker
 
-        source = source_for(game, self)
-        if source is None:
-            self.home.show_notice("This game's picture can't be changed while the drive is locked", error=True)
-            return
-        page = CoverPicker(self, game, source)
-        page.chosen.connect(lambda data, g=game, path=source.path: self._cover_chosen(g, path, data))
-        self.push(page)
-        page.search.setFocus()
-
-    def _cover_chosen(self, game, path, data: bytes) -> None:
-        from PySide6.QtGui import QPixmapCache
-
-        from gamingcrypt import cover_choice
-
-        try:
-            cover_choice.save(path, data)
-        except OSError as exc:
-            set_status(self.currentWidget().status, f"Couldn't save the picture: {exc}", error=True)
-            return
-        QPixmapCache.clear()  # the same file name, a new picture
-        self.back()
-        self.refresh_covers(game)
+        open_picker(self, game, self.refresh_covers, lambda text: self.home.show_notice(text, error=True))
 
     def refresh_covers(self, game) -> None:
         """Every picture of that game in the tab (cards, Continue playing, its page) anew."""

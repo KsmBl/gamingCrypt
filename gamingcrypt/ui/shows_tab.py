@@ -267,6 +267,10 @@ class ShowPage(QWidget):
         self.files_label.setObjectName("cardMeta")
         self.files_label.setWordWrap(True)
         self.options_layout.addWidget(self.files_label)
+        from gamingcrypt.ui.cover_picker import picture_button
+
+        self.picture_button = picture_button(lambda: tab.open_cover_picker(self.show_item))
+        self.options_layout.addWidget(self.picture_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.remove_button = big_button("🗑 Remove show", "danger")
         self.remove_button.clicked.connect(self.ask_remove)
         self.options_layout.addWidget(self.remove_button, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -521,6 +525,9 @@ class ShowsTab(MoviesTab):
 
     def movie_changed(self, episode) -> None:
         self.reload()  # watched / stopped at: card, page and filters
+
+    def cover_changed(self, show) -> None:
+        self.reload()  # the card and the page read the poster again
 
     # playing ----------------------------------------------------------------------------
     def by_appid(self, appid: int) -> Episode | None:

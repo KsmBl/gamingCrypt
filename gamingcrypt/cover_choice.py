@@ -1,10 +1,11 @@
-"""Choosing a game's picture by hand (hold its picture): when the one found is wrong, or
-there is none.
+"""Choosing a picture by hand (hold it, or Options -> Change picture): when the one found
+is wrong, or there is none.
 
-Where the pictures come from is what the game's cover comes from anyway:
-- emulated games: libretro-thumbnails' box art of the system, searched by name
-- Steam, Windows and Linux games: Steam's store, searched by name (a Steam game's own
-  picture first)
+Where the pictures come from is what the cover comes from anyway, searched by name:
+- emulated games: libretro-thumbnails' box art of the system
+- Steam, Windows and Linux games: Steam's store (a Steam game's own picture first)
+- movies: films on Wikidata, with their Wikipedia (or Commons) poster
+- shows: TVmaze
 
 The chosen picture is written where the cover is kept, so every card and page shows it
 from then on. "Drawn cover" writes a file that isn't a picture there: the cover is kept
@@ -36,7 +37,9 @@ class Offline(Exception):
 
 
 def _default_get(url, params=None):
-    return requests.get(url, params=params, timeout=15)
+    from gamingcrypt.movies.metadata import USER_AGENT
+
+    return requests.get(url, params=params, timeout=15, headers={"User-Agent": USER_AGENT})  # Wikimedia wants one
 
 
 def is_picture(data: bytes) -> bool:
@@ -96,6 +99,82 @@ def rom_choices(covers, game, query: str) -> list[Choice]:
     return [Choice(n, (f"{BASE}/{quote(playlist)}/Named_Boxarts/{quote(n)}.png",)) for n in found[:MAX_CHOICES]]
 
 
+def movie_choices(query: str, get: Callable | None = None, languages: tuple[str, ...] = ("en",)) -> list[Choice]:
+    """Films on Wikidata: each with its English Wikipedia article's poster (all in one
+    question), else its poster or picture on Commons."""
+    from gamingcrypt.movies import metadata as wiki
+
+    if not query.strip():
+        return []
+    get = get or _default_get
+    lookup = wiki.Lookup(get=lambda url, params: get(url, params), languages=languages)
+    try:
+        ids = lookup.search(query)
+        found = lookup.entities(ids, "labels|claims|sitelinks") if ids else {}
+        articles = {q: e["sitelinks"]["enwiki"]["title"] for q, e in found.items()
+                    if "enwiki" in e.get("sitelinks", {})}
+        posters = {}
+        if articles:
+            data = lookup._json(wiki.WIKI.format(lang="en"), {
+                "action": "query", "prop": "pageimages", "piprop": "thumbnail", "pithumbsize": 600,
+                "pilicense": "any", "redirects": 1, "formatversion": 2, "titles": "|".join(articles.values())})
+            answer = data.get("query", {})
+            renamed = {r["from"]: r["to"] for r in answer.get("normalized", []) + answer.get("redirects", [])}
+            pages = {page.get("title"): page.get("thumbnail", {}).get("source")
+                     for page in answer.get("pages", [])}
+            for q, title in articles.items():
+                title = renamed.get(title, title)
+                title = renamed.get(title, title)  # normalized, then redirected
+                if pages.get(title):
+                    posters[q] = pages[title]
+    except wiki.Offline as exc:
+        raise Offline(str(exc)) from exc
+    choices = []
+    for q in ids:
+        entity = found.get(q)
+        if entity is None:
+            continue
+        urls = [posters[q]] if q in posters else []
+        for prop in ("P3383", "P18"):  # film poster / image on Commons
+            files = [v for v in map(wiki._value, wiki._claims(entity, prop)) if isinstance(v, str)]
+            if files:
+                urls.append(wiki.COMMONS_FILE.format(name=quote(files[0].replace(" ", "_"))))
+        if urls:
+            released = wiki.years(entity)
+            label = lookup.label(entity) or query
+            choices.append(Choice(f"{label} ({min(released)})" if released else label, tuple(dict.fromkeys(urls))))
+    return choices[:MAX_CHOICES]
+
+
+def show_choices(query: str, get: Callable | None = None) -> list[Choice]:
+    """Shows on TVmaze, with their posters."""
+    from gamingcrypt.shows.metadata import TVMAZE
+
+    if not query.strip():
+        return []
+    get = get or _default_get
+    try:
+        response = get(f"{TVMAZE}/search/shows", {"q": query})
+    except requests.RequestException as exc:
+        raise Offline(str(exc)) from exc
+    if response.status_code != 200:
+        return []
+    try:
+        hits = response.json() or []
+    except ValueError:
+        return []
+    choices = []
+    for hit in hits:
+        show = hit.get("show") or {}
+        image = show.get("image") or {}
+        urls = tuple(u for u in (image.get("original"), image.get("medium")) if u)
+        if urls:
+            year = (show.get("premiered") or "")[:4]
+            name = show.get("name") or query
+            choices.append(Choice(f"{name} ({year})" if year else name, urls))
+    return choices[:MAX_CHOICES]
+
+
 def download(choice: Choice, get: Callable | None = None) -> bytes | None:
     """The picture (the first of its addresses that has one); None: there's none."""
     get = get or _default_get
@@ -130,8 +209,16 @@ class Source:
 def source_for(game, tab) -> Source | None:
     """None: no place for its cover (e.g. the drive isn't unlocked)."""
     from gamingcrypt.emulation.library import RomGame
+    from gamingcrypt.movies.library import Movie
+    from gamingcrypt.shows.library import Show
     from gamingcrypt.steam.models import SteamGame
     from gamingcrypt.wine.library import WindowsGame
+
+    if isinstance(game, Movie):  # (next to the movie, as Kodi has it)
+        languages = tuple(dict.fromkeys((*getattr(tab, "languages", ()), "en")))
+        return Source(game.cover_path, game.title, lambda q: movie_choices(q, languages=languages))
+    if isinstance(game, Show):
+        return Source(game.cover_path, game.title, show_choices)
 
     if isinstance(game, RomGame):
         from gamingcrypt.emulation.covers import _title

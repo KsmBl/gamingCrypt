@@ -277,6 +277,10 @@ class WindowsGamePage(QWidget):
         self.prefix_note.setObjectName("cardMeta")
         self.prefix_note.setWordWrap(True)
         options.addWidget(self.prefix_note)
+        from gamingcrypt.ui.cover_picker import picture_button
+
+        self.picture_button = picture_button(lambda: tab.open_cover_picker(self.game))
+        options.addWidget(self.picture_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.remove_button = big_button("🗑 Remove", "danger")
         self.remove_button.clicked.connect(self.ask_remove)
         options.addWidget(self.remove_button, alignment=Qt.AlignmentFlag.AlignLeft)
