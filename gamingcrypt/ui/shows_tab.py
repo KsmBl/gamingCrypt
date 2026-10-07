@@ -525,6 +525,29 @@ class ShowsTab(MoviesTab):
     def movie_changed(self, episode) -> None:
         self.reload()  # watched / stopped at: card, page and filters
 
+    def gamepad_west(self) -> bool:
+        """X: the highlighted episode - or the whole show (card or page) - watched / not watched."""
+        from gamingcrypt.ui.cover_picker import media_of
+
+        window = self.window()
+        focused = window.focusWidget() if window else None
+        node = focused
+        while node is not None and not isinstance(node, EpisodeRow):
+            node = node.parentWidget()
+        page = self.currentWidget()
+        if isinstance(node, EpisodeRow) and isinstance(page, ShowPage):
+            page.toggle_episode_watched(node.episode)
+            return True
+        show = media_of(focused, self)
+        if not isinstance(show, Show):
+            return False
+        watched = bool(show.unwatched)
+        run_async(lambda: library.set_show_watched(show, watched), lambda _r: self.reload(), owner=self)
+        notify = getattr(window, "notify", None)
+        if callable(notify):
+            notify(f"{show.title}: {'all watched' if watched else 'not watched'}", "✓" if watched else "○")
+        return True
+
     def cover_changed(self, show) -> None:
         self.reload()  # the card and the page read the poster again
 

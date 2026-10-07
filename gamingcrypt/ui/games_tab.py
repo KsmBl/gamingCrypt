@@ -965,6 +965,31 @@ class GamesTab(QStackedWidget):
 
         open_picker(self, game, self.refresh_covers, lambda text: self.home.show_notice(text, error=True))
 
+    def gamepad_west(self) -> bool:
+        """X: the highlighted game (card or page) in or out of Favorites."""
+        from gamingcrypt.ui.cover_picker import game_of
+
+        window = self.window()
+        game = game_of(window.focusWidget() if window else None, self)
+        if game is None:
+            return False
+        page = self.currentWidget()
+        button = getattr(page, "favorite_button", None)
+        if button is not None and getattr(page, "game", None) is game:
+            button.toggle()  # the page saves it and shows it
+            on = button.isChecked()
+        else:
+            on = not self.profiles.is_favorite(game.appid)
+            try:
+                self.profiles.set(game.appid, "favorite", True if on else None)
+            except OSError:
+                return True
+            self.home.update_favorites()
+        notify = getattr(window, "notify", None)
+        if callable(notify):
+            notify(f"{game.name}: {'added to' if on else 'removed from'} Favorites", "★" if on else "☆")
+        return True
+
     def gamepad_north(self) -> bool:
         """Y: another picture for the highlighted game (card or page)."""
         from gamingcrypt.ui.cover_picker import game_of

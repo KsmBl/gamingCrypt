@@ -13,6 +13,7 @@ from gamingcrypt.ui.navigator import GamepadNavigator
 from tests.fakes import FakeService
 from tests.test_movies_tab import make_tab as make_movies_tab
 from tests.test_movies_tab import root as movies_root  # noqa: F401 - fixture
+from tests.test_shows_tab import root as shows_root  # noqa: F401 - fixture
 
 
 @pytest.fixture(autouse=True)
@@ -93,3 +94,61 @@ def test_options_say_that_holding_works_too(qtbot, tmp_path):
     row = page.picture_button.parentWidget()
     notes = [label.text() for label in row.findChildren(QLabel)]
     assert notes == ["or hold any picture · Ⓨ on the controller"]
+
+
+# --- what A and X do on each kind of card ----------------------------------------------------------
+
+def test_each_card_says_what_it_does(qtbot, tmp_path, movies_root):  # noqa: F811
+    tab = games_tab(qtbot, tmp_path)
+    assert hints_for(tab.home.cards[5]).startswith("Ⓐ  Open game     Ⓧ  Favorite")
+    movies = make_movies_tab(qtbot, movies_root)
+    assert hints_for(next(iter(movies.home.cards.values()))).startswith("Ⓐ  Open movie     Ⓧ  Watched")
+
+
+def test_x_puts_a_game_in_favorites_from_its_card_and_page(qtbot, tmp_path):
+    tab = games_tab(qtbot, tmp_path)
+    shown = []
+    tab.window().notify = lambda text, icon="": shown.append(text)
+    nav = GamepadNavigator(tab)
+    nav.focus(tab.home.cards[5])
+    press(nav, e.BTN_WEST)
+    assert tab.profiles.is_favorite(5) and shown == ["Racer: added to Favorites"]
+    assert tab.home.favorites_card.subtitle.text().startswith("1")
+    tab.open_game(5)
+    page = tab.currentWidget()
+    nav.focus(page.main_button)
+    press(nav, e.BTN_WEST)
+    assert not tab.profiles.is_favorite(5) and not page.favorite_button.isChecked()  # the page shows it
+    assert shown[-1] == "Racer: removed from Favorites"
+
+
+def test_x_marks_a_movie_watched(qtbot, movies_root):  # noqa: F811
+    tab = make_movies_tab(qtbot, movies_root)
+    nav = GamepadNavigator(tab)
+    card = next(c for c in tab.home.cards.values() if c.movie.title == "The Matrix")
+    assert not card.movie.info.watched
+    nav.focus(card)
+    press(nav, e.BTN_WEST)
+    qtbot.waitUntil(lambda: next(m for m in tab.movies if m.title == "The Matrix").info.watched)
+
+
+def test_x_on_an_episode_and_a_show(qtbot, shows_root):  # noqa: F811
+    from tests.test_shows_tab import make_tab as make_shows_tab
+
+    tab = make_shows_tab(qtbot, shows_root)
+    nav = GamepadNavigator(tab)
+    dark = next(c for c in tab.home.cards.values() if c.movie.title == "Dark")
+    assert hints_for(dark).startswith("Ⓐ  Open show     Ⓧ  Watched")
+    nav.focus(dark)
+    press(nav, e.BTN_WEST)  # all watched before: now none
+    qtbot.waitUntil(lambda: next(s for s in tab.shows if s.title == "Dark").unwatched == 2)
+    show = next(s for s in tab.shows if s.title == "Breaking Bad")
+    tab.open_show(show)
+    page = tab.currentWidget()
+    row = next(r for r in page.rows.values() if not r.episode.info.watched)
+    assert hints_for(row).startswith("Ⓐ  Play     Ⓧ  Watched")
+    key = row.episode.key
+    nav.focus(row)
+    press(nav, e.BTN_WEST)
+    qtbot.waitUntil(lambda: any(ep.key == key and ep.info.watched
+                                for s in tab.shows for ep in s.episodes))

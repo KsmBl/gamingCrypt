@@ -7,17 +7,35 @@ from PySide6.QtWidgets import QAbstractButton, QApplication, QComboBox, QLabel, 
 COMMON = "LB / RB  Tabs     ⊞  Quick menu"
 
 
-def hints_for(widget: QWidget | None) -> str:
+def card_hint(widget: QWidget | None) -> str | None:
+    """What A and X do on a card: open it, and its quick action."""
+    from gamingcrypt.ui.emulation_pages import RomCard
     from gamingcrypt.ui.game_widgets import GameCard
+    from gamingcrypt.ui.movies_tab import MovieCard
+    from gamingcrypt.ui.shows_tab import EpisodeRow, ShowCard
+    from gamingcrypt.ui.wine_pages import WindowsCard
 
-    if isinstance(widget, QLineEdit):
+    if isinstance(widget, (GameCard, RomCard, WindowsCard)):
+        return "Ⓐ  Open game     Ⓧ  Favorite     Ⓑ  Back"
+    if isinstance(widget, MovieCard):
+        return "Ⓐ  Open movie     Ⓧ  Watched     Ⓑ  Back"
+    if isinstance(widget, ShowCard):
+        return "Ⓐ  Open show     Ⓧ  Watched     Ⓑ  Back"
+    if isinstance(widget, EpisodeRow):
+        return "Ⓐ  Play     Ⓧ  Watched     Ⓑ  Back"
+    return None
+
+
+def hints_for(widget: QWidget | None) -> str:
+    card = card_hint(widget)
+    if card is not None:
+        first = card
+    elif isinstance(widget, QLineEdit):
         first = "Ⓐ  Keyboard     Ⓑ  Back"
     elif isinstance(widget, QSlider):
         first = "◀ ▶  Adjust     Ⓑ  Back"
     elif isinstance(widget, QComboBox):
         first = "Ⓐ  Choose     Ⓑ  Back"
-    elif isinstance(widget, GameCard):
-        first = "Ⓐ  Open game     Ⓑ  Back"
     elif isinstance(widget, QAbstractButton) and widget.objectName() == "tab":
         first = "Ⓐ  Open     ◀ ▶  Tabs"
     else:

@@ -675,6 +675,21 @@ class MoviesTab(QStackedWidget):
         open_picker(self, item, self.cover_changed, lambda text: self.home.show_notice(text, error=True),
                     title=item.title)
 
+    def gamepad_west(self) -> bool:
+        """X: the highlighted movie (card or page) watched / not watched."""
+        from gamingcrypt.ui.cover_picker import media_of
+
+        window = self.window()
+        movie = media_of(window.focusWidget() if window else None, self)
+        if not isinstance(movie, Movie):
+            return False
+        watched = not movie.info.watched
+        run_async(lambda: library.set_watched(movie, watched), lambda _i: self.movie_changed(movie), owner=self)
+        notify = getattr(window, "notify", None)
+        if callable(notify):
+            notify(f"{movie.title}: {'watched' if watched else 'not watched'}", "✓" if watched else "○")
+        return True
+
     def gamepad_north(self) -> bool:
         """Y: another poster for the highlighted movie / show (card or page)."""
         from gamingcrypt.ui.cover_picker import media_of
