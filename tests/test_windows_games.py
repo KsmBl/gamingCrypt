@@ -440,3 +440,18 @@ def test_install_script_installs_the_32bit_vulkan_driver():
 
     script = (Path(__file__).parent.parent / "install.sh").read_text()
     assert "lib32-vulkan-radeon" in script and "lib32-vulkan-intel" in script and "0x1002" in script
+
+
+def test_loading_screen_shows_the_games_cover(qtbot, window, monkeypatch, tmp_path):
+    """Not the drawn letter: the same picture as on the game's card."""
+    from tests.fakes import cover_color, solid_image
+
+    picture = solid_image(tmp_path / "knight.jpg")
+    monkeypatch.setattr(covers_mod.Covers, "cached", lambda self, game: picture if game.name == "Hollow Knight" else None)
+    games = window._games
+    knight = next(g for g in games.windows_games if g.name == "Hollow Knight")
+    games.open_windows_game(knight)
+    page = games.currentWidget()
+    qtbot.waitUntil(lambda: page.exe_combo.count() == 3)
+    page.main_button.click()
+    assert window.launch_overlay.isVisible() and cover_color(window.launch_overlay.cover) == "#d03020"

@@ -674,7 +674,7 @@ class MainWindow(QMainWindow):
         if is_wine_appid(appid) or is_linux_appid(appid):  # Windows / Linux game: Steam's patience (launchers)
             name = self.game_name(appid)
             self.game_watcher.describe = lambda a: f"Starting {name}…"
-            self.launch_overlay.show_for(name, appid, None)
+            self.launch_overlay.show_for(name, appid, None, self.cover_loader(appid))
             self.launch_overlay.set_phase(f"Starting {name}…")
             self.game_watcher.watch(appid)
             return
@@ -682,13 +682,13 @@ class MainWindow(QMainWindow):
             from gamingcrypt.ui.game_watcher import QUICK
 
             self.game_watcher.describe = lambda a: "Starting the movie…"
-            self.launch_overlay.show_for(self.game_name(appid), appid, None)
+            self.launch_overlay.show_for(self.game_name(appid), appid, None, self.cover_loader(appid))
             self.launch_overlay.set_phase("Starting the movie…")
             self.game_watcher.watch(appid, QUICK)
             return
         if appid >= EMU_APPID_BASE:  # an emulated game (RetroArch)
             self.game_watcher.describe = lambda a: "Starting RetroArch…"
-            self.launch_overlay.show_for(self.game_name(appid), appid, None)
+            self.launch_overlay.show_for(self.game_name(appid), appid, None, self.cover_loader(appid))
             self.launch_overlay.set_phase("Starting RetroArch…")
             self.game_watcher.watch(appid)
             return
@@ -713,6 +713,42 @@ class MainWindow(QMainWindow):
             watcher.watch(appid)
 
         run_async(watcher.drawing_game, adopt, lambda _e: None, owner=self)
+
+    def cover_loader(self, appid: int, game=None):
+        """How the loading screen gets the picture of a game that isn't Steam's - the same
+        cover its card shows: box art (emulated), Steam's picture (Windows / Linux), the
+        movie's cover. None: Steam's own (or nothing found)."""
+        games = self.shell.pages.get("Games") if self.shell else None
+        if games is not None and game is None:
+            game = getattr(games, "rom_games", {}).get(appid)
+            if game is None and hasattr(games, "windows_by_appid"):
+                game = games.windows_by_appid(appid)
+        from gamingcrypt.emulation.library import RomGame
+        from gamingcrypt.wine.library import WindowsGame
+
+        if isinstance(game, RomGame):
+            from gamingcrypt.ui.emulation_pages import load_rom_cover
+
+            covers = getattr(games, "covers", None)
+            return lambda label, w, h: load_rom_cover(label, game, covers, w, h)
+        if isinstance(game, WindowsGame):  # Linux games too
+            from gamingcrypt.ui.wine_pages import load_windows_cover
+
+            covers = getattr(games, f"{game.KIND}_covers", None)
+            return lambda label, w, h: load_windows_cover(label, game, covers, w, h)
+        movie = self.running_movie(appid)
+        path = getattr(movie, "cover_path", None)
+        if path is not None:
+            def draw(label, w, h) -> None:
+                from PySide6.QtGui import QPixmap
+
+                pixmap = QPixmap(str(path)) if path.exists() else QPixmap()
+                if not pixmap.isNull():
+                    scaled = pixmap.scaled(w, h, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                           Qt.TransformationMode.SmoothTransformation)
+                    label.setPixmap(scaled.copy((scaled.width() - w) // 2, (scaled.height() - h) // 2, w, h))
+            return draw
+        return None
 
     def game_name(self, appid: int) -> str:
         games = getattr(self.shell, "pages", {}).get("Games") if self.shell else None
@@ -1037,7 +1073,7 @@ class MainWindow(QMainWindow):
 
     def download_then_launch(self, game, work, what: str, failed: str) -> tuple[bool, str]:
         """Download what the game needs (core, emulator) behind the loading screen, then start it."""
-        self.launch_overlay.show_for(game.name)
+        self.launch_overlay.show_for(game.name, game.appid, None, self.cover_loader(game.appid, game))
         self.launch_overlay.set_phase(f"Downloading {what}…")
 
         def done(path) -> None:

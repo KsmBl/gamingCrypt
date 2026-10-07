@@ -139,3 +139,19 @@ class SilentInstallService(FakeService):
         if appid not in self.installs:
             return self.missing
         return self.progress_steps.pop(0) if len(self.progress_steps) > 1 else self.progress_steps[0]
+
+
+def solid_image(path, color: str = "#d03020"):
+    """A one-colour cover picture, to tell a real cover from the drawn letter."""
+    from PySide6.QtGui import QColor, QImage
+
+    image = QImage(60, 90, QImage.Format.Format_RGB32)
+    image.fill(QColor(color))
+    image.save(str(path))
+    return path
+
+
+def cover_color(label) -> str:
+    """The colour in the middle of a cover label's picture."""
+    image = label.pixmap().toImage()
+    return image.pixelColor(image.width() // 2, image.height() // 2).name()

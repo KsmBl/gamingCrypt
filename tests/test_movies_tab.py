@@ -353,6 +353,11 @@ def test_playing_from_the_tab_starts_it_like_a_game(qtbot, window):
     assert ok and window._launched == [("Finding Nemo", 1800, ("de", "en"))]
     assert window.game_watcher.appid == nemo.appid and window.launch_overlay.isVisible()
     assert window.launch_overlay.phase.text() == "Starting the movie…"
+    from tests.fakes import cover_color, solid_image
+
+    solid_image(nemo.cover_path)  # its cover, not the drawn letter
+    movies.play(nemo)
+    assert cover_color(window.launch_overlay.cover) == "#d03020"
     from gamingcrypt.ui.game_watcher import QUICK
 
     assert window.game_watcher.timing is QUICK  # no waiting like for a Steam game

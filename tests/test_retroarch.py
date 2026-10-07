@@ -191,3 +191,37 @@ def test_ps2_video_driver_follows_the_renderer(tmp_path):
     assert 'pcsx2_renderer = "paraLLEl-GS"' in retroarch.core_options_file(paths, nfs).read_text()
     retroarch.launch(scan(paths, BY_ID["snes"])[0], paths, tmp_path / "d", tmp_path / "l", **run)
     assert "video_driver = " not in (paths.config / "gamingcrypt.cfg").read_text()  # RetroArch's own choice
+
+def test_loading_screen_shows_the_box_art(qtbot, emu, monkeypatch, tmp_path):
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.config import DEFAULTS
+    from gamingcrypt.emulation import covers as covers_mod
+    from gamingcrypt.ui.games_tab import GamesTab
+    from tests.fakes import FakeService, cover_color, solid_image
+
+    picture = solid_image(tmp_path / "smw.png")
+    monkeypatch.setattr(covers_mod.Covers, "cached", lambda self, game: picture)
+    monkeypatch.setattr(retroarch, "launch", lambda game, *a, **k: (True, f"Starting {game.name}…"))
+    pages = {}
+
+    def factory(config):
+        pages["Games"] = GamesTab(FakeService(), library_settings=config["libraries"], emulation_root=str(emu.root))
+        return dict(pages)
+
+    window = MainWindow(copy.deepcopy(DEFAULTS), lambda c: None, page_factory=factory)
+    qtbot.addWidget(window)
+    window.windowed = True
+    window.show()
+    window.show_shell()
+    games = pages["Games"]
+    games.reload_roms()
+    qtbot.waitUntil(lambda: "snes" in games.home.system_cards)
+    games.open_system("snes")
+    card = next(iter(games.currentWidget().cards.values()))
+    card.clicked.emit(card.game)
+    games.currentWidget().main_button.click()
+    assert window.launch_overlay.isVisible() and cover_color(window.launch_overlay.cover) == "#d03020"
+    # also while a missing core is downloaded first
+    window.launch_overlay.hide()
+    window.download_then_launch(card.game, lambda: None, "the core", "failed")
+    assert cover_color(window.launch_overlay.cover) == "#d03020"
