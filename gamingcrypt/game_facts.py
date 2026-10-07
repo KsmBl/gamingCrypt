@@ -2,7 +2,8 @@
 
 - Steam games: their store page (fetched in the background, kept with the Steam metadata)
 - Windows / Linux games: the store page of the Steam game their cover was matched to
-- emulated games: their system (no free source knows their genres)
+- emulated games: their system, and libretro-database's genre and year (cartridge systems
+  and the PSP - emulation/rom_facts)
 """
 
 from __future__ import annotations
@@ -39,7 +40,9 @@ def facts_of(game, tab) -> Facts:
     if isinstance(game, RomGame):
         from gamingcrypt.emulation.systems import short_name
 
-        return Facts(short_name(game.system.id))
+        known = getattr(tab, "rom_facts", None)
+        genres, year = known.facts(game) if known is not None else ((), None)
+        return Facts(short_name(game.system.id), genres, year)
     if isinstance(game, WindowsGame):
         appid = steam_appid_of(game, tab)
         stored = getattr(tab.service, "stored_metadata", None)

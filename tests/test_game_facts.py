@@ -1,8 +1,10 @@
 """Genres, release year and platform of the installed games - and the Games tab's filters."""
 
 import calendar
+import time
 
 import pytest
+import requests
 
 from gamingcrypt import game_facts
 from gamingcrypt.game_facts import Facts
@@ -212,3 +214,96 @@ def test_the_list_isnt_redrawn_for_new_genres_unless_filtered(qtbot, monkeypatch
     before = len(redrawn)
     qtbot.wait(30)
     assert len(redrawn) == before
+
+
+# --- emulated games: libretro-database --------------------------------------------------------------
+
+DAT = """clrmamepro (
+\tname "Nintendo - Super Nintendo Entertainment System"
+)
+
+game (
+\tcomment "Super Mario World (USA)"
+\tgenre "Platform"
+\trom ( crc B19ED489 )
+)
+
+game (
+\tcomment "Super Mario Kart (USA)"
+\tgenre "Racing / Action"
+\trom ( crc CD80DB86 )
+)
+"""
+YEARS = DAT.replace('genre "Platform"', 'releaseyear "1990"').replace('genre "Racing / Action"', 'releaseyear "1992"')
+
+
+def libretro(asked=None, missing=False):
+    def get(url):
+        if asked is not None:
+            asked.append(url)
+        if missing:
+            return Response(status=404)
+        return Response(content=(DAT if "/genre/" in url else YEARS).encode())
+    return get
+
+
+@pytest.fixture
+def emu(tmp_path):
+    from gamingcrypt.emulation.library import EmulationPaths
+    from gamingcrypt.emulation.systems import BY_ID
+
+    paths = EmulationPaths(tmp_path / "GamingCrypt" / "Emulation")
+    paths.ensure()
+    for name in ("Super Mario World (USA).sfc", "Super Mario Kart (Europe) (Rev 1).sfc", "My Hack.sfc"):
+        (paths.roms_for(BY_ID["snes"]) / name).write_bytes(b"x")
+    return paths
+
+
+def test_genres_and_years_of_emulated_games(emu):
+    from gamingcrypt.emulation.library import scan
+    from gamingcrypt.emulation.rom_facts import RomFacts, parse_dat
+    from gamingcrypt.emulation.systems import BY_ID
+
+    assert parse_dat(DAT, "genre") == {"Super Mario World (USA)": "Platform", "Super Mario Kart (USA)": "Racing / Action"}
+    asked = []
+    facts = RomFacts(emu, get=libretro(asked), now=lambda: 1000)
+    games = {g.path.name: g for g in scan(emu, BY_ID["snes"])}
+    assert facts.needs_fetch("snes") and facts.facts(games["Super Mario World (USA).sfc"]) == ((), None)
+    assert facts.fetch("snes") and len(asked) == 2
+    assert facts.facts(games["Super Mario World (USA).sfc"]) == (("Platform",), 1990)  # its exact name
+    assert facts.facts(games["Super Mario Kart (Europe) (Rev 1).sfc"]) == (("Racing", "Action"), 1992)  # the title
+    assert facts.facts(games["My Hack.sfc"]) == ((), None)
+    again = RomFacts(emu, get=libretro(asked), now=lambda: 1000)  # kept on the drive
+    assert not again.needs_fetch("snes") and again.facts(games["Super Mario World (USA).sfc"])[1] == 1990
+    assert len(asked) == 2
+    assert RomFacts(emu, now=lambda: 1000 + 31 * 86400).needs_fetch("snes")  # after a while: again
+
+
+def test_systems_libretro_has_nothing_for(emu):
+    from gamingcrypt.emulation.rom_facts import RomFacts
+
+    facts = RomFacts(emu, get=libretro(missing=True), now=lambda: 1000)
+    assert facts.fetch("ps2") and not facts.needs_fetch("ps2")  # (asked once, not again and again)
+
+    def offline(url):
+        raise requests.ConnectionError("no network")
+
+    assert not RomFacts(emu, get=offline).fetch("snes") and RomFacts(emu).needs_fetch("snes")
+
+
+@pytest.mark.store_facts
+def test_emulated_games_in_the_genre_filter(qtbot, emu, monkeypatch):
+    from gamingcrypt.emulation import rom_facts
+
+    asked = []
+    original = rom_facts.RomFacts.__init__
+    monkeypatch.setattr(rom_facts.RomFacts, "__init__", lambda self, paths, get=None, now=time.time:
+                        original(self, paths, get=libretro(asked), now=now))
+    tab = tab_with(qtbot, [], emulation_root=str(emu.root))
+    home = tab.home
+    qtbot.waitUntil(lambda: home.genre_combo.findData("Platform") > 0)
+    home.genre_combo.setCurrentIndex(home.genre_combo.findData("Racing"))
+    assert shown(tab) == ["Super Mario Kart"]
+    home.genre_combo.setCurrentIndex(0)
+    home.decade_combo.setCurrentIndex(home.decade_combo.findData("1990"))
+    assert sorted(shown(tab)) == ["Super Mario Kart", "Super Mario World"]

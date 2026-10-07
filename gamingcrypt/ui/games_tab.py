@@ -518,6 +518,9 @@ class GamesTab(QStackedWidget):
         from gamingcrypt.emulation.covers import Covers
 
         self.covers = Covers(self.emulation) if self.emulation is not None else None  # box art
+        from gamingcrypt.emulation.rom_facts import RomFacts
+
+        self.rom_facts = RomFacts(self.emulation) if self.emulation is not None else None  # genres, years
         from gamingcrypt.emulation.playtime import PlayLog
 
         self.play_log = PlayLog(self.emulation) if self.emulation is not None else None
@@ -663,6 +666,7 @@ class GamesTab(QStackedWidget):
         self.home.update_continue()
         self.home.update_favorites()
         self.home.refresh_results()  # emulated games are in "Installed games" too
+        self.fill_facts()  # their genres and years
         self.fetch_missing_cores(found)
 
     # Windows games -------------------------------------------------------------------------
@@ -934,12 +938,16 @@ class GamesTab(QStackedWidget):
     FACTS_DELAY_MS = 1500  # the store answers only so many questions a minute
 
     def facts_queue(self) -> list:
-        """What's still unknown: ("steam", game) - its store page; ("match", game) - which Steam
-        game a Windows / Linux game is; ("store", appid) - the store page of that one."""
+        """What's still unknown: ("romdb", system) - the genres / years of its games; ("steam",
+        game) - its store page; ("match", game) - which Steam game a Windows / Linux game is;
+        ("store", appid) - the store page of that one."""
+        queue = []
+        if self.rom_facts is not None:  # emulated games: one list per system (libretro-database)
+            queue += [("romdb", sid) for sid, games in self.roms.items() if games and self.rom_facts.needs_fetch(sid)]
         needs = getattr(self.service, "needs_metadata", None)
         if needs is None:
-            return []
-        queue = [("steam", g) for g in self.home.installed if needs(g)]
+            return queue
+        queue += [("steam", g) for g in self.home.installed if needs(g)]
         needs_for = getattr(self.service, "needs_metadata_for", None)
         for game in self.pc_games():
             covers = getattr(self, f"{game.KIND}_covers", None)
@@ -968,6 +976,9 @@ class GamesTab(QStackedWidget):
                 service.apply_metadata(what)
             elif kind == "store":
                 service.fetch_metadata(what)
+            elif kind == "romdb":
+                if not self.rom_facts.fetch(what):
+                    raise OSError("offline")
             else:
                 appid = getattr(self, f"{what.KIND}_covers").match_appid(what)
                 if appid is None:
