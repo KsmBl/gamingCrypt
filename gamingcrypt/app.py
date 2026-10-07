@@ -1426,9 +1426,60 @@ class MainWindow(QMainWindow):
         self.screen_name = "shell"
         if self.welcome_enabled:
             QTimer.singleShot(0, self.show_welcome)
+        self.watch_arrivals()
         if self.update_check_enabled and not getattr(self, "_update_checked", False):
             self._update_checked = True
             QTimer.singleShot(60_000, self.check_for_update)  # once per start, after things settled
+
+    ARRIVALS_MS = 10_000  # how often the drive is looked at for new things
+
+    def watch_arrivals(self) -> None:
+        """New ROMs, games, movies, shows on the drive (network share, upload, copy): a notice,
+        and the tab shows them - while the drive is unlocked."""
+        from gamingcrypt.arrivals import Watcher
+
+        mount_point = os.path.expanduser(self.config["unlock"].get("mount_point", "") or "")
+        if not mount_point:
+            return
+        if getattr(self, "arrivals", None) is None or self.arrivals.drive != Path(mount_point):
+            self.arrivals = Watcher(mount_point)
+        if getattr(self, "arrivals_timer", None) is None:
+            self.arrivals_timer = QTimer(self)
+            self.arrivals_timer.timeout.connect(self.look_for_arrivals)
+        self._looking_for_arrivals = False
+        self.arrivals_timer.start(self.ARRIVALS_MS)
+        self.look_for_arrivals()  # the first look learns what's there
+
+    def look_for_arrivals(self) -> None:
+        if self.screen_name != "shell" or getattr(self, "_looking_for_arrivals", False):
+            return  # locked: the drive isn't there
+        self._looking_for_arrivals = True
+        watcher = self.arrivals
+
+        def done(found) -> None:
+            self._looking_for_arrivals = False
+            if found:
+                self.arrived(found)
+
+        def failed(_exc) -> None:
+            self._looking_for_arrivals = False
+
+        run_async(watcher.poll, done, failed, owner=self)
+
+    def arrived(self, found: list) -> None:
+        from gamingcrypt.arrivals import describe
+
+        log.info("arrived on the drive: %s", found)
+        self.notify(describe(found), "⬇")
+        pages = self.shell.pages if self.shell is not None else {}
+        kinds = {a.kind for a in found}
+        games = pages.get("Games")
+        for kind, method in (("rom", "reload_roms"), ("windows", "reload_windows"), ("linux", "reload_linux")):
+            if kind in kinds and hasattr(games, method):
+                getattr(games, method)()
+        for kind, name in (("movie", "Movies"), ("show", "Shows")):
+            if kind in kinds and hasattr(pages.get(name), "reload"):
+                pages[name].reload()
 
     def retheme(self) -> None:
         """Dark / light switched: what draws its own pictures draws them again."""
