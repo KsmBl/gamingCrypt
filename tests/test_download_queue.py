@@ -194,12 +194,18 @@ def test_move_to_top_applies_after_a_moment(qtbot, monkeypatch):
     qtbot.waitUntil(lambda: "Charlie first" in tab.message.text())
 
 
-def test_cancel_needs_two_taps(qtbot, monkeypatch):
+def test_cancel_asks_first(qtbot, monkeypatch):
+    from gamingcrypt.ui.modal import open_modal
+
     tab, service = queue_tab(qtbot, monkeypatch)
     row = tab.rows[2]
     row.cancel_button.click()
-    assert service.cancelled == [] and row.cancel_button.text() == "Sure?"
+    question = open_modal(tab.window(), on_screen=False)
+    assert service.cancelled == [] and "Cancel the download of" in question.content.question.text()
+    question.content.cancel_button.click()  # changed my mind
+    assert open_modal(tab.window(), on_screen=False) is None and service.cancelled == []
     row.cancel_button.click()
+    open_modal(tab.window(), on_screen=False).content.action_button.click()
     qtbot.waitUntil(lambda: service.cancelled == [2])
     qtbot.waitUntil(lambda: 2 not in tab.rows)
     assert "deleted" in tab.message.text()

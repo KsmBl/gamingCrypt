@@ -57,7 +57,6 @@ class QuickMenu(QWidget):
         self.appid: int | None = None
         self.previous_refresh = 0
         self.remaining = 0
-        self._quit_armed = False
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
 
         outer = QHBoxLayout(self)
@@ -224,9 +223,6 @@ class QuickMenu(QWidget):
         self.quit_button = big_button("✕  Force quit", "danger")
         self.quit_button.clicked.connect(self._quit_tapped)
         self.box.addWidget(self.quit_button)
-        self._disarm = QTimer(self)
-        self._disarm.setSingleShot(True)
-        self._disarm.timeout.connect(self._disarm_quit)
         self.lock_button = big_button("🔒  Lock now")
         self.lock_button.clicked.connect(self._lock)
         self.box.addWidget(self.lock_button)
@@ -392,7 +388,7 @@ class QuickMenu(QWidget):
         self.back_button.setText(("▶  Back to the movie" if self.movie else "▶  Back to the game") if appid
                                  else "▶  Back")
         self.quit_button.setVisible(appid is not None)
-        self._disarm_quit()
+        self._quit_label()
         set_status(self.status, "")
         self._load_values()
         self.update_battery()
@@ -530,16 +526,17 @@ class QuickMenu(QWidget):
             set_status(self.status, "Stopping the movie…")
             self.force_quit.emit(self.appid)
             return
-        if not self._quit_armed:
-            self._quit_armed = True
-            self.quit_button.setText("Tap again to force quit")
-            self._disarm.start(4000)
+        if self.appid is None:
             return
-        self._disarm_quit()
+        from gamingcrypt.ui.modal import ask
+
+        name = self.title.text()
+        ask(self, f"Force quit {name}?\nWhat wasn't saved in the game is lost.", "✕  Force quit", self._quit_now)
+
+    def _quit_now(self) -> None:
         if self.appid is not None:
             set_status(self.status, "Quitting the game…")
             self.force_quit.emit(self.appid)
 
-    def _disarm_quit(self) -> None:
-        self._quit_armed = False
+    def _quit_label(self) -> None:
         self.quit_button.setText("■  Stop the movie" if getattr(self, "movie", False) else "✕  Force quit")

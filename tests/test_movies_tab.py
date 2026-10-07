@@ -388,7 +388,9 @@ def test_quick_menu_stops_a_movie_with_one_tap(qtbot, window, monkeypatch):
     menu.close_menu()
 
 
-def test_quick_menu_for_a_game_still_asks_twice(qtbot, window):
+def test_quick_menu_for_a_game_still_asks_first(qtbot, window):
+    from gamingcrypt.ui.modal import open_modal
+
     window.toggle_quick_menu()
     menu = window.quick_menu
     menu.open_menu(730, "Some game")
@@ -396,7 +398,11 @@ def test_quick_menu_for_a_game_still_asks_twice(qtbot, window):
     quit_asked = []
     menu.force_quit.connect(quit_asked.append)
     menu.quit_button.click()
-    assert quit_asked == [] and menu.quit_button.text() == "Tap again to force quit"
+    question = open_modal(window)
+    assert quit_asked == [] and "Force quit Some game?" in question.content.question.text()
+    assert window.nav_root() is question  # the controller answers it first
+    question.content.action_button.click()
+    assert quit_asked == [730]
     menu.close_menu()
 
 

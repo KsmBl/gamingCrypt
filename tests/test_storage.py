@@ -85,9 +85,12 @@ def test_storage_page(qtbot, steam):
     assert not page.leftovers_button.isVisible() and not (extra / "downloading/999").exists()
     text, shaders, remove = page.rows[620]
     assert "Portal 2" in text.text() and shaders.isVisible()
+    from gamingcrypt.ui.modal import open_modal
+
     remove.click()
-    assert remove.text() == "Tap again to uninstall" and uninstalled == []
-    remove.click()
+    question = open_modal(page.window(), on_screen=False)
+    assert uninstalled == [] and "Uninstall Portal 2?" in question.content.question.text()
+    question.content.action_button.click()
     qtbot.waitUntil(lambda: uninstalled == [620])
     qtbot.waitUntil(lambda: "Portal 2 uninstalled" in page.status.text())
 

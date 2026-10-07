@@ -23,7 +23,6 @@ class StoragePage(QWidget):
         self.emulation_fn = emulation_fn or (lambda: None)
         self.games_running = games_running
         self.report: storage.Report | None = None
-        self.armed: int | None = None  # uninstall needs a second tap
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.libraries = QVBoxLayout()
@@ -84,7 +83,6 @@ class StoragePage(QWidget):
     def show_report(self, report: storage.Report) -> None:
         self.busy = False
         self.report = report
-        self.armed = None
         set_status(self.status, self.message or ("" if report.libraries else "No Steam library found"))
         self.message = ""
         _clear(self.libraries)
@@ -206,10 +204,13 @@ class StoragePage(QWidget):
         self._work(lambda: storage.clear_leftovers(report), lambda f: f"Freed {format_size(f)}")
 
     def uninstall(self, game: storage.GameSpace) -> None:
-        if self.armed != game.appid:
-            self.armed = game.appid
-            self.rows[game.appid][2].setText("Tap again to uninstall")
-            return
+        from gamingcrypt.ui.modal import ask
+
+        ask(self.window(), f"Uninstall {game.name}?\nIts game files are deleted from the drive "
+                           f"({format_size(game.game_bytes)}). Save games in its Proton folder stay.",
+            "🗑  Uninstall", lambda: self.uninstall_now(game))
+
+    def uninstall_now(self, game: storage.GameSpace) -> None:
         if self._game_running():
             return
         service = self.service_fn()

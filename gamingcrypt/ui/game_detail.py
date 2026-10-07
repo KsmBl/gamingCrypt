@@ -23,7 +23,6 @@ class GameDetailPage(QWidget):
         self.tab = tab
         self.service = tab.service
         self.game = game
-        self._uninstall_armed = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 16, 30, 20)
@@ -124,9 +123,6 @@ class GameDetailPage(QWidget):
         enable_touch_scroll(self.scroll)
         layout.addWidget(self.scroll, 1)
 
-        self._disarm_timer = QTimer(self)
-        self._disarm_timer.setSingleShot(True)
-        self._disarm_timer.timeout.connect(self._disarm_uninstall)
         self.downloading = False
         self._fetching_size = False
         self._last_sample = None
@@ -391,20 +387,18 @@ class GameDetailPage(QWidget):
             self.fill_proton_choices()
             self.fill_profile_choices()
         self.options_popup.set_open(visible)
-        if not visible:
-            self._disarm_uninstall()
 
     def uninstall_tapped(self) -> None:
-        if not self._uninstall_armed:
-            self._uninstall_armed = True
-            self.uninstall_button.setText("Tap again to uninstall")
-            self._disarm_timer.start(4000)
-            return
-        self._disarm_uninstall()
-        if not getattr(self.service, "silent_uninstall", False):
+        if not getattr(self.service, "silent_uninstall", False):  # Steam asks itself
             ok = self.service.client.uninstall(self.game.appid)
             set_status(self.status, "Confirm the uninstall in Steam" if ok else "Could not reach Steam", error=not ok)
             return
+        from gamingcrypt.ui.modal import ask
+
+        ask(self, f"Uninstall {self.game.name}?\nIts game files are deleted from the drive. Save games in "
+                  "its Proton folder stay.", "🗑  Uninstall", self.uninstall_now)
+
+    def uninstall_now(self) -> None:
         self.uninstall_button.setEnabled(False)
         self.main_button.setEnabled(False)
         set_status(self.status, f"Uninstalling {self.game.name}…")
@@ -421,6 +415,3 @@ class GameDetailPage(QWidget):
         self.refresh()
         set_status(self.status, result.message, error=not result.ok)
 
-    def _disarm_uninstall(self) -> None:
-        self._uninstall_armed = False
-        self.uninstall_button.setText("🗑 Uninstall")

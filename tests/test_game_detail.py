@@ -46,7 +46,9 @@ def test_not_installed_game_offers_download(qtbot):
     assert page.uninstall_button.isHidden()  # nothing to uninstall, Proton can still be chosen
 
 
-def test_uninstall_requires_two_taps(qtbot):
+def test_uninstall_through_steam_lets_steam_ask(qtbot):
+    from gamingcrypt.ui.modal import open_modal
+
     tab = make_tab(qtbot)
     tab.open_game(1145360)
     page = tab.currentWidget()
@@ -54,24 +56,26 @@ def test_uninstall_requires_two_taps(qtbot):
     page.options_button.click()
     assert page.options_popup.is_open()
     page.uninstall_button.click()
-    assert tab.service.client.actions == []
-    assert "again" in page.uninstall_button.text()
-    page.uninstall_button.click()
+    assert open_modal(page, on_screen=False) is None  # Steam's own dialog asks
     assert tab.service.client.actions == [("uninstall", 1145360)]
     assert "Confirm" in page.status.text()
 
 
-def test_closing_options_disarms_uninstall(qtbot):
-    tab = make_tab(qtbot)
+def test_uninstall_asks_first_and_cancel_keeps_it(qtbot):
+    from gamingcrypt.ui.modal import open_modal
+
+    tab = silent_tab(qtbot)
+    tab.service.silent_uninstall = True
+    asked = []
+    tab.service.uninstall_game = lambda appid: asked.append(appid) or InstallResult(True, "")
     tab.open_game(620)
     page = tab.currentWidget()
     page.options_button.click()
     page.uninstall_button.click()
-    page.options_button.click()
-    assert page.uninstall_button.text() == "🗑 Uninstall"
-    page.options_button.click()
-    page.uninstall_button.click()
-    assert tab.service.client.actions == []
+    question = open_modal(page, on_screen=False)
+    assert "Uninstall Portal 2?" in question.content.question.text()
+    assert question.content.gamepad_back()  # B: no
+    assert open_modal(page, on_screen=False) is None and asked == [] and page.game.installed
 
 
 def test_update_pending_shown(qtbot):
@@ -170,6 +174,12 @@ def test_reopening_page_resumes_watching(qtbot):
     qtbot.waitUntil(lambda: "Downloading 25%" in page.status.text())
 
 
+def confirm(page) -> None:
+    from gamingcrypt.ui.modal import open_modal
+
+    open_modal(page, on_screen=False).content.action_button.click()
+
+
 def test_uninstall_without_steam_dialog(qtbot):
     tab = silent_tab(qtbot)
     tab.service.silent_uninstall = True
@@ -178,7 +188,7 @@ def test_uninstall_without_steam_dialog(qtbot):
     page = tab.currentWidget()
     page.options_button.click()
     page.uninstall_button.click()
-    page.uninstall_button.click()
+    confirm(page)
     qtbot.waitUntil(lambda: "was uninstalled" in page.status.text())
     assert tab.service.client.actions == []  # no Steam popup
     assert not page.game.installed and "Download" in page.main_button.text()
@@ -193,7 +203,7 @@ def test_uninstall_failure_keeps_game(qtbot):
     page = tab.currentWidget()
     page.options_button.click()
     page.uninstall_button.click()
-    page.uninstall_button.click()
+    confirm(page)
     qtbot.waitUntil(lambda: "didn't close" in page.status.text())
     assert page.game.installed and page.uninstall_button.isEnabled()
 

@@ -1290,6 +1290,11 @@ class MainWindow(QMainWindow):
 
     def nav_root(self) -> QWidget:
         """Controller navigation stays inside the loading screen / power menu while shown."""
+        from gamingcrypt.ui.modal import open_modal
+
+        modal = open_modal(self)
+        if modal is not None:
+            return modal  # a question: answer it first
         if self.sleep_lock is not None and self.sleep_lock.isVisible():
             return self.sleep_lock
         if self.battery_warning.isVisible():

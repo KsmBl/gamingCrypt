@@ -186,15 +186,18 @@ def test_refresh_keep_and_leaving_unconfirmed(qtbot, menu):
     assert refresh["hz"] == 50
 
 
-def test_force_quit_needs_two_taps(qtbot, menu):
+def test_force_quit_asks_first(qtbot, menu):
+    from gamingcrypt.ui.modal import open_modal
+
     m, *_ = menu
     m.open_menu(620, "Portal 2")
     quit_ = []
     m.force_quit.connect(quit_.append)
     m.quit_button.click()
-    assert quit_ == [] and "again" in m.quit_button.text()
-    m.quit_button.click()
-    assert quit_ == [620] and "Quitting" in m.status.text()
+    question = open_modal(m, on_screen=False)
+    assert quit_ == [] and "Force quit Portal 2?" in question.content.question.text()
+    question.content.action_button.click()
+    assert quit_ == [620] and "Quitting" in m.status.text() and open_modal(m, on_screen=False) is None
 
 
 def test_back_closes(menu):
@@ -229,8 +232,10 @@ def test_windows_button_mid_game(qtbot, monkeypatch):
     assert window.nav_root() is menu
     quit_ = []
     monkeypatch.setattr("gamingcrypt.steam.running.force_quit", lambda appid: quit_.append(appid))
+    from gamingcrypt.ui.modal import open_modal
+
     menu.quit_button.click()
-    menu.quit_button.click()
+    open_modal(window, on_screen=False).content.action_button.click()
     qtbot.waitUntil(lambda: quit_ == [620])
     window.hardware_key(hotkeys.ACTION_CODES["quick_menu"])  # Windows button again: back to the game
     assert calls == ["aside", "back", "aside"] and not menu.isVisible()

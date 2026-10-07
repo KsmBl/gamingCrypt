@@ -399,17 +399,14 @@ class WindowsGamePage(QWidget):
         self.confirm = RemoveWindowsConfirm(self.game)
         self.confirm.cancelled.connect(self.close_confirm)
         self.confirm.removed.connect(self.removed)
-        self.options_layout.addWidget(self.confirm)
-        self.confirm.show()
-        self.remove_button.hide()
-        self.confirm.cancel_button.setFocus()  # the safe choice first
-        QTimer.singleShot(0, lambda: self.confirm is not None and self.scroll.ensureWidgetVisible(self.confirm, 0, 20))
+        from gamingcrypt.ui.modal import show_modal
+
+        self.confirm_modal = show_modal(self, self.confirm, self.close_confirm)  # over the page and its Options
 
     def close_confirm(self) -> None:
         if self.confirm is not None:
-            self.confirm.deleteLater()
             self.confirm = None
-            self.remove_button.show()
+            self.confirm_modal.close_modal()  # (and the question in it)
             self.remove_button.setFocus()
 
     def removed(self, message: str) -> None:

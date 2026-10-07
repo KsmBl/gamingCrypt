@@ -81,29 +81,20 @@ class DownloadRow(QFrame):
         self.up_button.clicked.connect(lambda: tab and tab.move(self.download.appid, -1))
         self.down_button.clicked.connect(lambda: tab and tab.move(self.download.appid, 1))
         self.cancel_button.clicked.connect(self.cancel_tapped)
-        self._cancel_armed = False
-        self._disarm = QTimer(self)
-        self._disarm.setSingleShot(True)
-        self._disarm.timeout.connect(self._disarm_cancel)
         self.waiting = False
         self.update_from(download)
 
     def cancel_tapped(self) -> None:
-        # two taps: deleting downloaded data must not happen by accident
-        if not self._cancel_armed:
-            self._cancel_armed = True
-            self.cancel_button.setText("Sure?")
-            self.cancel_button.setFixedWidth(110)
-            self._disarm.start(4000)
-            return
-        self._disarm_cancel()
-        if self.tab is not None:
-            self.tab.cancel(self.download)
+        """Asked first: deleting downloaded data must not happen by accident."""
+        from gamingcrypt.ui.modal import ask
 
-    def _disarm_cancel(self) -> None:
-        self._cancel_armed = False
-        self.cancel_button.setText("✕")
-        self.cancel_button.setFixedWidth(64)
+        d = self.download
+        if d.is_update:
+            question = (f"Cancel the update of {d.name}?\nWhat was downloaded of it is deleted. The game stays "
+                        "installed, and the update waits until you move it to the top again.")
+        else:
+            question = f"Cancel the download of {d.name}?\nEverything downloaded of it so far is deleted."
+        ask(self.window(), question, "✕  Cancel download", lambda: self.tab is not None and self.tab.cancel(d))
 
     def update_from(self, d: Download, shown: int | None = None, extra: str = "", running: bool = False) -> None:
         self.download = d
