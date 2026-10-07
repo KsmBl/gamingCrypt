@@ -103,6 +103,68 @@ class MovieCard(Tappable):
         self.cover.setPixmap(movie_cover(self.movie, COVER_W, COVER_H))
 
 
+class ContinueWatching(QFrame):
+    """What was watched last, right at the top: one tap to go on (as Continue playing for games)."""
+
+    def __init__(self, home: "MoviesHome"):
+        super().__init__()
+        self.home, self.item, self.target = home, None, None
+        self.setObjectName("card")
+        row = QHBoxLayout(self)
+        row.setContentsMargins(18, 16, 18, 16)
+        row.setSpacing(20)
+        self.cover = Cover()
+        self.cover.setFixedSize(150, 225)
+        row.addWidget(self.cover)
+        text = QVBoxLayout()
+        caption = QLabel("Continue watching")
+        caption.setObjectName("cardMeta")
+        text.addWidget(caption)
+        self.title = QLabel("")
+        self.title.setObjectName("sourceTitle")
+        self.title.setWordWrap(True)
+        text.addWidget(self.title)
+        self.meta = QLabel("")
+        self.meta.setObjectName("cardMeta")
+        self.meta.setWordWrap(True)
+        text.addWidget(self.meta)
+        text.addStretch()
+        buttons = QHBoxLayout()
+        self.play_button = big_button("▶  Resume", "primary")
+        self.play_button.setMinimumWidth(220)
+        self.play_button.clicked.connect(self.play)
+        self.details_button = big_button("Details")
+        self.details_button.clicked.connect(lambda: self.item is not None and self.home.tab.open_movie(self.item))
+        buttons.addWidget(self.play_button)
+        buttons.addWidget(self.details_button)
+        buttons.addStretch()
+        text.addLayout(buttons)
+        row.addLayout(text, 1)
+        self.hide()
+
+    @property
+    def movie(self):  # its item, as on a card (the picture can be changed - see cover_picker)
+        return self.item
+
+    def set_item(self, found) -> None:
+        """found: (item, what plays, picture, title, line) or None."""
+        if found is None:
+            self.item = self.target = None
+            return
+        self.item, self.target, picture, title, line = found
+        self.cover.setPixmap(picture)
+        self.title.setText(title)
+        self.meta.setText(line)
+        self.play_button.setText("▶  Resume" if self.target.info.resume_at else "▶  Play")
+
+    def play(self) -> None:
+        if self.target is None:
+            return
+        ok, message = self.home.tab.play(self.target)
+        if not ok:
+            self.home.show_notice(message, error=True)
+
+
 class MoviesHome(QWidget):
     """A tab's list: the cards, search, filters (Shows reuses it - see shows_tab)."""
 
@@ -125,6 +187,18 @@ class MoviesHome(QWidget):
 
     def all_genres(self, items: list) -> list[str]:
         return library.genres(items)
+
+    def continue_with(self, items: list):
+        """The movie stopped in the middle most recently: (movie, movie, picture, title, line)."""
+        started = [m for m in items if m.info.resume_at and not m.info.watched]
+        if not started:
+            return None
+        movie = max(started, key=lambda m: m.info.last_played)
+        info = movie.info
+        line = f"Stopped at {library.format_time(info.resume_at)}"
+        if info.total:
+            line += f" · {round((info.total - info.resume_at) / 60)} min left"
+        return movie, movie, movie_cover(movie, 150, 225), movie.title, line
 
     def __init__(self, tab: "MoviesTab"):
         super().__init__()
@@ -196,6 +270,8 @@ class MoviesHome(QWidget):
         box.setContentsMargins(0, 0, 0, 10)
         self.header_room = QWidget()  # where the header lies while it's all there
         box.addWidget(self.header_room)
+        self.continue_card = ContinueWatching(self)
+        box.addWidget(self.continue_card)
         self.grid_widget = QWidget()
         self.grid = FlowLayout(self.grid_widget)
         box.addWidget(self.grid_widget)
@@ -289,6 +365,9 @@ class MoviesHome(QWidget):
             view_state.save(self.NOUNS, state)
         self.clear_button.setVisible(self.filtering())
         movies = self.tab.items
+        self.continue_card.set_item(self.continue_with(movies))
+        self.continue_card.setVisible(self.continue_card.item is not None and not self.filtering()
+                                      and not self.search.text().strip())
         shown = self.filtered(movies, self.search.text(), self.watch_state, self.genre_combo.currentData() or "",
                               self.age_combo.currentData())
         focused = self.window().focusWidget() if self.window() else None

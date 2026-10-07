@@ -582,6 +582,7 @@ def test_short_list_scrolls_the_bar_along(qtbot, root, monkeypatch):
     for path in root.rglob("*.mkv"):
         if path.stem != "Finding Nemo":
             path.unlink()
+    put(root, "Finding Nemo.mkv", title="Finding Nemo")  # not started: no Continue watching above it
     from gamingcrypt.ui.widgets import SlidingHeader
 
     monkeypatch.setattr(SlidingHeader, "SNAP_DELAY_MS", 20)

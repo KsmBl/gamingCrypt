@@ -143,6 +143,19 @@ class ShowsHome(MoviesHome):
     def all_genres(self, items) -> list[str]:
         return library.genres(items)
 
+    def continue_with(self, items: list):
+        """The show watched last, with its next episode."""
+        played = [(max((e.info.last_played for e in s.episodes), default=0), s) for s in items]
+        played = [(when, s) for when, s in played if when]
+        for _when, show in sorted(played, key=lambda p: p[0], reverse=True):
+            nxt = library.next_up(show)
+            if nxt is not None:
+                line = f"{nxt.code} · {nxt.name}"
+                if nxt.info.resume_at:
+                    line += f" · stopped at {movies.format_time(nxt.info.resume_at)}"
+                return show, nxt, show_cover(show, 150, 225), show.title, line
+        return None
+
 
 class EpisodeRow(Tappable):
     """One episode: its picture (✓ / how far), number and title, length, air date, summary."""
