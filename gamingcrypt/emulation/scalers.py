@@ -1,7 +1,8 @@
 """Upscaling of emulated games with the classic pixel-art algorithms (a game's Options).
 
 2D consoles: the algorithm draws the whole picture at 2x / 3x / 4x the console's size (RetroArch
-slang shaders), then it's scaled to the screen. 3D consoles: Resolution is the core's internal
+slang shaders), then it's scaled to the screen - up to 6x where the algorithm can (xBRZ any
+factor, ScaleNx 6x as 3x then 2x). 3D consoles: Resolution is the core's internal
 resolution, the algorithm smooths the textures - when the core has it (read from the cores).
 """
 
@@ -56,18 +57,20 @@ SCALERS: tuple[Scaler, ...] = (
             _pass(f"edge-smoothing/hqx/shaders/hq{n}x.slang", n, wrap_mode="clamp_to_edge", srgb_framebuffer="true")]
         for n in (2, 3, 4)},
         {n: {"LUT": {"": f"edge-smoothing/hqx/resources/hq{n}x.png", "_linear": "false"}} for n in (2, 3, 4)}),
-    Scaler("scale", "ScaleNx", (2, 3, 4), {
+    Scaler("scale", "ScaleNx", (2, 3, 4, 6), {
         2: [_pass("edge-smoothing/scalenx/shaders/scale2x.slang", 2)],
         3: [_pass("edge-smoothing/scalenx/shaders/scale3x.slang", 3)],
-        4: _twice([_pass("edge-smoothing/scalenx/shaders/scale2x.slang", 2)])}),
+        4: _twice([_pass("edge-smoothing/scalenx/shaders/scale2x.slang", 2)]),
+        6: [_pass("edge-smoothing/scalenx/shaders/scale3x.slang", 3),  # 3x, then that 2x
+            _pass("edge-smoothing/scalenx/shaders/scale2x.slang", 2)]}),
     Scaler("xbr", "xBR", (2, 3, 4), {
         n: [_pass("edge-smoothing/xbr/shaders/support/linearize.slang", alias="XbrSource"),
             _pass("edge-smoothing/xbr/shaders/xbr-lv2-multipass/xbr-lv2-pass0.slang"),
             _pass("edge-smoothing/xbr/shaders/xbr-lv2-multipass/xbr-lv2-pass1.slang", n),
             _pass("edge-smoothing/xbr/shaders/support/delinearize.slang")]
         for n in (2, 3, 4)}, values={"SMALL_DETAILS": "1.0", "WP4": "0.8", "KA": "0.35"}),
-    Scaler("xbrz", "xBRZ", (2, 3, 4), {
-        n: [_pass("edge-smoothing/xbrz/shaders/xbrz-freescale.slang", n)] for n in (2, 3, 4)}),
+    Scaler("xbrz", "xBRZ", (2, 3, 4, 5, 6), {  # (xBRZ draws any factor up to 6)
+        n: [_pass("edge-smoothing/xbrz/shaders/xbrz-freescale.slang", n)] for n in (2, 3, 4, 5, 6)}),
 )
 BY_ID = {s.id: s for s in SCALERS}
 TO_SCREEN = _pass("interpolation/shaders/bicubic.slang", scale_type="viewport")  # the rest of the way

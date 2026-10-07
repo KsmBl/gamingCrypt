@@ -201,3 +201,23 @@ def test_app_passes_the_algorithm(qtbot, emu, monkeypatch):
     w.game_profiles.set(game.appid, "resolution", "3x")
     w.launch_rom(game)
     assert seen[-1]["scaler"] == "xbrz" and seen[-1]["resolution"] == "3x"
+
+
+def test_5x_and_6x():
+    """xBRZ draws any factor up to 6x, ScaleNx 6x as 3x then 2x; the 3D cores that have them
+    render at 5x / 6x (the PS2 core and Beetle PSX don't)."""
+    assert scalers.resolutions("snes9x", "xbrz") == ["2x", "3x", "4x", "5x", "6x"]
+    assert scalers.resolutions("snes9x", "scale") == ["2x", "3x", "4x", "6x"]
+    assert scalers.resolutions("snes9x", "hq") == ["2x", "3x", "4x"]  # (its passes can't be chained)
+    passes, _t, _v = scalers.preset("scale", "6x", "/pack")
+    assert [p["shader"].rsplit("/", 1)[1] for p in passes] == ["scale3x.slang", "scale2x.slang"]
+    assert [p["scale"] for p in passes] == ["3", "2"]  # 3x, then that 2x: 6x
+    assert scalers.preset("xbrz", "5x", "/pack")[0][0]["scale"] == "5"
+    assert scalers.fit_resolution("snes9x", "scale", "5x") == "4x"  # what it has, nearest
+    assert scalers.describe("snes", "snes9x", "xbrz", "6x") == (
+        "xBRZ 6x: 256×224 drawn at 1536×1344, then scaled to the screen (1280×800)")
+    for core in ("swanstation", "mupen64plus_next", "parallel_n64", "flycast", "ppsspp", "desmume"):
+        assert retroarch.scales(core)[-2:] == ["5x", "6x"], core
+    assert retroarch.UPSCALE["flycast"]["6x"] == {"reicast_internal_resolution": "3840x2880"}
+    assert retroarch.scales("pcsx2") == ["1x", "2x", "4x"] and "5x" not in retroarch.scales("mednafen_psx_hw")
+    assert scalers.texture_options("mupen64plus_next", "xbrz", "6x") == {"mupen64plus-txEnhancementMode": "6xBRZ"}

@@ -193,20 +193,23 @@ def _scales(key: str, values: dict[str, str]) -> dict:
 
 
 # Internal resolution of 3D games (the values as each core names them - read from the cores).
-# The PS2 core knows no 3x; paraLLEl-GS (the "like a PS2" renderer) stays at its native size.
+# The PS2 core knows no 3x, 5x, 6x, Beetle PSX no 3x, 5x, 6x either (powers of two); paraLLEl-GS
+# (the "like a PS2" renderer) stays at its native size.
 UPSCALE = {
     "pcsx2": _scales("pcsx2_upscale_multiplier", {"1x": "1x (Native)", "2x": "2x", "4x": "4x"}),
-    "swanstation": _scales("swanstation_GPU_ResolutionScale", {"1x": "1", "2x": "2", "3x": "3", "4x": "4"}),
+    "swanstation": _scales("swanstation_GPU_ResolutionScale", {"1x": "1", "2x": "2", "3x": "3", "4x": "4", "5x": "5",
+                                                                "6x": "6"}),
     "mednafen_psx_hw": _scales("beetle_psx_hw_internal_resolution", {"1x": "1x(native)", "2x": "2x", "4x": "4x"}),
-    "mupen64plus_next": _scales("mupen64plus-EnableNativeResFactor", {"1x": "1", "2x": "2", "3x": "3", "4x": "4"}),
+    "mupen64plus_next": _scales("mupen64plus-EnableNativeResFactor", {"1x": "1", "2x": "2", "3x": "3", "4x": "4",
+                                                                      "5x": "5", "6x": "6"}),
     "parallel_n64": _scales("parallel-n64-screensize", {"1x": "320x240", "2x": "640x480", "3x": "960x720",
-                                                        "4x": "1280x960"}),
+                                                        "4x": "1280x960", "5x": "1600x1200", "6x": "1920x1440"}),
     "flycast": _scales("reicast_internal_resolution", {"1x": "640x480", "2x": "1280x960", "3x": "1920x1440",
-                                                       "4x": "2560x1920"}),
+                                                       "4x": "2560x1920", "5x": "3200x2400", "6x": "3840x2880"}),
     "ppsspp": _scales("ppsspp_internal_resolution", {"1x": "480x272", "2x": "960x544", "3x": "1440x816",
-                                                     "4x": "1920x1088"}),
+                                                     "4x": "1920x1088", "5x": "2400x1360", "6x": "2880x1632"}),
     "desmume": _scales("desmume_internal_resolution", {"1x": "256x192", "2x": "512x384", "3x": "768x576",
-                                                       "4x": "1024x768"}),
+                                                       "4x": "1024x768", "5x": "1280x960", "6x": "1536x1152"}),
 }
 
 

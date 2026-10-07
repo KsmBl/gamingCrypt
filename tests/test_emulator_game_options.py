@@ -249,7 +249,7 @@ def test_upscale_values_are_the_cores_own():
     """The values were read from the cores themselves (their option lists): the PS2 core knows
     1x / 2x / 4x / 8x, no 3x."""
     assert retroarch.scales("pcsx2") == ["1x", "2x", "4x"]
-    assert retroarch.scales("swanstation") == ["1x", "2x", "3x", "4x"]
+    assert retroarch.scales("swanstation") == ["1x", "2x", "3x", "4x", "5x", "6x"]
     assert retroarch.scales("snes9x") == []  # 2D: nothing to raise
     assert retroarch.UPSCALE["pcsx2"]["2x"] == {"pcsx2_upscale_multiplier": "2x"}
     assert retroarch.UPSCALE["pcsx2"][None] == {"pcsx2_upscale_multiplier": "1x (Native)"}
@@ -309,4 +309,4 @@ def test_resolution_choice_on_the_page(qtbot, window, emu, monkeypatch):
     qtbot.addWidget(ps1)
     ps1.show()
     ps1.options_button.click()
-    assert [ps1.resolution_combo.itemData(i) for i in range(ps1.resolution_combo.count())] == [None, "2x", "3x", "4x"]
+    assert [ps1.resolution_combo.itemData(i) for i in range(ps1.resolution_combo.count())] == [None, "2x", "3x", "4x", "5x", "6x"]
