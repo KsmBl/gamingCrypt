@@ -74,6 +74,97 @@ class RomCard(QFrame):
         return True
 
 
+class SystemUpscalingPage(QWidget):
+    """The upscaling algorithm and resolution every game of a system gets - those without a
+    choice of their own (a game's ⚙ Options)."""
+
+    def __init__(self, tab, system, config: dict, save, parent: QWidget | None = None):
+        super().__init__(parent)
+        from PySide6.QtWidgets import QComboBox, QGridLayout
+
+        from gamingcrypt.emulation import scalers, upscaling
+
+        self.tab, self.system, self.config, self.save = tab, system, config, save
+        self.core = system.cores[0]  # what its games start with unless a game chose another
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(30, 16, 30, 16)
+        top = QHBoxLayout()
+        top.addWidget(tab.back_button())
+        title = QLabel(f"{system.name} · Upscaling")
+        title.setObjectName("title")
+        title.setWordWrap(True)
+        top.addWidget(title, 1)
+        layout.addLayout(top)
+        hint = QLabel("For every game of this system without a choice of its own (a game's ⚙ Options → "
+                      "System default). A game on another core gets what that core has.")
+        hint.setObjectName("cardMeta")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(16)
+        grid.setColumnStretch(1, 1)
+        self.scaler_combo, self.resolution_combo = QComboBox(), QComboBox()
+        for line, (caption, combo) in enumerate((("Upscaling", self.scaler_combo),
+                                                 ("Resolution", self.resolution_combo))):
+            label = QLabel(caption)
+            label.setMinimumWidth(160)
+            grid.addWidget(label, line, 0)
+            grid.addWidget(combo, line, 1)
+        layout.addLayout(grid)
+        self.info = QLabel("")
+        self.info.setObjectName("cardMeta")
+        self.info.setWordWrap(True)
+        layout.addWidget(self.info)
+        layout.addStretch()
+        choice = upscaling.system_choice(config, system.id)
+        available = scalers.choices(self.core)
+        self.scaler_combo.addItem("None" if available or not scalers.is_3d(self.core)
+                                  else "None - this core has no texture upscaling", None)
+        for sid in available:
+            self.scaler_combo.addItem(scalers.BY_ID[sid].name, sid)
+        self.scaler_combo.setCurrentIndex(max(0, self.scaler_combo.findData(choice.get("scaler"))))
+        self.scaler_combo.setEnabled(bool(available))
+        self.scaler_combo.currentIndexChanged.connect(self._scaler_chosen)
+        self.resolution_combo.currentIndexChanged.connect(lambda _i: self._store())
+        self.fill_resolutions(choice.get("resolution"))
+
+    def fill_resolutions(self, chosen: str | None) -> None:
+        from gamingcrypt.emulation import retroarch, scalers
+
+        combo, core = self.resolution_combo, self.core
+        scaler = self.scaler_combo.currentData()
+        combo.blockSignals(True)
+        combo.clear()
+        if scalers.is_3d(core):
+            options = retroarch.scales(core)
+            for scale in options:
+                combo.addItem("Native (like the console)" if scale == "1x" else f"{scale} - sharper, needs more power",
+                              None if scale == "1x" else scale)
+        else:
+            options = scalers.resolutions(core, scaler)
+            for scale in options:
+                combo.addItem("Native (like the console)" if scale == "1x" else f"{scale} - drawn by the algorithm",
+                              None if scale == "1x" else scale)
+            chosen = scalers.fit_resolution(core, scaler, chosen)
+        combo.setEnabled(len(options) > 1)
+        combo.setCurrentIndex(max(0, combo.findData(chosen)))
+        combo.blockSignals(False)
+        self._store()
+
+    def _scaler_chosen(self, _index: int = 0) -> None:
+        self.fill_resolutions(self.resolution_combo.currentData())
+
+    def _store(self) -> None:
+        from gamingcrypt.emulation import scalers, upscaling
+
+        scaler, resolution = self.scaler_combo.currentData(), self.resolution_combo.currentData()
+        upscaling.set_system_choice(self.config, self.system.id, scaler, resolution)
+        self.save(self.config)
+        screen = self.window().size() if self.window() is not None else None
+        size = (screen.width(), screen.height()) if screen is not None and screen.width() > 0 else (1280, 800)
+        self.info.setText(scalers.describe(self.system.id, self.core, scaler, resolution, size))
+
+
 class SystemPage(QWidget):
     """All games of one system, with search."""
 
@@ -96,6 +187,10 @@ class SystemPage(QWidget):
         self.shaders_button.clicked.connect(lambda: tab.open_shaders(system.id))
         self.shaders_button.setVisible(system.emulator == "retroarch" and hasattr(tab, "open_shaders"))
         top.addWidget(self.shaders_button)
+        self.upscaling_button = big_button("🔍  Upscaling")
+        self.upscaling_button.clicked.connect(lambda: tab.open_upscaling(system.id))
+        self.upscaling_button.setVisible(system.emulator == "retroarch" and hasattr(tab, "open_upscaling"))
+        top.addWidget(self.upscaling_button)
         self.add_button = big_button("⬆  Add ROMs")
         self.add_button.clicked.connect(tab.open_upload)
         top.addWidget(self.add_button)
@@ -340,17 +435,37 @@ class RomGamePage(QWidget):
         def current_core() -> str:
             return self.core_combo.currentData() or cores[0]
 
+        from gamingcrypt.emulation import upscaling
+
+        config = self.tab.shader_config[0]  # (the app's config: the system's choice)
+        system_id = self.game.system.id
+
+        def effective() -> tuple[str | None, str | None]:
+            """What the game starts with: its own choice, else its system's."""
+            return upscaling.for_game(config, self.tab.profiles.get(appid), system_id)
+
         def show_info() -> None:
             core = current_core()
-            profile_now = self.tab.profiles.get(appid)
-            text = scalers.describe(self.game.system.id, core, profile_now.get("scaler"),
-                                    profile_now.get("resolution") if self.resolution_combo.isEnabled() else None,
-                                    self.screen_size())
+            scaler, resolution = effective()
+            if not scalers.is_3d(core):
+                scaler = scaler if scaler in scalers.choices(core) else None
+                resolution = scalers.fit_resolution(core, scaler, resolution)
+            elif self.resolution_combo.isEnabled():
+                resolution = retroarch.nearest_scale(core, resolution)
+            else:
+                resolution = None
+            text = scalers.describe(system_id, core, scaler, resolution, self.screen_size())
             from gamingcrypt.emulation import shaders as shader_mod
 
-            if profile_now.get("scaler") and not scalers.is_3d(core) and shader_mod.folder() is None:
+            if scaler and not scalers.is_3d(core) and shader_mod.folder() is None:
                 text += " - the shaders for it aren't installed (./install.sh)"
             self.scaling_info.setText(text)
+
+        def system_label(key: str) -> str:
+            choice = upscaling.system_choice(config, system_id).get(key)
+            if key == "scaler":
+                return scalers.BY_ID[choice].name if choice in scalers.BY_ID else "None"
+            return choice or "Native"
 
         def fill_scalers(core: str) -> None:
             chosen = self.tab.profiles.get(appid).get("scaler")
@@ -358,24 +473,26 @@ class RomGamePage(QWidget):
             combo.blockSignals(True)
             combo.clear()
             available = scalers.choices(core)
+            combo.addItem(f"System default ({system_label('scaler')})", None)
             combo.addItem("None" if available or not scalers.is_3d(core)
-                          else "None - this core has no texture upscaling", None)
+                          else "None - this core has no texture upscaling", upscaling.OFF)
             for sid in available:
                 combo.addItem(scalers.BY_ID[sid].name, sid)
-            combo.setCurrentIndex(max(0, combo.findData(chosen)))
+            combo.setCurrentIndex(max(0, combo.findData(chosen)) if available else 1)  # (none to choose)
             combo.setEnabled(bool(available))
             combo.blockSignals(False)
 
         def fill_resolutions(core: str) -> None:
-            profile_now = self.tab.profiles.get(appid)
-            chosen, scaler = profile_now.get("resolution"), profile_now.get("scaler")
+            chosen = self.tab.profiles.get(appid).get("resolution")
+            scaler = effective()[0]
             combo = self.resolution_combo
             combo.blockSignals(True)
             combo.clear()
+            combo.addItem(f"System default ({system_label('resolution')})", None)
             if scalers.is_3d(core):
-                for scale in retroarch.scales(core):
-                    combo.addItem("Native (like the console)" if scale == "1x"
-                                  else f"{scale} - sharper, needs more power", None if scale == "1x" else scale)
+                combo.addItem("Native (like the console)", upscaling.OFF)
+                for scale in retroarch.scales(core)[1:]:
+                    combo.addItem(f"{scale} - sharper, needs more power", scale)
                 parallel = core == "pcsx2" and self.renderer_combo.currentData() == "accurate"
                 if parallel:
                     combo.clear()
@@ -383,14 +500,16 @@ class RomGamePage(QWidget):
                 combo.setEnabled(not parallel)
             else:  # 2D: the algorithm's factors
                 options = scalers.resolutions(core, scaler if scaler in scalers.choices(core) else None)
-                for scale in options:
-                    combo.addItem("Native (like the console)" if scale == "1x" else f"{scale} - drawn by the algorithm",
-                                  None if scale == "1x" else scale)
+                if options == ["1x"]:
+                    combo.addItem("Native (like the console)", upscaling.OFF)
+                for scale in options if options != ["1x"] else []:
+                    combo.addItem(f"{scale} - drawn by the algorithm", scale)
                 combo.setEnabled(options != ["1x"])
-                fitted = scalers.fit_resolution(core, scaler, chosen)
-                if fitted != chosen and scaler:
-                    self.tab.profiles.set(appid, "resolution", fitted)  # the algorithm needs one it has
-                chosen = fitted
+                if chosen not in (None, upscaling.OFF) and scaler:
+                    fitted = scalers.fit_resolution(core, scaler, chosen)
+                    if fitted != chosen:
+                        self.tab.profiles.set(appid, "resolution", fitted)  # the algorithm needs one it has
+                        chosen = fitted
             combo.setCurrentIndex(max(0, combo.findData(chosen)))
             combo.blockSignals(False)
             show_info()

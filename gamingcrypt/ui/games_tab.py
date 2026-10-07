@@ -904,6 +904,17 @@ class GamesTab(QStackedWidget):
         self.push(ShaderPage(self, system, self.shader_picture(system, names),
                              shaders.system_shaders(config, system_id), store))
 
+    def open_upscaling(self, system_id: str):
+        """The upscaling every game of the system gets (those without their own)."""
+        from gamingcrypt.emulation.systems import BY_ID
+        from gamingcrypt.ui.emulation_pages import SystemUpscalingPage
+
+        config, save = self.shader_config
+        page = SystemUpscalingPage(self, BY_ID[system_id], config, save)
+        self.push(page)
+        page.scaler_combo.setFocus()
+        return page
+
     def open_game_shaders(self, game):
         """The game's own shaders - or its system's."""
         from gamingcrypt.emulation import shaders

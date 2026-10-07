@@ -266,8 +266,8 @@ def test_nfsu2_at_twice_the_resolution(emu, tmp_path):
     retroarch.launch(nfs, emu, tmp_path / "d", tmp_path / "l", resolution="2x", **run)
     options = retroarch.core_options_file(emu, nfs)
     assert 'pcsx2_upscale_multiplier = "2x"' in options.read_text()
-    retroarch.launch(nfs, emu, tmp_path / "d", tmp_path / "l", resolution="3x", **run)  # not a PS2 one
-    assert 'pcsx2_upscale_multiplier = "1x (Native)"' in options.read_text()
+    retroarch.launch(nfs, emu, tmp_path / "d", tmp_path / "l", resolution="6x", **run)  # not a PS2 one
+    assert 'pcsx2_upscale_multiplier = "4x"' in options.read_text()  # the nearest lower one it has
     retroarch.launch(nfs, emu, tmp_path / "d", tmp_path / "l", resolution="4x", renderer="accurate", **run)
     assert 'pcsx2_upscale_multiplier = "1x (Native)"' in options.read_text()  # paraLLEl-GS: as a PS2
     retroarch.launch(nfs, emu, tmp_path / "d", tmp_path / "l", **run)
@@ -293,7 +293,7 @@ def test_resolution_choice_on_the_page(qtbot, window, emu, monkeypatch):
     page.show()
     page.options_button.click()
     combo = page.resolution_combo
-    assert combo.isVisible() and [combo.itemData(i) for i in range(combo.count())] == [None, "2x", "4x"]
+    assert combo.isVisible() and [combo.itemData(i) for i in range(combo.count())] == [None, "none", "2x", "4x"]
     combo.setCurrentIndex(combo.findData("2x"))
     assert window.game_profiles.get(nfs.appid)["resolution"] == "2x"
     page.renderer_combo.setCurrentIndex(1)  # paraLLEl-GS
@@ -309,4 +309,4 @@ def test_resolution_choice_on_the_page(qtbot, window, emu, monkeypatch):
     qtbot.addWidget(ps1)
     ps1.show()
     ps1.options_button.click()
-    assert [ps1.resolution_combo.itemData(i) for i in range(ps1.resolution_combo.count())] == [None, "2x", "3x", "4x", "5x", "6x"]
+    assert [ps1.resolution_combo.itemData(i) for i in range(ps1.resolution_combo.count())] == [None, "none", "2x", "3x", "4x", "5x", "6x"]

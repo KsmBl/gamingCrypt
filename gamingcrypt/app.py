@@ -781,6 +781,9 @@ class MainWindow(QMainWindow):
             return self._rom_started(game, games, ok, message, "Eden")
         profile = self.game_profiles.get(game.appid)
         core = profile.get("core")
+        from gamingcrypt.emulation import upscaling
+
+        scaler, resolution = upscaling.for_game(self.config, profile, game.system.id)  # its own, else its system's
         fetch = getattr(games, "core_fetcher", None)
         if fetch is not None and retroarch.available() and retroarch.find_core(paths, game.system, core) is None:
             return self.download_core_then_launch(game, paths, core, fetch)
@@ -790,9 +793,9 @@ class MainWindow(QMainWindow):
                                        memory_card=profile.get("memory_card"),
                                        widescreen=profile.get("widescreen"),
                                        input_lag=profile.get("input_lag"), renderer=profile.get("renderer"),
-                                       resolution=profile.get("resolution"),
+                                       resolution=resolution,
                                        shaders=shader_choice.for_game(self.config, profile, game.system.id),
-                                       scaler=profile.get("scaler"))
+                                       scaler=scaler)
         if ok:
             self.follow_game_refresh(config_mod.cache_dir() / "logs" / retroarch.LOG_NAME)
             self.speed_mode = "normal"  # RetroArch starts at normal speed

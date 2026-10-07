@@ -213,6 +213,18 @@ UPSCALE = {
 }
 
 
+def nearest_scale(core: str, resolution: str | None) -> str | None:
+    """The resolution, or the nearest lower one the core has (None: native)."""
+    if not resolution or core not in UPSCALE or resolution in UPSCALE[core]:
+        return resolution
+    try:
+        wanted = int(resolution.rstrip("x"))
+    except ValueError:
+        return None
+    lower = [s for s in scales(core) if s != "1x" and int(s.rstrip("x")) <= wanted]
+    return max(lower, key=lambda s: int(s.rstrip("x"))) if lower else None
+
+
 def scales(core: str) -> list[str]:
     """The resolutions a core can render at, "1x" (native) first; [] when it can't be raised."""
     table = UPSCALE.get(core)
@@ -308,6 +320,8 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
     options = dict(MEMORY_CARDS.get(short, {}).get(memory_card or "", {}))
     if short == "pcsx2" and renderer == "accurate":
         resolution = None  # paraLLEl-GS: as a PS2 draws it
+    elif short in UPSCALE:
+        resolution = nearest_scale(short, resolution)  # (a system's choice: e.g. 6x where the core has 4x)
     choices = [(table, choice) for table, choice in ((WIDESCREEN, widescreen), (RENDERERS, renderer),
                                                      (UPSCALE, resolution)) if short in table]
     from gamingcrypt.emulation import scalers

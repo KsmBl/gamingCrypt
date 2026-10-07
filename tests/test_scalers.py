@@ -148,23 +148,24 @@ def items(combo) -> list[str]:
 
 def test_2d_options(qtbot, tab):
     page, game = open_options(tab, "snes")
-    assert items(page.scaler_combo) == ["None", "SuperEagle", "Super 2xSaI", "HQx", "ScaleNx", "xBR", "xBRZ"]
+    assert items(page.scaler_combo) == ["System default (None)", "None", "SuperEagle", "Super 2xSaI", "HQx",
+                                        "ScaleNx", "xBR", "xBRZ"]
     assert not page.resolution_combo.isEnabled()  # no algorithm: the console's size
     page.scaler_combo.setCurrentIndex(page.scaler_combo.findData("hq"))
-    assert page.resolution_combo.isEnabled() and [page.resolution_combo.itemData(i) for i in range(3)] == [
-        "2x", "3x", "4x"]
-    assert tab.profiles.get(game.appid) == {"scaler": "hq", "resolution": "2x"}  # at least 2x
+    assert page.resolution_combo.isEnabled() and [page.resolution_combo.itemData(i) for i in range(4)] == [
+        None, "2x", "3x", "4x"]  # (None: the system's)
+    assert tab.profiles.get(game.appid) == {"scaler": "hq"}
     assert page.scaling_info.text().startswith("HQx 2x: 256×224 drawn at 512×448, then scaled to the screen")
     page.resolution_combo.setCurrentIndex(page.resolution_combo.findData("4x"))
     assert "drawn at 1024×896" in page.scaling_info.text()
     page.scaler_combo.setCurrentIndex(page.scaler_combo.findData("super2xsai"))  # has 2x and 4x
-    assert [page.resolution_combo.itemData(i) for i in range(page.resolution_combo.count())] == ["2x", "4x"]
+    assert [page.resolution_combo.itemData(i) for i in range(page.resolution_combo.count())] == [None, "2x", "4x"]
     assert tab.profiles.get(game.appid)["resolution"] == "4x"
 
 
 def test_3d_options(qtbot, tab):
     page, game = open_options(tab, "n64")
-    assert items(page.scaler_combo) == ["None", "Super 2xSaI", "HQx", "xBRZ"]  # the core's texture ones
+    assert items(page.scaler_combo) == ["System default (None)", "None", "Super 2xSaI", "HQx", "xBRZ"]  # texture ones
     page.scaler_combo.setCurrentIndex(page.scaler_combo.findData("xbrz"))
     page.resolution_combo.setCurrentIndex(page.resolution_combo.findData("3x"))  # both together
     assert tab.profiles.get(game.appid) == {"scaler": "xbrz", "resolution": "3x"}
