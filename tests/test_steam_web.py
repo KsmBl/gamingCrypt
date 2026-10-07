@@ -217,3 +217,21 @@ def test_images_local_cache_then_download(steam_root, tmp_path):
 def test_image_download_failure(steam_root, tmp_path):
     svc = service(steam_root, tmp_path, {"steamstatic": requests.ConnectionError()})
     assert svc.download_image(999) is None
+
+
+def test_genres_from_the_store_page(steam_root, tmp_path):
+    details = {"620": {"success": True, "data": {**DETAILS["620"]["data"], "genres": [
+        {"id": "1", "description": "Action"}, {"id": "25", "description": "Adventure"}, {"id": "x"}]}}}
+    assert api({"appdetails": FakeResponse(details)}).app_details(620)["genres"] == ["Action", "Adventure"]
+    svc = service(steam_root, tmp_path, {"appdetails": FakeResponse(details), "GetNewsForApp": FakeResponse(NEWS)})
+    svc.fetch_metadata(620)
+    assert svc.apply_metadata(SteamGame(620, "Portal 2")).genres == ["Action", "Adventure"]
+    assert svc.stored_metadata(620)["genres"] == ["Action", "Adventure"] and svc.stored_metadata(1) == {}
+    assert not svc.needs_metadata_for(620) and svc.needs_metadata_for(1)
+
+
+def test_store_data_from_before_genres_is_fetched_again(steam_root, tmp_path):
+    svc = service(steam_root, tmp_path, {"appdetails": FakeResponse(DETAILS), "GetNewsForApp": FakeResponse(NEWS)})
+    svc.fetch_metadata(620)
+    svc._metadata["620"].pop("genres")  # cached by an older GamingCrypt
+    assert svc.needs_metadata(SteamGame(620, "Portal 2"))

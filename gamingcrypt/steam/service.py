@@ -160,14 +160,24 @@ class SteamService:
         game.currency = meta.get("currency", "")
         game.description = meta.get("description", "")
         game.store_size = meta.get("storage_bytes")
+        game.genres = list(meta.get("genres") or [])
         if not game.last_updated:
             game.last_updated = meta.get("last_update")
         return game
 
     def needs_metadata(self, game: SteamGame) -> bool:
         meta = self._metadata.get(str(game.appid))
-        # entries cached before sizes were collected are refreshed once
-        return not meta or "storage_bytes" not in meta or self.now() - meta.get("fetched_at", 0) > METADATA_TTL
+        # entries cached before sizes / genres were collected are refreshed once
+        return (not meta or "storage_bytes" not in meta or "genres" not in meta
+                or self.now() - meta.get("fetched_at", 0) > METADATA_TTL)
+
+    def needs_metadata_for(self, appid: int) -> bool:
+        """The same for any app id (e.g. the Steam game a Windows game was matched to)."""
+        return self.needs_metadata(SteamGame(appid, ""))
+
+    def stored_metadata(self, appid: int) -> dict:
+        """What was fetched before (no network); {} when nothing."""
+        return dict(self._metadata.get(str(appid)) or {})
 
     def fetch_metadata(self, appid: int) -> dict:
         """Blocking network fetch of release date, price and latest update; cached on disk."""
@@ -183,6 +193,7 @@ class SteamService:
             "description": details.get("description", ""),
             "last_update": news,
             "storage_bytes": details.get("storage_bytes"),
+            "genres": details.get("genres") or [],
             "fetched_at": int(self.now()),
         }
         with self._lock:

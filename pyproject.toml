@@ -26,3 +26,4 @@ include = ["gamingcrypt*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 qt_api = "pyside6"
+markers = ["store_facts: the Games tab may fetch genres from the store (otherwise off in tests)"]

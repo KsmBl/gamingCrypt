@@ -86,6 +86,7 @@ def test_grid_rows_go_on_with_the_next_row(qtbot, app):
     home = pages["Games"].home
     nav.focus(w.shell.tab_buttons["Games"])
     assert go(qtbot, nav, "D") is home.search
+    assert go(qtbot, nav, "D") is home.genre_combo  # the filters below the search
     assert go(qtbot, nav, "D") is home.favorites_card  # the first one, from the left
     assert go(qtbot, nav, "RR") is home.recent_card
     assert go(qtbot, nav, "R") is home.system_cards["snes"]  # end of the row: the next row

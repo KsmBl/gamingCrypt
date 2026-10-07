@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -23,6 +23,7 @@ class SteamGame:
     description: str = ""
     # Disk space the store asks for (system requirements) - for games that aren't installed
     store_size: int | None = None
+    genres: list[str] = field(default_factory=list)  # from the store ("Racing", "Action" …)
 
     @property
     def playtime_hours(self) -> float:

@@ -151,6 +151,7 @@ class GameDetailPage(QWidget):
             format_playtime(g.playtime_minutes),
             self.size_text(),
             f"Released: {format_date(g.release_date)}",
+            f"Genres: {', '.join(g.genres)}" if g.genres else "",
             f"Price: {format_price(g.price_cents, g.currency)}",
             f"Latest update: {format_date(g.last_updated)}",
             self.protondb_text,

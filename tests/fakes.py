@@ -110,7 +110,14 @@ class FakeService:
             game.release_date = meta.get("release_date")
             game.currency = meta.get("currency", "")
             game.store_size = meta.get("storage_bytes")
+            game.genres = list(meta.get("genres") or [])
         return game
+
+    def needs_metadata_for(self, appid):
+        return appid in self.metadata and appid not in self.fetched
+
+    def stored_metadata(self, appid):
+        return dict(self.metadata.get(appid) or {}) if appid in self.fetched else {}
 
     def search_store(self, term):
         self.store_queries.append(term)

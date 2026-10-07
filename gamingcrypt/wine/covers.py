@@ -1,7 +1,9 @@
 """Covers for Windows games: Steam's store knows most PC games - its search finds the game by the
 folder's name, and its tall library picture is the cover (as for Steam games).
 
-Kept on the drive: <drive>/Windows Games/.covers/<game>.jpg (".nomatch" when there's none).
+Kept on the drive: <drive>/Windows Games/.covers/<game>.jpg (".nomatch" when there's none), and
+the Steam game it was matched to: <game>.appid ("0": none) - its genres and release date come
+from that game's store page (game_facts).
 """
 
 from __future__ import annotations
@@ -45,10 +47,52 @@ class Covers:
         path = self.path(game)
         return path if path.exists() else None
 
-    def fetch(self, game: WindowsGame) -> Path | None:
-        """The cover - downloaded once (None: none found, or offline)."""
+    def appid_path(self, game: WindowsGame) -> Path:
+        return self.folder / f"{game.path.name}.appid"
+
+    def known_appid(self, game: WindowsGame) -> int | None:
+        """The Steam game it was matched to: an app id, 0 (no match) or None (not looked for yet)."""
+        try:
+            return int(self.appid_path(game).read_text().strip())
+        except (OSError, ValueError):
+            return None
+
+    def _remember(self, game: WindowsGame, appid: int) -> None:
+        self.folder.mkdir(parents=True, exist_ok=True)
+        self.appid_path(game).write_text(str(appid))
+
+    def _search(self, name: str) -> dict | None | bool:
+        """The store's best match; None: none; False: offline."""
         from gamingcrypt.movies.metadata import name_score
 
+        try:
+            response = self.get(SEARCH, {"term": name, "cc": "us", "l": "english"})
+        except requests.RequestException:
+            return False
+        if response.status_code != 200:
+            return False
+        try:
+            items = response.json().get("items") or []
+        except ValueError:
+            return False
+        return next((item for item in items if item.get("type", "app") == "app"
+                     and name_score(name, [item.get("name", "")]) >= 2), None)
+
+    def match_appid(self, game: WindowsGame) -> int | None:
+        """Look the game up in the store (for games whose cover came before app ids were kept):
+        its app id, 0 for none; None: offline."""
+        known = self.known_appid(game)
+        if known is not None:
+            return known
+        match = self._search(search_name(game.name))
+        if match is False:
+            return None
+        appid = int(match["id"]) if match else 0
+        self._remember(game, appid)
+        return appid
+
+    def fetch(self, game: WindowsGame) -> Path | None:
+        """The cover - downloaded once (None: none found, or offline)."""
         path = self.path(game)
         if path.exists():
             return path
@@ -58,19 +102,10 @@ class Covers:
                 return None
         except (OSError, ValueError):
             pass
-        name = search_name(game.name)
-        try:
-            response = self.get(SEARCH, {"term": name, "cc": "us", "l": "english"})
-        except requests.RequestException:
+        match = self._search(search_name(game.name))
+        if match is False:
             return None  # offline: later
-        if response.status_code != 200:
-            return None
-        try:
-            items = response.json().get("items") or []
-        except ValueError:
-            return None
-        match = next((item for item in items if item.get("type", "app") == "app"
-                      and name_score(name, [item.get("name", "")]) >= 2), None)
+        self._remember(game, int(match["id"]) if match else 0)
         if match is not None:
             for url in PICTURES:
                 try:

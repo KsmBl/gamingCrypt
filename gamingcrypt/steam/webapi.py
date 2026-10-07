@@ -140,6 +140,7 @@ class SteamWebAPI:
             "description": d.get("short_description", ""),
             "header_image": d.get("header_image", ""),
             "storage_bytes": parse_storage(d.get("linux_requirements"), d.get("pc_requirements")),
+            "genres": [g["description"] for g in d.get("genres") or [] if g.get("description")],
         }
 
     def latest_news_date(self, appid: int) -> int | None:

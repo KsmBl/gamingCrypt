@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import shiboken6
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QStackedWidget, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QStackedWidget,
+                               QVBoxLayout, QWidget)
 
 from gamingcrypt.steam.models import SteamGame
 from gamingcrypt.steam.sorting import filter_games, sort_games
@@ -174,6 +174,27 @@ class GamesHome(QWidget):
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.refresh_results)
         header.addWidget(self.search)
+        # filters of the installed games (genres and years from the store - see game_facts)
+        from gamingcrypt import game_facts
+
+        self.facts: dict = {}  # app id -> Facts, made when needed (invalidate_facts: new info)
+        filters = QHBoxLayout()
+        filters.setSpacing(10)
+        self.genre_combo = QComboBox()
+        self.genre_combo.addItem("All genres", "")
+        self.platform_combo = QComboBox()
+        self.platform_combo.addItem("All platforms", "")
+        self.decade_combo = QComboBox()
+        self.decade_combo.addItem("Any year", "")
+        for key, label in game_facts.DECADES.items():
+            self.decade_combo.addItem(label, key)
+        self.sort_combo = QComboBox()
+        for key, label in game_facts.SORTS.items():
+            self.sort_combo.addItem(label, key)
+        for combo in (self.genre_combo, self.platform_combo, self.decade_combo, self.sort_combo):
+            combo.currentIndexChanged.connect(lambda _i: self.refresh_results())
+            filters.addWidget(combo, 1)
+        header.addLayout(filters)
         self.notice = QLabel("")
         self.notice.setObjectName("status")
         self.notice.setWordWrap(True)
@@ -257,11 +278,16 @@ class GamesHome(QWidget):
         self.continue_card.set_game(last_played(self.installed, roms))
         self.show_continue()
 
+    def narrowed(self) -> bool:
+        """Searching or filtering: the results come first (no libraries, no Continue playing)."""
+        return bool(self.search.text().strip() or self.genre_combo.currentData()
+                    or self.platform_combo.currentData() or self.decade_combo.currentData())
+
     def show_continue(self) -> None:
         """Continue playing: when there's a game, nothing is searched, and it isn't switched off
         (Settings -> Games -> Libraries)."""
         wanted = CONTINUE not in self.tab.library_settings.get("hidden", [])
-        searching = bool(self.search.text().strip())
+        searching = self.narrowed()
         self.continue_card.setVisible(wanted and not searching and self.continue_card.game is not None)
 
     def library_cards(self) -> dict:
@@ -312,7 +338,7 @@ class GamesHome(QWidget):
         shown = sum(key not in hidden for key in self.library_cards()) + (not self.add_card.isHidden())
         for card in [*self.library_cards().values(), self.add_card]:
             card.set_compact(shown > COMPACT_FROM)  # many libraries: smaller cards, five per row
-        searching = bool(self.search.text().strip())
+        searching = self.narrowed()
         self.sources.setVisible(any_shown and not searching)
         self.sources_heading.setVisible(any_shown and not searching)
         self.sources_row.invalidate()  # cards shown / hidden: new height
@@ -332,6 +358,7 @@ class GamesHome(QWidget):
 
     def set_installed(self, games: list[SteamGame]) -> None:
         self.installed = sort_games([g for g in games if g.installed], "name")
+        self.invalidate_facts()
         self.update_continue()
         self.update_favorites()
         self.refresh_results()
@@ -361,17 +388,58 @@ class GamesHome(QWidget):
         card.clicked.connect(self.tab.open_game)
         return card
 
+    def all_games(self) -> list:
+        """Every installed game: Steam, emulated, Windows and Linux."""
+        return [*self.installed, *(g for games in self.tab.roms.values() for g in games), *self.tab.pc_games()]
+
+    def invalidate_facts(self) -> None:
+        """New genres / years (fetched in the background): asked again."""
+        self.facts.clear()
+
+    def update_facts(self, games: list) -> None:
+        from gamingcrypt import game_facts
+
+        missing = [g for g in games if g.appid not in self.facts]
+        if not missing:
+            return
+        for game in missing:
+            self.facts[game.appid] = game_facts.facts_of(game, self.tab)
+        known = {g.appid: self.facts[g.appid] for g in games}
+        for combo, choices in ((self.genre_combo, game_facts.all_genres(known)),
+                               (self.platform_combo, game_facts.all_platforms(known))):
+            current = combo.currentData()
+            combo.blockSignals(True)
+            while combo.count() > 1:
+                combo.removeItem(1)
+            for choice in choices:
+                combo.addItem(choice, choice)
+            if current and combo.findData(current) < 0:
+                combo.addItem(current, current)  # (still chosen, even with no game left)
+            combo.setCurrentIndex(max(0, combo.findData(current)))
+            combo.blockSignals(False)
+
     def refresh_results(self) -> None:
+        from gamingcrypt import game_facts
+
         query = self.search.text()
         searching = bool(query.strip())
+        filtering = self.narrowed() and not searching
         self.apply_libraries()  # (and Continue playing)
-        self.results_heading.setText(f'Results for "{query.strip()}"' if searching else "Installed games")
+        everything = self.all_games()
+        self.update_facts(everything)
         words = query.casefold().split()
         roms = [g for games in [*self.tab.roms.values(), self.tab.pc_games()] for g in games
                 if all(w in g.name.casefold() for w in words)]
         # Steam games and emulated ones together, by name
-        matches = sorted(filter_games(self.installed, query, installed_only=True) + roms,
-                         key=lambda g: g.name.casefold())
+        matches = game_facts.choose(filter_games(self.installed, query, installed_only=True) + roms, self.facts,
+                                    self.genre_combo.currentData() or "", self.platform_combo.currentData() or "",
+                                    self.decade_combo.currentData() or "", self.sort_combo.currentData() or "name")
+        if searching:
+            self.results_heading.setText(f'Results for "{query.strip()}"')
+        elif filtering:
+            self.results_heading.setText(f"Installed games · {len(matches)} of {len(everything)}")
+        else:
+            self.results_heading.setText("Installed games")
         from gamingcrypt.ui.emulation_pages import RomCard
         from gamingcrypt.ui.wine_pages import WindowsCard
 
@@ -397,8 +465,8 @@ class GamesHome(QWidget):
             focus_and_reveal(card)  # hiding/re-adding cards must not lose the selection
         if matches:
             self.empty_label.setText("")
-        elif searching:
-            self.empty_label.setText("No installed game matches your search")
+        elif searching or filtering:
+            self.empty_label.setText("No installed game matches" + (" your search" if searching else " these filters"))
         else:
             self.empty_label.setText("No installed games found")
 
@@ -598,6 +666,7 @@ class GamesTab(QStackedWidget):
         self.home.update_continue()
         self.home.update_favorites()
         self.home.refresh_results()
+        self.fill_facts()
 
     def windows_by_appid(self, appid: int):
         """A Windows or Linux game by its id."""
@@ -670,6 +739,7 @@ class GamesTab(QStackedWidget):
         self.home.update_continue()
         self.home.update_favorites()
         self.home.refresh_results()
+        self.fill_facts()
 
     def linux_runners(self) -> list:
         """Directly - and Steam's runtime when it's there (looked for once)."""
@@ -827,6 +897,67 @@ class GamesTab(QStackedWidget):
         for game in games:
             self.games[game.appid] = game
         self.home.set_installed(games)
+        self.fill_facts()
+
+    # genres and release dates, from the store - one game after the other ---------------------
+    FACTS_DELAY_MS = 1500  # the store answers only so many questions a minute
+
+    def facts_queue(self) -> list:
+        """What's still unknown: ("steam", game) - its store page; ("match", game) - which Steam
+        game a Windows / Linux game is; ("store", appid) - the store page of that one."""
+        needs = getattr(self.service, "needs_metadata", None)
+        if needs is None:
+            return []
+        queue = [("steam", g) for g in self.home.installed if needs(g)]
+        needs_for = getattr(self.service, "needs_metadata_for", None)
+        for game in self.pc_games():
+            covers = getattr(self, f"{game.KIND}_covers", None)
+            if covers is None:
+                continue
+            appid = covers.known_appid(game)
+            if appid is None:
+                queue.append(("match", game))
+            elif appid and needs_for is not None and needs_for(appid):
+                queue.append(("store", appid))
+        return queue
+
+    def fill_facts(self) -> None:
+        if getattr(self, "_filling_facts", False):
+            return
+        queue = self.facts_queue()
+        if not queue:
+            return
+        self._filling_facts = True
+        kind, what = queue[0]
+        service = self.service
+
+        def work():
+            if kind == "steam":
+                service.fetch_metadata(what.appid)
+                service.apply_metadata(what)
+            elif kind == "store":
+                service.fetch_metadata(what)
+            else:
+                appid = getattr(self, f"{what.KIND}_covers").match_appid(what)
+                if appid is None:
+                    raise OSError("offline")
+                if appid and getattr(service, "needs_metadata_for", lambda _a: False)(appid):
+                    service.fetch_metadata(appid)
+
+        def done(_result=None) -> None:
+            self._filling_facts = False
+            home = self.home
+            home.invalidate_facts()
+            if home.narrowed() or (home.sort_combo.currentData() or "name") != "name":
+                home.refresh_results()  # what's shown may change
+            else:
+                home.update_facts(home.all_games())  # only the choices: the list doesn't jump while browsing
+            QTimer.singleShot(self.FACTS_DELAY_MS, self, self.fill_facts)
+
+        def failed(_exc) -> None:
+            self._filling_facts = False  # offline: again with the next reload
+
+        run_async(work, done, failed, owner=self)
 
     # a game's picture, chosen by hand ----------------------------------------
     def open_cover_picker(self, game) -> None:

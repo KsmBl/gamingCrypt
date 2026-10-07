@@ -127,3 +127,13 @@ def controller_not_scrolling():
     from gamingcrypt.ui.widgets import FoldingHeader
 
     FoldingHeader.programmatic = False
+
+
+@pytest.fixture(autouse=True)
+def no_store_lookups(request, monkeypatch):
+    """The Games tab asks the store for genres in the background: never in tests (it would go
+    online and keep redrawing the list) - except where a test is about it (@pytest.mark.store_facts)."""
+    if request.node.get_closest_marker("store_facts") is None:
+        from gamingcrypt.ui.games_tab import GamesTab
+
+        monkeypatch.setattr(GamesTab, "fill_facts", lambda self: None)
