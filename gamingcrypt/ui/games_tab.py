@@ -191,9 +191,18 @@ class GamesHome(QWidget):
         self.sort_combo = QComboBox()
         for key, label in game_facts.SORTS.items():
             self.sort_combo.addItem(label, key)
-        for combo in (self.genre_combo, self.platform_combo, self.decade_combo, self.sort_combo):
-            combo.currentIndexChanged.connect(lambda _i: self.refresh_results())
+        from gamingcrypt.ui import view_state
+
+        kept = view_state.load("games")  # as they were left
+        for combo, key in ((self.genre_combo, "genre"), (self.platform_combo, "platform"),
+                           (self.decade_combo, "decade"), (self.sort_combo, "sort")):
+            view_state.restore(combo, kept.get(key))
+            combo.currentIndexChanged.connect(lambda _i: self.filters_changed())
             filters.addWidget(combo, 1)
+        self.clear_button = big_button("✕  Clear filters")
+        self.clear_button.clicked.connect(self.clear_filters)
+        filters.addWidget(self.clear_button)
+        self.clear_button.setVisible(self.filtering())
         header.addLayout(filters)
         self.notice = QLabel("")
         self.notice.setObjectName("status")
@@ -278,10 +287,32 @@ class GamesHome(QWidget):
         self.continue_card.set_game(last_played(self.installed, roms))
         self.show_continue()
 
+    def filtering(self) -> bool:
+        return bool(self.genre_combo.currentData() or self.platform_combo.currentData()
+                    or self.decade_combo.currentData())
+
     def narrowed(self) -> bool:
         """Searching or filtering: the results come first (no libraries, no Continue playing)."""
-        return bool(self.search.text().strip() or self.genre_combo.currentData()
-                    or self.platform_combo.currentData() or self.decade_combo.currentData())
+        return bool(self.search.text().strip()) or self.filtering()
+
+    def filters_changed(self) -> None:
+        from gamingcrypt.ui import view_state
+
+        view_state.save("games", {"genre": self.genre_combo.currentData() or "",
+                                  "platform": self.platform_combo.currentData() or "",
+                                  "decade": self.decade_combo.currentData() or "",
+                                  "sort": self.sort_combo.currentData() or "name"})
+        self.clear_button.setVisible(self.filtering())
+        self.refresh_results()
+
+    def clear_filters(self) -> None:
+        """Every game again (the order stays)."""
+        for combo in (self.genre_combo, self.platform_combo, self.decade_combo):
+            combo.blockSignals(True)
+            combo.setCurrentIndex(0)
+            combo.blockSignals(False)
+        self.filters_changed()
+        self.genre_combo.setFocus()  # (the button is gone: the highlight stays in the row)
 
     def show_continue(self) -> None:
         """Continue playing: when there's a game, nothing is searched, and it isn't switched off

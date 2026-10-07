@@ -176,6 +176,10 @@ class MoviesHome(QWidget):
             self.sort_combo.addItem(label, key)
         self.sort_combo.currentIndexChanged.connect(lambda _i: self.refresh())
         filters.addWidget(self.sort_combo)
+        self.clear_button = big_button("✕  Clear filters")
+        self.clear_button.clicked.connect(self.clear_filters)
+        self.clear_button.hide()
+        filters.addWidget(self.clear_button)
         header.addLayout(filters)
         self.notice = QLabel("")
         self.notice.setObjectName("status")
@@ -211,7 +215,26 @@ class MoviesHome(QWidget):
         self._focus_filter = KeyboardFocusFilter(self.keyboard, self)
         self._focus_filter.watch(self.search)
         layout.addWidget(self.keyboard)
+        from gamingcrypt.ui import view_state
+
+        kept = view_state.load(self.NOUNS)  # as they were left ("movies" / "shows")
+        for combo, key in ((self.genre_combo, "genre"), (self.age_combo, "age"), (self.sort_combo, "sort")):
+            combo.blockSignals(True)
+            view_state.restore(combo, kept.get(key))
+            combo.blockSignals(False)
+        self.set_state(kept.get("state") if kept.get("state") in self.state_buttons else "all")
+
+    def filtering(self) -> bool:
+        return bool(self.watch_state != "all" or self.genre_combo.currentData()
+                    or self.age_combo.currentData() is not None)
+
+    def clear_filters(self) -> None:
+        for combo in (self.genre_combo, self.age_combo):
+            combo.blockSignals(True)
+            combo.setCurrentIndex(0)
+            combo.blockSignals(False)
         self.set_state("all")
+        self.state_buttons["all"].setFocus()
 
     def show_notice(self, text: str, error: bool = False) -> None:
         set_status(self.notice, text, error=error)
@@ -257,6 +280,14 @@ class MoviesHome(QWidget):
             card.set_item(movie)
 
     def refresh(self) -> None:
+        from gamingcrypt.ui import view_state
+
+        state = {"state": self.watch_state, "genre": self.genre_combo.currentData() or "",
+                 "age": self.age_combo.currentData(), "sort": self.sort_combo.currentData() or ""}
+        if state != getattr(self, "_kept", None):  # (refreshed often: written only when it changed)
+            self._kept = state
+            view_state.save(self.NOUNS, state)
+        self.clear_button.setVisible(self.filtering())
         movies = self.tab.items
         shown = self.filtered(movies, self.search.text(), self.watch_state, self.genre_combo.currentData() or "",
                               self.age_combo.currentData())
