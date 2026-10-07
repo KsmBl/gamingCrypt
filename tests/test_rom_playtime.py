@@ -131,3 +131,76 @@ def test_favorites_count_only_games_still_there(qtbot, tab, paths):
     tab.reload_roms()
     qtbot.waitUntil(lambda: bool(tab.roms.get("psx")))
     assert tab.home.favorites_card.subtitle.text() == "2 games"  # back: still a favorite
+
+
+def test_play_time_is_kept_while_playing_and_after_a_restart(paths):
+    """Saved every minute while it runs: GamingCrypt (or gaming mode) restarting in the middle
+    of a game doesn't lose the session - and seconds count, not rounded minutes."""
+    import json
+
+    clock = [1_700_000_000.0]
+    log = PlayLog(paths, now=lambda: clock[0])
+    mario = scan(paths, BY_ID["snes"])[0]
+    log.start(mario)
+    clock[0] += 90
+    log.tick(mario.appid)
+    assert log.get(mario.appid)[1] == 1  # 1.5 min so far, kept
+    clock[0] += 600
+    restarted = PlayLog(paths, now=lambda: clock[0])  # GamingCrypt started again, the game still runs
+    assert restarted.finish(mario.appid) == 10  # from the last tick, read back from the file
+    assert restarted.get(mario.appid)[1] == 11 and "playing_since" not in json.loads(
+        (paths.config / "playtime.json").read_text())[str(mario.appid)]
+    for _ in range(4):  # four short sessions of 40 s: 2 min 40 s, not 4 x 1 min
+        log.start(mario)
+        clock[0] += 40
+        log.finish(mario.appid)
+    assert log.get(mario.appid)[1] == 14  # 11.5 min + 2 min 40 s (rounded per session it was 15)
+
+
+def test_older_minutes_are_kept(paths):
+    import json
+
+    mario = scan(paths, BY_ID["snes"])[0]
+    (paths.config / "playtime.json").write_text(json.dumps({str(mario.appid): {"minutes": 30, "last_played": 5}}))
+    clock = [1_700_000_000.0]
+    log = PlayLog(paths, now=lambda: clock[0])
+    assert log.get(mario.appid) == (5, 30)
+    log.start(mario)
+    clock[0] += 120
+    log.finish(mario.appid)
+    assert log.get(mario.appid)[1] == 32
+
+
+def test_the_app_keeps_it_every_minute(qtbot, paths, monkeypatch):
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.emulation import retroarch
+    from gamingcrypt.ui.games_tab import GamesTab
+    from tests.fakes import FakeService
+
+    monkeypatch.setattr(retroarch, "launch", lambda *a, **k: (True, "Starting"))
+    monkeypatch.setattr(MainWindow, "PLAY_TICK_MS", 50)
+    pages = {}
+
+    def factory(cfg):
+        pages["Games"] = GamesTab(FakeService(), library_settings=cfg["libraries"], emulation_root=str(paths.root))
+        return dict(pages)
+
+    window = MainWindow(copy.deepcopy(DEFAULTS), lambda c: None, page_factory=factory)
+    qtbot.addWidget(window)
+    window.show_shell()
+    log = pages["Games"].play_log
+    clock = [1_700_000_000.0]
+    log.now = lambda: clock[0]
+    mario = scan(paths, BY_ID["snes"])[0]
+    window.launch_rom(mario)
+    monkeypatch.setattr(type(window.game_watcher), "active", property(lambda self: True))
+    window.game_watcher.appid = mario.appid
+    clock[0] += 300
+    qtbot.waitUntil(lambda: log.get(mario.appid)[1] == 5)  # kept while it runs
+
+
+def test_rom_cards_show_the_play_time(qtbot, tab):
+    from gamingcrypt.ui.emulation_pages import RomCard
+
+    mario = tab.roms["snes"][0]
+    assert RomCard(mario).meta.text().endswith("· 1.0 h")

@@ -68,6 +68,11 @@ class MainWindow(QMainWindow):
         self.game_watcher.failed.connect(self.game_ended)
         self.game_watcher.finished.connect(lambda appid: self.game_over(appid))
         self.game_watcher.failed.connect(lambda appid: self.game_over(appid, failed=True))
+        from PySide6.QtCore import QTimer as Clock  # (QTimer is imported further down in here too)
+
+        self.play_clock = Clock(self)  # an emulated game's play time, kept every minute while it runs
+        self.play_clock.timeout.connect(self.keep_play_time)
+        self.play_clock.start(self.PLAY_TICK_MS)
         # Gaming mode: games started elsewhere (Big Picture, a self-restart we missed) must be
         # taken in too - otherwise gamescope's focus order would keep them hidden.
         from PySide6.QtCore import QTimer
@@ -496,6 +501,20 @@ class MainWindow(QMainWindow):
             log.info("app %s: own power limit %s W", appid, profile["power_w"])
             self.apply_power_profile()
         self.apply_fps_limit(profile.get("fps", 0))
+
+    PLAY_TICK_MS = 60_000
+
+    def keep_play_time(self) -> None:
+        from gamingcrypt.emulation.library import EMU_APPID_BASE
+
+        appid = self.game_watcher.appid if self.game_watcher.active else None
+        games = self.shell.pages.get("Games") if self.shell is not None else None
+        play_log = getattr(games, "play_log", None)
+        if appid is not None and appid >= EMU_APPID_BASE and play_log is not None:
+            try:
+                play_log.tick(appid)
+            except OSError as exc:  # (the drive)
+                log.warning("play time of %s not kept: %s", appid, exc)
 
     def game_ended(self, appid: int | None = None) -> None:
         from gamingcrypt.emulation.library import EMU_APPID_BASE

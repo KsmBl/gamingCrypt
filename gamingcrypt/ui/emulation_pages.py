@@ -9,7 +9,8 @@ from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEd
 
 from gamingcrypt.emulation.library import RomGame
 from gamingcrypt.emulation.systems import SHORT, System
-from gamingcrypt.ui.game_widgets import COVER_H, COVER_W, Cover, card_margins, format_size, placeholder_cover
+from gamingcrypt.ui.game_widgets import (COVER_H, COVER_W, Cover, card_margins, format_playtime, format_size,
+                                        placeholder_cover)
 from gamingcrypt.ui.widgets import FlowLayout, big_button, enable_touch_scroll, set_status
 
 def load_rom_cover(label: QLabel, game: RomGame, covers, w: int, h: int) -> None:
@@ -61,7 +62,8 @@ class RomCard(QFrame):
         title.setFixedHeight(58)
         title.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(title)
-        self.meta = QLabel(format_size(game.size))
+        played = f" · {format_playtime(game.minutes).removesuffix(' played')}" if game.minutes else ""
+        self.meta = QLabel(format_size(game.size) + played)
         self.meta.setObjectName("cardMeta")
         layout.addWidget(self.meta)
 
