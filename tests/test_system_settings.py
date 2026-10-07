@@ -192,7 +192,7 @@ def test_audio_switch_device_and_volume(qtbot):
 
 def test_settings_sub_tabs(qtbot):
     tab, *_ = make(qtbot, display=FakeDisplay(), audio=FakeAudio())
-    assert list(tab.sub_buttons) == ["Device", "Network", "Controller", "Games", "Storage", "Security", "Health", "Updates"]
+    assert list(tab.sub_buttons) == ["Device", "Network", "Services", "Controller", "Games", "Storage", "Security", "Health", "Updates"]
     assert tab.current_sub_tab == "Device"
     page = tab.sub_pages["Security"].widget()
     assert not tab.reset_button.isVisibleTo(tab.sub_stack)

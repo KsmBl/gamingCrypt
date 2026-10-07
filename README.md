@@ -44,6 +44,7 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
 - 🎬 **Movies and shows** with covers, descriptions and cast looked up automatically; resume
   where you stopped and watched marks; episodes are grouped into seasons.
 - 📶 **Upload over Wi-Fi**: add ROMs, games and videos from a browser (QR code) or a network share.
+- 🖧 **Services**: switch on SSH, or share your whole drive in the network while it's unlocked.
 - 🕹️ **Controller first**: console-style D-pad navigation, stick and trigger calibration, button
   remapping, and a quick menu (volume, brightness, refresh rate, FPS limit, force quit) during games.
 - ⚙️ **Device settings**: resolution, refresh rate, brightness, power limit (TDP), audio devices.

@@ -427,10 +427,14 @@ class MainWindow(QMainWindow):
             self.bring_to_front()
 
         def work():
+            from gamingcrypt.emulation.sharing import DriveShare, drive_share_password
+
             for appid in running.running_appids():
                 running.force_quit(appid)
             if service is not None:
                 library_setup.close_steam(service.client, timeout=20)
+            if drive_share_password():
+                DriveShare().stop(force=True)  # its connections would keep the drive busy
             return unlocker.dismount()
 
         def done(result) -> None:

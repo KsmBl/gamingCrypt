@@ -21,7 +21,7 @@ from gamingcrypt.ui.system_settings import AudioSection, DisplaySection, PowerSe
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button, enable_touch_scroll, set_status
 
-SUB_TABS = ["Device", "Network", "Controller", "Games", "Storage", "Security", "Health", "Updates"]
+SUB_TABS = ["Device", "Network", "Services", "Controller", "Games", "Storage", "Security", "Health", "Updates"]
 LOCK_AFTER_SLEEP = [("Never", None), ("Right away", 0), ("After 5 minutes", 5), ("After 15 minutes", 15),
                     ("After 1 hour", 60)]
 API_KEY_RE = re.compile(r"^[0-9A-Fa-f]{32}$")
@@ -92,6 +92,8 @@ class SettingsTab(QStackedWidget):
         updater=None,
         wifi=None,
         bluetooth=None,
+        ssh=None,
+        drive_share=None,
     ):
         super().__init__(parent)
         self.config = config
@@ -158,6 +160,14 @@ class SettingsTab(QStackedWidget):
         layout.addWidget(self.wifi_section)
         self.bluetooth_section = BluetoothSection(bluetooth)
         layout.addWidget(self.bluetooth_section)
+        layout.addStretch()
+
+        # Services (SSH, the drive as network share)
+        from gamingcrypt.ui.services_page import ServicesPage
+
+        layout = page("Services")
+        self.services_page = ServicesPage(config, save, ssh=ssh, share=drive_share)
+        layout.addWidget(self.services_page)
         layout.addStretch()
 
         # Controller
@@ -427,6 +437,8 @@ class SettingsTab(QStackedWidget):
         if name == "Network":
             self.wifi_section.refresh()
             self.bluetooth_section.refresh()
+        if name == "Services":
+            self.services_page.refresh()
         if name == "Updates" and self.updates_page.info is None:
             self.updates_page.check()
 

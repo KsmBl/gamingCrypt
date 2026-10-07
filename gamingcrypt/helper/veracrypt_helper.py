@@ -22,7 +22,7 @@ import tempfile
 VERACRYPT = "/usr/bin/veracrypt"  # replaced by install.sh
 # Raised whenever the helper learns something new: GamingCrypt compares it with the
 # installed helper ("helper version") and asks to finish the update when it's older.
-HELPER_VERSION = 2
+HELPER_VERSION = 3
 RYZENADJ = "/usr/bin/ryzenadj"
 EFIBOOTMGR = ["/usr/bin/efibootmgr", "/usr/sbin/efibootmgr"]
 SYS = "/sys"
@@ -420,9 +420,14 @@ def set_boot_next(args: list[str], run=subprocess.run, efibootmgr: str | None = 
     return result.returncode
 
 
-# --- SMB share of the Emulation folder, only while the upload page is open ---------------
+# --- SMB shares: one Samba for both ------------------------------------------------------
+# "temp": a folder of the drive, only while an upload page is open; "drive": the whole
+# drive, as long as it's switched on in Settings -> Services. They share one smbd (one port
+# 445) and one password (Samba keeps one per user), so starting or stopping one never
+# ends the other.
 SMB_RUN = "/run/gamingcrypt-smb"
 SMB_SHARE = "GamingCrypt"
+SMB_SHARES = {"temp": SMB_SHARE, "drive": "GamingCrypt-Drive"}
 SMB_TOOLS = {"smbd": ["/usr/bin/smbd", "/usr/sbin/smbd"], "smbpasswd": ["/usr/bin/smbpasswd", "/usr/sbin/smbpasswd"]}
 
 
@@ -430,8 +435,9 @@ def _tool(name: str) -> str | None:
     return next((p for p in SMB_TOOLS[name] if os.path.exists(p)), None)
 
 
-def smb_config(path: str, user: str, run_dir: str = SMB_RUN) -> str:
-    return f"""[global]
+def smb_config(shares: dict[str, str], user: str, run_dir: str = SMB_RUN) -> str:
+    """shares: key ("temp" / "drive") -> folder."""
+    text = f"""[global]
 server string = GamingCrypt
 workgroup = WORKGROUP
 security = user
@@ -448,17 +454,57 @@ disable netbios = yes
 load printers = no
 printing = bsd
 printcap name = /dev/null
-[{SMB_SHARE}]
-path = {path}
+"""
+    for key in SMB_SHARES:
+        if key in shares:
+            text += f"""[{SMB_SHARES[key]}]
+path = {shares[key]}
 valid users = {user}
 force user = {user}
 read only = no
 create mask = 0644
 directory mask = 0755
 """
+    return text
+
+
+def _smb_shares(run_dir: str) -> dict[str, str]:
+    shares = {}
+    for key in SMB_SHARES:
+        try:
+            with open(os.path.join(run_dir, "shares", key)) as fh:
+                shares[key] = fh.read()
+        except OSError:
+            pass
+    return shares
+
+
+def _smbd_pid(run_dir: str, kill=os.kill) -> int | None:
+    """The running smbd, or None."""
+    try:
+        with open(os.path.join(run_dir, "smbd.pid")) as fh:
+            pid = int(fh.read().strip())
+        kill(pid, 0)
+        return pid
+    except (OSError, ValueError):
+        return None
+
+
+def _end_smbd(run_dir: str, kill=os.kill, wait: float = 5.0) -> None:
+    pid = _smbd_pid(run_dir, kill)
+    if pid is None:
+        return
+    try:
+        kill(pid, signal.SIGTERM)
+    except OSError:
+        return
+    deadline = time.monotonic() + wait
+    while time.monotonic() < deadline and _smbd_pid(run_dir, kill) == pid:
+        time.sleep(0.1)
 
 
 def smb_stop(run_dir: str = SMB_RUN, kill=os.kill) -> int:
+    """Everything off: smbd ends, its state is gone."""
     try:
         with open(os.path.join(run_dir, "smbd.pid")) as fh:
             kill(int(fh.read().strip()), signal.SIGTERM)
@@ -470,15 +516,35 @@ def smb_stop(run_dir: str = SMB_RUN, kill=os.kill) -> int:
     return 0
 
 
+def share_folder_ok(key: str, folder: str, user_home: str, user_uid: int | None) -> str | None:
+    """None if the folder may be shared, else why not. temp: inside your home; drive: also a
+    drive mounted below /mnt, /media or /run/media - and always a folder that is yours."""
+    if any(ord(c) < 32 for c in folder):
+        return "bad folder name"
+    home = os.path.realpath(user_home)
+    inside = folder.startswith(home.rstrip("/") + "/")
+    if key == "temp" and not inside:
+        return "only a folder inside your home can be shared"
+    if key == "drive" and not (inside or mount_point_ok(folder, user_home)):
+        return "only a drive inside your home, /mnt, /media or /run/media can be shared"
+    if not os.path.isdir(folder):
+        return "only a folder inside your home can be shared" if key == "temp" else "the drive isn't there"
+    if user_uid is not None and os.stat(folder).st_uid != user_uid:
+        return "only your own folders can be shared"
+    return None
+
+
 def smb_start(args: list[str], password: str, user_home: str | None, user_name: str | None,
-              run=subprocess.run, run_dir: str = SMB_RUN) -> int:
-    if len(args) != 1 or not user_home or not user_name:
+              run=subprocess.run, run_dir: str = SMB_RUN, key: str = "temp", uid: int | None = None,
+              kill=os.kill) -> int:
+    """Add (or move) one share; the other one keeps running."""
+    if len(args) != 1 or not user_home or not user_name or key not in SMB_SHARES:
         print("Error: gamingcrypt helper: usage: smb-start <folder in your home>", file=sys.stderr)
         return 2
     folder = os.path.realpath(args[0])
-    home = os.path.realpath(user_home)
-    if not folder.startswith(home.rstrip("/") + "/") or not os.path.isdir(folder):
-        print("Error: gamingcrypt helper: only a folder inside your home can be shared", file=sys.stderr)
+    error = share_folder_ok(key, folder, user_home, uid)
+    if error:
+        print(f"Error: gamingcrypt helper: {error}", file=sys.stderr)
         return 2
     if not 8 <= len(password) <= 64 or "\n" in password:
         print("Error: gamingcrypt helper: bad password", file=sys.stderr)
@@ -487,24 +553,91 @@ def smb_start(args: list[str], password: str, user_home: str | None, user_name: 
     if smbd is None or smbpasswd is None:
         print("Error: gamingcrypt helper: Samba is not installed (run ./install.sh)", file=sys.stderr)
         return 2
-    smb_stop(run_dir)
-    for sub in ("private", "lock", "state", "cache", "ncalrpc"):
+    shares = _smb_shares(run_dir)
+    pid = _smbd_pid(run_dir, kill)
+    if pid is None:
+        smb_stop(run_dir, kill)  # leftovers of an smbd that ended
+        shares = {}
+    shares[key] = folder
+    for sub in ("private", "lock", "state", "cache", "ncalrpc", "shares"):
         os.makedirs(os.path.join(run_dir, sub), mode=0o700, exist_ok=True)
     conf = os.path.join(run_dir, "smb.conf")
     with open(conf, "w") as fh:
-        fh.write(smb_config(folder, user_name, run_dir))
+        fh.write(smb_config(shares, user_name, run_dir))
     added = run([smbpasswd, "-c", conf, "-s", "-a", user_name], input=f"{password}\n{password}\n",
                 capture_output=True, text=True)
     if added.returncode != 0:
         print("Error: gamingcrypt helper: could not set the share password", file=sys.stderr)
-        smb_stop(run_dir)
+        if pid is None:
+            smb_stop(run_dir, kill)
         return 2
+    with open(os.path.join(run_dir, "shares", key), "w") as fh:
+        fh.write(folder)
+    if pid is not None:
+        kill(pid, signal.SIGHUP)  # smbd reads its config again: the other share stays connected
+        return 0
     started = run([smbd, "-s", conf, "-D"], capture_output=True, text=True)
     if started.returncode != 0:
         print("Error: gamingcrypt helper: Samba didn't start (is another Samba running?)", file=sys.stderr)
-        smb_stop(run_dir)
+        smb_stop(run_dir, kill)
         return 2
     return 0
+
+
+def smb_unshare(key: str, run=subprocess.run, run_dir: str = SMB_RUN, kill=os.kill) -> int:
+    """Remove one share. The last one ends smbd; removing the drive share restarts smbd, so
+    no connection keeps the drive busy (it is unmounted right after on lock)."""
+    shares = _smb_shares(run_dir)
+    shares.pop(key, None)
+    pid = _smbd_pid(run_dir, kill)
+    if not shares or pid is None:
+        return smb_stop(run_dir, kill)
+    try:
+        os.remove(os.path.join(run_dir, "shares", key))
+    except OSError:
+        pass
+    conf = os.path.join(run_dir, "smb.conf")
+    with open(conf) as fh:
+        user = re.search(r"^valid users = (.+)$", fh.read(), re.M)
+    with open(conf, "w") as fh:
+        fh.write(smb_config(shares, user.group(1) if user else "nobody", run_dir))
+    if key != "drive":
+        kill(pid, signal.SIGHUP)
+        return 0
+    _end_smbd(run_dir, kill)
+    smbd = _tool("smbd")
+    started = run([smbd, "-s", conf, "-D"], capture_output=True, text=True) if smbd else None
+    if started is None or started.returncode != 0:
+        return smb_stop(run_dir, kill)
+    return 0
+
+
+# --- SSH ---------------------------------------------------------------------------------
+SSH_UNITS = ["sshd.service", "ssh.service"]  # Arch / Debian
+UNIT_DIRS = ["/etc/systemd/system", "/usr/lib/systemd/system", "/lib/systemd/system"]
+SYSTEMCTL = ["/usr/bin/systemctl", "/bin/systemctl"]
+
+
+def ssh_unit(exists=os.path.exists) -> str | None:
+    return next((u for u in SSH_UNITS for d in UNIT_DIRS if exists(os.path.join(d, u))), None)
+
+
+def set_ssh(args: list[str], run=subprocess.run, exists=os.path.exists) -> int:
+    """ssh on | off: start the SSH server now and on every boot, or stop it."""
+    if args not in (["on"], ["off"]):
+        print("Error: gamingcrypt helper: usage: ssh on|off", file=sys.stderr)
+        return 2
+    unit = ssh_unit(exists)
+    systemctl = next((p for p in SYSTEMCTL if exists(p)), None)
+    if unit is None or systemctl is None:
+        print("Error: gamingcrypt helper: OpenSSH is not installed", file=sys.stderr)
+        return 2
+    verb = "enable" if args == ["on"] else "disable"
+    result = run([systemctl, verb, "--now", unit], capture_output=True, text=True)
+    if result.returncode != 0:
+        print("Error: gamingcrypt helper: " + ((result.stderr or "").strip() or f"systemctl {verb} failed"),
+              file=sys.stderr)
+    return result.returncode
 
 
 def main(argv: list[str]) -> int:
@@ -515,12 +648,15 @@ def main(argv: list[str]) -> int:
         return set_power_limit(argv[1:])
     if argv[:1] == ["boot-next"]:
         return set_boot_next(argv[1:])
-    if argv[:1] == ["smb-stop"]:
-        return smb_stop()
-    if argv[:1] == ["smb-start"]:
+    if argv[:1] == ["ssh"]:
+        return set_ssh(argv[1:])
+    if argv[:1] in (["smb-stop"], ["smb-drive-stop"]):
+        return smb_unshare("drive" if argv[0] == "smb-drive-stop" else "temp")
+    if argv[:1] in (["smb-start"], ["smb-drive-start"]):
         uid, _gid, home = invoking_user()
         name = pwd.getpwuid(uid).pw_name if uid is not None else None
-        return smb_start(argv[1:], sys.stdin.readline().rstrip("\n"), home, name)
+        key = "drive" if argv[0] == "smb-drive-start" else "temp"
+        return smb_start(argv[1:], sys.stdin.readline().rstrip("\n"), home, name, key=key, uid=uid)
     uid, gid, home = invoking_user()
     error = validate(argv, home, uid)
     if error:

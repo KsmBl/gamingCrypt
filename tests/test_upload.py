@@ -148,8 +148,9 @@ def test_helper_smb_config_only_shares_inside_home(tmp_path):
 
 def test_helper_main_dispatches_smb(monkeypatch):
     seen = []
-    monkeypatch.setattr(helper, "smb_stop", lambda: seen.append("stop") or 0)
-    assert helper.main(["smb-stop"]) == 0 and seen == ["stop"]
+    monkeypatch.setattr(helper, "smb_unshare", lambda key: seen.append(key) or 0)
+    assert helper.main(["smb-stop"]) == 0 and helper.main(["smb-drive-stop"]) == 0
+    assert seen == ["temp", "drive"]
 
 
 def test_share_client():

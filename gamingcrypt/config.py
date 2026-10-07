@@ -48,6 +48,12 @@ DEFAULTS: dict[str, Any] = {
         # boot entry like "0000", "none", or None = every system found.
         "other_os": None,
     },
+    "services": {
+        # Settings -> Services: the whole drive as SMB share while it's unlocked, and
+        # its password (made the first time it's switched on).
+        "smb_drive": False,
+        "smb_password": "",
+    },
     "appearance": {
         # "dark" or "light" (Settings -> Device -> Appearance).
         "theme": "dark",

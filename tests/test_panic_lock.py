@@ -130,3 +130,28 @@ def test_quick_menu_lock_button(qtbot, window):
     window.quick_menu.lock_button.click()
     qtbot.waitUntil(lambda: Unlocker.dismounted == [1])
     assert window.screen_name == "lock" and not window.quick_menu.isVisible()
+
+
+def test_lock_stops_the_drive_share_before_unmounting(qtbot, window, monkeypatch):
+    from gamingcrypt.emulation import sharing
+
+    order = []
+    monkeypatch.setitem(sharing._drive, "password", "MapleOtterSwan")
+    monkeypatch.setattr(sharing.SmbShare, "stop", lambda self: order.append(("stop", self.STOP)))
+    monkeypatch.setattr(Unlocker, "dismount", lambda self: order.append("dismount") or UnlockResult(True, ""))
+    window.shell.open_power_menu()
+    window.shell.power_menu.lock_button.click()
+    qtbot.waitUntil(lambda: "dismount" in order)
+    assert order == [("stop", "smb-drive-stop"), "dismount"]
+    assert sharing.drive_share_password() == ""
+
+
+def test_lock_without_the_drive_share_calls_no_helper(qtbot, window, monkeypatch):
+    from gamingcrypt.emulation import sharing
+
+    stopped = []
+    monkeypatch.setattr(sharing.SmbShare, "stop", lambda self: stopped.append(1))
+    window.shell.open_power_menu()
+    window.shell.power_menu.lock_button.click()
+    qtbot.waitUntil(lambda: Unlocker.dismounted == [1])
+    assert stopped == []
