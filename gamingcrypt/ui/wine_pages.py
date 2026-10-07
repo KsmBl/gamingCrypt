@@ -129,6 +129,25 @@ class WindowsLibraryPage(QWidget):
             self.grid.addWidget(card)
         self.shown: list[int] = [g.appid for g in games]
 
+    def set_games(self, games: list) -> None:
+        """Games came or went while the page is open (copied over the network share …): the
+        cards follow - new ones in their place, gone ones away; search, highlight and scrolling stay."""
+        keep = {g.appid for g in games}
+        for appid in [a for a in self.cards if a not in keep]:
+            self.cards.pop(appid).deleteLater()
+        self.grid.take_all()
+        for game in games:
+            card = self.cards.get(game.appid)
+            if card is None:
+                card = WindowsCard(game, covers=getattr(self.tab, f"{self.KIND}_covers", None))
+                card.clicked.connect(getattr(self.tab, f"open_{self.KIND}_game"))
+                self.cards[game.appid] = card
+            self.grid.addWidget(card)
+        self.games = games
+        self.search.setPlaceholderText(f"🔍  Search {len(games)} games")
+        self.empty.setVisible(not games)
+        self.refresh()
+
     def refresh(self) -> None:
         words = self.search.text().casefold().split()
         self.shown = []

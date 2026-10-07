@@ -589,6 +589,11 @@ class GamesTab(QStackedWidget):
         self.addWidget(page)
         self.setCurrentWidget(page)
 
+    def pages_of(self, kind, exactly: bool = False) -> list:
+        """The open pages of that kind (also under another one, e.g. a game opened from it)."""
+        found = [self.widget(i) for i in range(self.count())]
+        return [p for p in found if (type(p) is kind if exactly else isinstance(p, kind))]
+
     def back(self) -> None:
         page = self.currentWidget()
         if page is self.home:
@@ -663,6 +668,10 @@ class GamesTab(QStackedWidget):
             for game in games:
                 self.rom_games[game.appid] = game
         self.home.set_systems(found)
+        from gamingcrypt.ui.emulation_pages import SystemPage
+
+        for page in self.pages_of(SystemPage):  # an open system's list shows what came / went
+            page.set_games(found.get(page.system.id, []))
         self.home.update_continue()
         self.home.update_favorites()
         self.home.refresh_results()  # emulated games are in "Installed games" too
@@ -693,10 +702,9 @@ class GamesTab(QStackedWidget):
         self.windows_games = games
         from gamingcrypt.ui.wine_pages import WindowsLibraryPage
 
-        page = self.currentWidget()
-        if type(page) is WindowsLibraryPage and [g.appid for g in page.games] != [g.appid for g in games]:
-            self.back()  # open again with what's there now
-            self.open_windows_library()
+        for page in self.pages_of(WindowsLibraryPage, exactly=True):  # open: shows what came / went
+            if [g.appid for g in page.games] != [g.appid for g in games]:
+                page.set_games(games)
         self.home.apply_libraries()
         self.home.update_continue()
         self.home.update_favorites()
@@ -766,10 +774,9 @@ class GamesTab(QStackedWidget):
         self.linux_games = games
         from gamingcrypt.ui.wine_pages import LinuxLibraryPage
 
-        page = self.currentWidget()
-        if isinstance(page, LinuxLibraryPage) and [g.appid for g in page.games] != [g.appid for g in games]:
-            self.back()  # open again with what's there now
-            self.open_linux_library()
+        for page in self.pages_of(LinuxLibraryPage):  # open: shows what came / went
+            if [g.appid for g in page.games] != [g.appid for g in games]:
+                page.set_games(games)
         self.home.apply_libraries()
         self.home.update_continue()
         self.home.update_favorites()

@@ -114,3 +114,45 @@ def test_the_app_tells_and_shows_them(qtbot, tmp_path, monkeypatch):
         qtbot.waitUntil(lambda: not w._looking_for_arrivals)
     assert w.toasts.shown[-1] == "New on your drive: Super Mario World (SNES)"
     qtbot.waitUntil(lambda: "snes" in pages["Games"].roms)  # the Games tab shows it
+
+
+def test_an_open_list_shows_new_games(qtbot, tmp_path):
+    """A system's list - or the Windows games, even under a game opened from it - shows what
+    came in, in place: the search stays, the page isn't left."""
+    from gamingcrypt.ui.emulation_pages import SystemPage
+    from gamingcrypt.ui.games_tab import GamesTab
+    from gamingcrypt.ui.wine_pages import WindowsLibraryPage
+    from tests.fakes import FakeService
+
+    root = drive(tmp_path)
+    snes = root / "Emulation" / "roms" / "snes"
+    (snes / "Super Mario World (USA).sfc").write_bytes(b"x")
+    (root / "Windows Games" / "Celeste").mkdir()
+    (root / "Windows Games" / "Celeste" / "Celeste.exe").write_bytes(b"MZ")
+    tab = GamesTab(FakeService(), emulation_root=str(root / "Emulation"), windows_root=str(root / "Windows Games"))
+    tab.covers = tab.windows_covers = None
+    qtbot.addWidget(tab)
+    tab.show()
+    qtbot.waitUntil(lambda: "snes" in tab.roms and len(tab.windows_games) == 1)
+    tab.open_system("snes")
+    page = tab.currentWidget()
+    page.search.setText("mario")
+    (snes / "Super Mario Kart (USA).sfc").write_bytes(b"x")
+    (snes / "Zelda (USA).sfc").write_bytes(b"x")
+    tab.reload_roms()
+    qtbot.waitUntil(lambda: len(page.cards) == 3)
+    assert tab.currentWidget() is page and isinstance(page, SystemPage)
+    assert page.search.text() == "mario" and len(page.shown) == 2  # the search still applies
+    assert page.search.placeholderText() == "🔍  Search 3 games"
+    (snes / "Zelda (USA).sfc").unlink()
+    tab.reload_roms()
+    qtbot.waitUntil(lambda: len(page.cards) == 2)
+    tab.back()
+    tab.open_windows_library()
+    library = tab.currentWidget()
+    tab.open_windows_game(tab.windows_games[0])  # a game page over the list
+    (root / "Windows Games" / "Hades").mkdir()
+    (root / "Windows Games" / "Hades" / "Hades.exe").write_bytes(b"MZ")
+    tab.reload_windows()
+    qtbot.waitUntil(lambda: len(library.cards) == 2)
+    assert isinstance(library, WindowsLibraryPage) and tab.currentWidget() is not library  # still on the game
