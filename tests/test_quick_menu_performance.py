@@ -100,9 +100,27 @@ def test_without_a_game_the_power_limit_is_the_settings_one(qtbot, window):
 def test_overlay_button(qtbot, window, monkeypatch):
     switched = []
     monkeypatch.setattr(gs, "set_overlay_wanted", lambda on: switched.append(on) or True)
+    window.game_watcher.appid, window.game_watcher.phase = 620, "playing"
     window.toggle_quick_menu()
     window.quick_menu.overlay_button.click()
     assert switched == [True]
+    window.game_watcher._stop()
+
+
+def test_overlay_switch_is_off_without_a_game(qtbot, window, monkeypatch):
+    """It's only drawn over a game: without one, the switch is greyed out and says so."""
+    switched = []
+    monkeypatch.setattr(gs, "set_overlay_wanted", lambda on: switched.append(on) or True)
+    window.toggle_quick_menu()
+    button = window.quick_menu.overlay_button
+    assert button.isVisible() and not button.isEnabled() and button.text() == "Performance overlay · in games"
+    button.click()
+    assert switched == []
+    window.quick_menu.close_menu()
+    window.game_watcher.appid, window.game_watcher.phase = 620, "playing"
+    window.toggle_quick_menu()
+    assert button.isEnabled() and button.text() == "Performance overlay"
+    window.game_watcher._stop()
 
 
 def test_overlay_only_over_games(tmp_path):

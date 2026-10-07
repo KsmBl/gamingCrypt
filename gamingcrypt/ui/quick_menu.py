@@ -319,6 +319,9 @@ class QuickMenu(QWidget):
         self.overlay_button.blockSignals(True)
         self.overlay_button.setChecked(bool(overlay))
         self.overlay_button.blockSignals(False)
+        # it's only drawn over a game: without one the switch would seem to do nothing
+        self.overlay_button.setEnabled(in_game)
+        self.overlay_button.setText("Performance overlay" if in_game else "Performance overlay · in games")
         self.screenshot_button.setVisible(in_game)
         self.tools_row.setVisible(overlay is not None or in_game)
 
