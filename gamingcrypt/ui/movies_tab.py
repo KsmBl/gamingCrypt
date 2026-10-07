@@ -103,6 +103,9 @@ class MovieCard(Tappable):
         self.cover.setPixmap(movie_cover(self.movie, COVER_W, COVER_H))
 
 
+COMBO_MIN = 200  # px a filter drop-down keeps in one row with the chips
+
+
 class ContinueWatching(QFrame):
     """What was watched last, right at the top: one tap to go on (as Continue playing for games)."""
 
@@ -235,26 +238,37 @@ class MoviesHome(QWidget):
             button.clicked.connect(lambda _=False, k=key: self.set_state(k))
             self.state_buttons[key] = button
             filters.addWidget(button)
+        # the drop-downs: beside the chips while they fit, else in a row of their own (big text)
+        self.choices = QWidget()
+        choices = QHBoxLayout(self.choices)
+        choices.setContentsMargins(0, 0, 0, 0)
+        choices.setSpacing(10)
         self.genre_combo = QComboBox()
         self.genre_combo.addItem("All genres", "")
         self.genre_combo.currentIndexChanged.connect(lambda _i: self.refresh())
-        filters.addWidget(self.genre_combo, 1)
+        choices.addWidget(self.genre_combo, 1)
         self.age_combo = QComboBox()
         self.age_combo.addItem("Any age", None)
         for age in library.AGES:
             self.age_combo.addItem(f"Up to FSK {age}", age)
         self.age_combo.currentIndexChanged.connect(lambda _i: self.refresh())
-        filters.addWidget(self.age_combo)
+        choices.addWidget(self.age_combo)
         self.sort_combo = QComboBox()
         for key, label in self.sorts().items():
             self.sort_combo.addItem(label, key)
         self.sort_combo.currentIndexChanged.connect(lambda _i: self.refresh())
-        filters.addWidget(self.sort_combo)
+        choices.addWidget(self.sort_combo)
         self.clear_button = big_button("✕  Clear filters")
         self.clear_button.clicked.connect(self.clear_filters)
         self.clear_button.hide()
-        filters.addWidget(self.clear_button)
+        choices.addWidget(self.clear_button)
+        filters.addWidget(self.choices, 1)
         header.addLayout(filters)
+        self.filter_row, self.second_row = filters, QHBoxLayout()
+        header.addLayout(self.second_row)
+        from gamingcrypt.ui import theme as _theme
+
+        _theme.on_change(self.fit_filters)  # a bigger text size
         self.notice = QLabel("")
         self.notice.setObjectName("status")
         self.notice.setWordWrap(True)
@@ -299,6 +313,31 @@ class MoviesHome(QWidget):
             view_state.restore(combo, kept.get(key))
             combo.blockSignals(False)
         self.set_state(kept.get("state") if kept.get("state") in self.state_buttons else "all")
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API
+        super().resizeEvent(event)
+        self.fit_filters()
+
+    def showEvent(self, event) -> None:  # noqa: N802 - Qt API
+        super().showEvent(event)
+        self.fit_filters()  # (sized while it was hidden)
+
+    def fit_filters(self) -> None:
+        """The drop-downs beside the chips if all of it fits the width, else below them."""
+        shown = [*self.state_buttons.values()]
+        if not self.clear_button.isHidden():
+            shown.append(self.clear_button)
+        combos = (self.genre_combo, self.age_combo, self.sort_combo)
+        # the chips mustn't be cut; a drop-down may shorten its text a little (down to COMBO_MIN)
+        needed = sum(w.sizeHint().width() for w in shown) + sum(min(c.sizeHint().width(), COMBO_MIN) for c in combos)
+        needed += 10 * (len(shown) + len(combos) - 1)
+        margins = self.layout().contentsMargins()
+        room = self.width() - margins.left() - margins.right()  # (the bar over the list gets it later)
+        below = needed > room > 0
+        target = self.second_row if below else self.filter_row
+        if target.indexOf(self.choices) < 0:
+            (self.filter_row if below else self.second_row).removeWidget(self.choices)
+            target.addWidget(self.choices, 1)
 
     def filtering(self) -> bool:
         return bool(self.watch_state != "all" or self.genre_combo.currentData()
@@ -364,6 +403,7 @@ class MoviesHome(QWidget):
             self._kept = state
             view_state.save(self.NOUNS, state)
         self.clear_button.setVisible(self.filtering())
+        self.fit_filters()
         movies = self.tab.items
         self.continue_card.set_item(self.continue_with(movies))
         self.continue_card.setVisible(self.continue_card.item is not None and not self.filtering()

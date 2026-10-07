@@ -57,6 +57,8 @@ DEFAULTS: dict[str, Any] = {
     "appearance": {
         # "dark" or "light" (Settings -> Device -> Appearance).
         "theme": "dark",
+        # "normal", "large" or "larger" (every text 100 / 115 / 130 %).
+        "text_size": "normal",
     },
     "libraries": {
         # Libraries not shown on the Games tab (Settings -> Games -> Libraries).

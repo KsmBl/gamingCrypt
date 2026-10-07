@@ -12,7 +12,7 @@ from gamingcrypt.ui import theme
 @pytest.fixture(autouse=True)
 def back_to_dark():
     yield
-    theme.apply(theme.DEFAULT)
+    theme.apply(theme.DEFAULT, size="normal")
 
 
 def test_both_themes_have_every_colour():
@@ -126,3 +126,43 @@ def test_window_redraws_its_pictures_when_switched(qtbot):
     old = dict(home.cards)
     theme.apply("light")
     assert all(home.cards.get(k) is not card for k, card in old.items())  # new cards, drawn in light
+
+
+def test_text_size_makes_every_text_bigger():
+    normal = theme.stylesheet(theme.PALETTES["dark"])
+    assert "QLabel#title { font-size: 34px;" in normal
+    theme.apply("dark", size="larger")
+    assert "QLabel#title { font-size: 44px;" in theme.STYLESHEET and "font-size: 26px;" in theme.STYLESHEET  # 20 -> 26
+    theme.apply("light")  # switching the theme keeps the size
+    assert theme.text_size == "larger" and "QLabel#title { font-size: 44px;" in theme.STYLESHEET
+    theme.apply("dark", size="huge")  # unknown: normal
+    assert theme.text_size == "normal" and theme.STYLESHEET == normal
+    config = copy.deepcopy(DEFAULTS)
+    assert theme.size_from_config(config) == "normal"
+
+
+def test_text_size_in_settings(qtbot):
+    from PySide6.QtWidgets import QApplication
+
+    from gamingcrypt.ui.system_settings import AppearanceSection
+
+    config = copy.deepcopy(DEFAULTS)
+    saved = []
+    section = AppearanceSection(config, lambda c: saved.append(copy.deepcopy(c)))
+    qtbot.addWidget(section)
+    assert section.size_buttons["normal"].isChecked()
+    app = QApplication.instance()
+    before = app.styleSheet()
+    try:
+        section.size_buttons["large"].click()
+        assert saved[-1]["appearance"]["text_size"] == "large" and theme.text_size == "large"
+        assert app.styleSheet() == theme.STYLESHEET and "font-size: 23px;" in app.styleSheet()  # 20 -> 23
+        assert section.size_buttons["large"].isChecked() and not section.size_buttons["normal"].isChecked()
+    finally:
+        app.setStyleSheet(before)
+
+
+def test_the_tab_rows_keep_their_size():
+    """They must fit the 1280 px screen - with every text size."""
+    theme.apply("dark", size="larger")
+    assert "padding: 16px 20px;\n    font-size: 22px;" in theme.STYLESHEET  # QPushButton#tab

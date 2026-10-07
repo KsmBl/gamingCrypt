@@ -1729,7 +1729,7 @@ def main(argv: list[str] | None = None) -> int:
         wait_and_activate()
         return 0
     log_path = setup_log(config_mod.cache_dir())
-    theme.apply(theme.from_config(cfg), app)  # dark or light (Settings -> Device)
+    theme.apply(theme.from_config(cfg), app, theme.size_from_config(cfg))  # dark or light, text size (Settings -> Device)
     from gamingcrypt.system.controls import SystemControls
     from gamingcrypt.ui.tasks import run_async
 

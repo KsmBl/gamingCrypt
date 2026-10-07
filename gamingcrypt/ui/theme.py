@@ -12,6 +12,9 @@ from typing import Callable
 
 THEMES = {"dark": "Dark", "light": "Light"}
 DEFAULT = "dark"
+# Settings -> Device -> Appearance: every text this much bigger (for reading at arm's length)
+TEXT_SIZES = {"normal": ("Normal", 1.0), "large": ("Large", 1.15), "larger": ("Larger", 1.3)}
+text_size = "normal"
 
 PALETTES = {
     "dark": {
@@ -205,13 +208,36 @@ QToolTip {{ background: {c['SURFACE_HI']}; color: {c['TEXT']}; border: 1px solid
 """
 
 
-def apply(name: str, app=None) -> str:
-    """Switch to a theme ("dark" / "light"); with ``app``, its stylesheet too. The name used."""
-    global current, STYLESHEET
+FIXED_SIZE = ("QPushButton#tab",)  # the tab rows: short words, and they must fit the screen's width
+
+
+def scaled(sheet: str, factor: float) -> str:
+    """Every font size in the stylesheet times ``factor`` (but the tab rows')."""
+    import re
+
+    if factor == 1.0:
+        return sheet
+
+    def rule(match: re.Match) -> str:
+        text = match.group(0)
+        selector = text.split("{")[0].split("*/")[-1].strip()  # (after a comment in front of it)
+        if selector.startswith(FIXED_SIZE):
+            return text
+        return re.sub(r"font-size: (\d+)px", lambda m: f"font-size: {round(int(m.group(1)) * factor)}px", text)
+
+    return re.sub(r"[^{}]*\{[^{}]*\}", rule, sheet)  # rule by rule: selector { … }
+
+
+def apply(name: str, app=None, size: str | None = None) -> str:
+    """Switch to a theme ("dark" / "light") - and a text size (TEXT_SIZES), if given; with
+    ``app``, its stylesheet too. The name used."""
+    global current, STYLESHEET, text_size
     name = name if name in PALETTES else DEFAULT
     current = name
+    if size is not None:
+        text_size = size if size in TEXT_SIZES else "normal"
     globals().update(PALETTES[name])
-    STYLESHEET = stylesheet(PALETTES[name])
+    STYLESHEET = scaled(stylesheet(PALETTES[name]), TEXT_SIZES[text_size][1])
     if app is not None:
         app.setStyleSheet(STYLESHEET)
     for listener in list(_listeners):
@@ -228,6 +254,10 @@ def on_change(listener: Callable[[], None]) -> None:
 
 def from_config(config: dict) -> str:
     return (config.get("appearance") or {}).get("theme") or DEFAULT
+
+
+def size_from_config(config: dict) -> str:
+    return (config.get("appearance") or {}).get("text_size") or "normal"
 
 
 apply(DEFAULT)

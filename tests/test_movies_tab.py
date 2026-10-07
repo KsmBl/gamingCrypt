@@ -681,3 +681,24 @@ def test_movie_page_fits_the_screen(qtbot, root):
     assert page.scroll.widget().minimumSizeHint().width() <= viewport.width()
     right = page.options_button.mapTo(viewport, page.options_button.rect().topRight()).x()
     assert right <= viewport.width() and page.cover.mapTo(viewport, page.cover.rect().topLeft()).x() >= 0
+
+
+def test_filters_go_below_the_chips_with_big_text(qtbot, root):
+    """With a bigger text size the chips and drop-downs don't fit one row: the drop-downs go
+    below instead of the chips being cut ("Jnwatchec")."""
+    from gamingcrypt.ui import theme
+
+    tab = make_tab(qtbot, root)
+    tab.resize(1280, 700)
+    home = tab.home
+    try:
+        tab.setStyleSheet(theme.STYLESHEET)
+        home.fit_filters()
+        assert home.filter_row.indexOf(home.choices) >= 0  # normal: one row
+        theme.apply(theme.DEFAULT, size="larger")
+        tab.setStyleSheet(theme.STYLESHEET)
+        home.fit_filters()
+        assert home.second_row.indexOf(home.choices) >= 0
+        qtbot.waitUntil(lambda: all(b.width() >= b.sizeHint().width() for b in home.state_buttons.values()))
+    finally:
+        theme.apply(theme.DEFAULT, size="normal")

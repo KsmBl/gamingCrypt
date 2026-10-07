@@ -89,11 +89,41 @@ class AppearanceSection(Section):
         line.addWidget(caption)
         line.addLayout(row, 1)
         self.body.addLayout(line)
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        self.size_buttons = {}
+        for key, (label, _factor) in theme.TEXT_SIZES.items():
+            button = big_button(label, choice=True)
+            button.setMinimumWidth(180)
+            button.clicked.connect(lambda _=False, k=key: self.choose_size(k))
+            row.addWidget(button)
+            self.size_buttons[key] = button
+        row.addStretch()
+        caption = QLabel("Text size")
+        caption.setFixedWidth(220)
+        line = QHBoxLayout()
+        line.addWidget(caption)
+        line.addLayout(row, 1)
+        self.body.addLayout(line)
         self._show(theme.current)
 
     def _show(self, name: str) -> None:
+        from gamingcrypt.ui import theme
+
         for key, button in self.buttons.items():
             button.setChecked(key == name)
+        for key, button in self.size_buttons.items():
+            button.setChecked(key == theme.text_size)
+
+    def choose_size(self, size: str) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        from gamingcrypt.ui import theme
+
+        self.config.setdefault("appearance", {})["text_size"] = size
+        self.save(self.config)
+        theme.apply(theme.current, QApplication.instance(), size)
+        self._show(theme.current)
 
     def choose(self, name: str) -> None:
         from PySide6.QtWidgets import QApplication
