@@ -965,6 +965,17 @@ class GamesTab(QStackedWidget):
 
         open_picker(self, game, self.refresh_covers, lambda text: self.home.show_notice(text, error=True))
 
+    def gamepad_north(self) -> bool:
+        """Y: another picture for the highlighted game (card or page)."""
+        from gamingcrypt.ui.cover_picker import game_of
+
+        window = self.window()
+        game = game_of(window.focusWidget() if window else None, self)
+        if game is None:
+            return False
+        self.open_cover_picker(game)
+        return True
+
     def refresh_covers(self, game) -> None:
         """Every picture of that game in the tab (cards, Continue playing, its page) anew."""
         from gamingcrypt.ui.cover_picker import game_of, load_game_cover

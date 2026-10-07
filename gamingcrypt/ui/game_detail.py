@@ -98,10 +98,10 @@ class GameDetailPage(QWidget):
             grid.addWidget(label, row, 0)
             grid.addWidget(combo, row, 1)
         options.addLayout(grid)
-        from gamingcrypt.ui.cover_picker import picture_button
+        from gamingcrypt.ui.cover_picker import picture_button, picture_row
 
         self.picture_button = picture_button(lambda: tab.open_cover_picker(self.game))
-        options.addWidget(self.picture_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        options.addWidget(picture_row(self.picture_button))
         self.uninstall_button = big_button("🗑 Uninstall", "danger")
         self.uninstall_button.clicked.connect(self.uninstall_tapped)
         options.addWidget(self.uninstall_button, alignment=Qt.AlignmentFlag.AlignLeft)

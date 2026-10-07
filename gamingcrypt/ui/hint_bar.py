@@ -22,7 +22,23 @@ def hints_for(widget: QWidget | None) -> str:
         first = "Ⓐ  Open     ◀ ▶  Tabs"
     else:
         first = "Ⓐ  Select     Ⓑ  Back"
+    if has_picture(widget):
+        first += "     Ⓨ  Picture"
     return f"{first}     {COMMON}"
+
+
+def has_picture(widget: QWidget | None) -> bool:
+    """A game's, movie's or show's card or page: Y chooses another picture."""
+    if widget is None:
+        return False
+    from gamingcrypt.ui.cover_picker import CoverPicker, game_of, media_of
+
+    node = widget
+    while node is not None:
+        if isinstance(node, CoverPicker):
+            return False
+        node = node.parentWidget()
+    return game_of(widget, None) is not None or media_of(widget, None) is not None
 
 
 class HintBar(QLabel):

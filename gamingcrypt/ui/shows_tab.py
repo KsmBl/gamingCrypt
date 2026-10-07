@@ -267,10 +267,10 @@ class ShowPage(QWidget):
         self.files_label.setObjectName("cardMeta")
         self.files_label.setWordWrap(True)
         self.options_layout.addWidget(self.files_label)
-        from gamingcrypt.ui.cover_picker import picture_button
+        from gamingcrypt.ui.cover_picker import picture_button, picture_row
 
         self.picture_button = picture_button(lambda: tab.open_cover_picker(self.show_item))
-        self.options_layout.addWidget(self.picture_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.options_layout.addWidget(picture_row(self.picture_button))
         self.remove_button = big_button("🗑 Remove show", "danger")
         self.remove_button.clicked.connect(self.ask_remove)
         self.options_layout.addWidget(self.remove_button, alignment=Qt.AlignmentFlag.AlignLeft)

@@ -383,10 +383,10 @@ class MoviePage(QWidget):
         self.file_label.setObjectName("cardMeta")
         self.file_label.setWordWrap(True)
         self.options_layout.addWidget(self.file_label)
-        from gamingcrypt.ui.cover_picker import picture_button
+        from gamingcrypt.ui.cover_picker import picture_button, picture_row
 
         self.picture_button = picture_button(lambda: tab.open_cover_picker(self.movie))
-        self.options_layout.addWidget(self.picture_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.options_layout.addWidget(picture_row(self.picture_button))
         self.remove_button = big_button("🗑 Remove", "danger")
         self.remove_button.clicked.connect(self.ask_remove)
         self.options_layout.addWidget(self.remove_button, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -674,6 +674,17 @@ class MoviesTab(QStackedWidget):
 
         open_picker(self, item, self.cover_changed, lambda text: self.home.show_notice(text, error=True),
                     title=item.title)
+
+    def gamepad_north(self) -> bool:
+        """Y: another poster for the highlighted movie / show (card or page)."""
+        from gamingcrypt.ui.cover_picker import media_of
+
+        window = self.window()
+        item = media_of(window.focusWidget() if window else None, self)
+        if item is None:
+            return False
+        self.open_cover_picker(item)
+        return True
 
     def cover_changed(self, item) -> None:
         self.movie_changed(item)  # its card and page

@@ -199,10 +199,10 @@ class RomGamePage(QWidget):
         options.setSpacing(12)
         if game.system.emulator == "retroarch":
             options.addLayout(self._options())
-        from gamingcrypt.ui.cover_picker import picture_button
+        from gamingcrypt.ui.cover_picker import picture_button, picture_row
 
         self.picture_button = picture_button(lambda: tab.open_cover_picker(self.game))
-        options.addWidget(self.picture_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        options.addWidget(picture_row(self.picture_button))
         self.remove_button = big_button("🗑 Remove", "danger")
         self.remove_button.clicked.connect(self.ask_remove)
         options.addWidget(self.remove_button, alignment=Qt.AlignmentFlag.AlignLeft)

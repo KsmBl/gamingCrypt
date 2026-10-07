@@ -61,6 +61,19 @@ def picture_button(open_picker) -> QWidget:
     return button
 
 
+def picture_row(button: QWidget) -> QWidget:
+    """The button, and that there are quicker ways (holding is easy to miss)."""
+    row = QWidget()
+    line = QHBoxLayout(row)
+    line.setContentsMargins(0, 0, 0, 0)
+    line.setSpacing(14)
+    line.addWidget(button)
+    note = QLabel("or hold any picture · Ⓨ on the controller")
+    note.setObjectName("cardMeta")
+    line.addWidget(note, 1)
+    return row
+
+
 def load_game_cover(label: QLabel, game, tab, w: int, h: int) -> None:
     """Draw the game's cover into the label again - as its card does."""
     from gamingcrypt.emulation.library import RomGame
