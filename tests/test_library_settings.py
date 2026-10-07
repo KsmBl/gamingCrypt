@@ -64,3 +64,44 @@ def test_main_window_wires_settings_to_the_games_tab(qtbot):
     settings = window.shell.pages["Settings"]
     settings.library_buttons["steam"].click()
     assert not pages["Games"].home.steam_card.isVisibleTo(pages["Games"].home)
+
+
+def played():
+    from gamingcrypt.steam.models import SteamGame
+
+    return FakeService(games=[SteamGame(620, "Portal 2", installed=True, last_played=1_700_000_000)])
+
+
+def test_continue_playing_can_be_switched_off(qtbot):
+    cfg = copy.deepcopy(DEFAULTS)
+    saved = []
+    games = GamesTab(played(), library_settings=cfg["libraries"])
+    settings = SettingsTab(cfg, saved.append)
+    qtbot.addWidget(games)
+    qtbot.addWidget(settings)
+    games.show()
+    settings.libraries_changed.connect(games.home.apply_libraries)
+    home = games.home
+    home.set_installed(played().installed_games())
+    assert home.continue_card.game is not None and home.continue_card.isVisible()
+    button = settings.library_buttons["continue"]
+    assert button.text() == "✓  Continue playing"
+    button.click()
+    assert saved[-1]["libraries"]["hidden"] == ["continue"] and not home.continue_card.isVisible()
+    home.set_installed(played().installed_games())  # a game ended: still off
+    home.search.setText("portal")
+    home.search.setText("")
+    assert not home.continue_card.isVisible()
+    button.click()
+    assert home.continue_card.isVisible() and saved[-1]["libraries"]["hidden"] == []
+
+
+def test_continue_playing_stays_off_after_a_restart(qtbot):
+    cfg = copy.deepcopy(DEFAULTS)
+    cfg["libraries"]["hidden"] = ["continue"]
+    games = GamesTab(played(), library_settings=cfg["libraries"])
+    qtbot.addWidget(games)
+    games.show()
+    games.home.set_installed(played().installed_games())
+    assert games.home.continue_card.game is not None and not games.home.continue_card.isVisible()
+    assert games.home.steam_card.isVisible()  # the libraries are still there

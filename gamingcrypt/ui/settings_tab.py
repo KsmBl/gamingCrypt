@@ -313,7 +313,7 @@ class SettingsTab(QStackedWidget):
 
     def _libraries_section(self) -> QWidget:
         """Which libraries the Games tab shows."""
-        from gamingcrypt.ui.games_tab import LIBRARIES
+        from gamingcrypt.ui.games_tab import CONTINUE, LIBRARIES
 
         box = QWidget()
         column = QVBoxLayout(box)
@@ -327,7 +327,7 @@ class SettingsTab(QStackedWidget):
         row = QHBoxLayout()
         hidden = set(self.config.setdefault("libraries", {"hidden": []}).setdefault("hidden", []))
         self.library_buttons = {}
-        for key, name in LIBRARIES.items():
+        for key, name in {CONTINUE: "Continue playing", **LIBRARIES}.items():
             button = big_button("", checkable=True)
             button.setChecked(key not in hidden)
             self._library_text(button, name)

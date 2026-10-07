@@ -35,6 +35,9 @@ def heading(text: str) -> QLabel:
     return label
 
 
+CONTINUE = "continue"  # in the hidden libraries: no Continue playing on the Games tab
+
+
 class ContinueCard(QFrame):
     """The game played last, right at the top: one tap to play on."""
 
@@ -252,6 +255,14 @@ class GamesHome(QWidget):
     def update_continue(self) -> None:
         roms = [game for games in self.tab.roms.values() for game in games] + self.tab.pc_games()
         self.continue_card.set_game(last_played(self.installed, roms))
+        self.show_continue()
+
+    def show_continue(self) -> None:
+        """Continue playing: when there's a game, nothing is searched, and it isn't switched off
+        (Settings -> Games -> Libraries)."""
+        wanted = CONTINUE not in self.tab.library_settings.get("hidden", [])
+        searching = bool(self.search.text().strip())
+        self.continue_card.setVisible(wanted and not searching and self.continue_card.game is not None)
 
     def library_cards(self) -> dict:
         cards = {"favorites": self.favorites_card, "steam": self.steam_card, "recent": self.recent_card}
@@ -305,6 +316,7 @@ class GamesHome(QWidget):
         self.sources.setVisible(any_shown and not searching)
         self.sources_heading.setVisible(any_shown and not searching)
         self.sources_row.invalidate()  # cards shown / hidden: new height
+        self.show_continue()
 
     def update_favorites(self) -> None:
         count = len(self.tab.favorites())
@@ -352,8 +364,7 @@ class GamesHome(QWidget):
     def refresh_results(self) -> None:
         query = self.search.text()
         searching = bool(query.strip())
-        self.apply_libraries()
-        self.continue_card.setVisible(not searching and self.continue_card.game is not None)
+        self.apply_libraries()  # (and Continue playing)
         self.results_heading.setText(f'Results for "{query.strip()}"' if searching else "Installed games")
         words = query.casefold().split()
         roms = [g for games in [*self.tab.roms.values(), self.tab.pc_games()] for g in games
