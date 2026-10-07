@@ -1497,7 +1497,7 @@ class MainWindow(QMainWindow):
 
         def done(info) -> None:
             if info.available:
-                self.notify(f"Update available ({info.behind} changes) - Settings → Updates", "⬇")
+                self.notify(f"Update available ({info.behind} changes) - Settings → System", "⬇")
 
         run_async(Updater().check, done, lambda _e: None, owner=self)
 

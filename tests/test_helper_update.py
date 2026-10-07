@@ -93,4 +93,4 @@ def test_health_names_an_old_helper():
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
     check = Health(runner=run, exists=lambda p: True, helper="/h").helper_allowed()
-    assert not check.ok and "outdated" in check.detail and "Settings → Updates" in check.fix
+    assert not check.ok and "outdated" in check.detail and "Settings → System" in check.fix

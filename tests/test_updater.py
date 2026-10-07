@@ -151,7 +151,7 @@ def test_settings_opens_updates_and_checks(qtbot):
     tab = SettingsTab(copy.deepcopy(DEFAULTS), lambda c: None, updater=fake)
     mp.undo()
     qtbot.addWidget(tab)
-    tab.sub_buttons["Updates"].click()
+    tab.sub_buttons["System"].click()
     qtbot.waitUntil(lambda: tab.updates_page.status.text() == "Up to date")
 
 

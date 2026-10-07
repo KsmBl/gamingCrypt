@@ -192,7 +192,7 @@ def test_audio_switch_device_and_volume(qtbot):
 
 def test_settings_sub_tabs(qtbot):
     tab, *_ = make(qtbot, display=FakeDisplay(), audio=FakeAudio())
-    assert list(tab.sub_buttons) == ["Device", "Network", "Services", "Controller", "Games", "Storage", "Security", "Health", "Updates"]
+    assert list(tab.sub_buttons) == ["Device", "Network", "Controller", "Games", "Storage", "Security", "System"]
     assert tab.current_sub_tab == "Device"
     page = tab.sub_pages["Security"].widget()
     assert not tab.reset_button.isVisibleTo(tab.sub_stack)
@@ -213,3 +213,19 @@ def test_volume_button_step_setting(qtbot):
     assert s.step_value.text() == "-3% (swapped)"
     s.step_slider.setValue(0)
     assert s.step_value.text() == "Off" and saved[-1]["system"]["volume_step"] == 0
+
+
+def test_fewer_settings_tabs_and_the_old_names_still_lead_there(qtbot):
+    import copy
+
+    from gamingcrypt.config import DEFAULTS
+    from gamingcrypt.ui.settings_tab import SettingsTab
+
+    tab = SettingsTab(copy.deepcopy(DEFAULTS), lambda c: None)
+    qtbot.addWidget(tab)
+    system = tab.sub_pages["System"]
+    assert system.isAncestorOf(tab.updates_page) and system.isAncestorOf(tab.health_page)
+    assert tab.sub_pages["Network"].isAncestorOf(tab.services_page)
+    for old, new in (("Updates", "System"), ("Health", "System"), ("Services", "Network")):
+        tab.show_sub_tab(old)  # e.g. "finish the update in Settings → …" from before
+        assert tab.current_sub_tab == new and tab.sub_buttons[new].isChecked()

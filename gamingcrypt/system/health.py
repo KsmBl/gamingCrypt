@@ -69,7 +69,7 @@ class Health:
 
         if helper_status.outdated(self.helper, self.runner, self.exists):
             return Check("Unlock helper", False, "outdated - new features (e.g. the network share) need the new one",
-                         "Settings → Updates: finish the update with your password")
+                         "Settings → System: finish the update with your password")
         return Check("Unlock helper", True, "allowed without password, up to date")
 
     def steam(self, root: Callable[[], object] | None = None) -> Check:

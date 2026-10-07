@@ -96,7 +96,7 @@ def test_health_page_in_settings(qtbot):
     qtbot.addWidget(tab)
     page = tab.health_page
     assert Fake.runs == 0  # only when opened
-    tab.sub_buttons["Health"].click()
+    tab.sub_buttons["System"].click()
     qtbot.waitUntil(lambda: len(page.checks) == 3)
     texts = [page.grid.itemAt(i).widget().text() for i in range(page.grid.count())]
     assert texts[:3] == ["✓", "VeraCrypt", "installed"] and "→ Install xorg-xprop" in texts[5]

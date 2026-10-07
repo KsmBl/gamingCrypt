@@ -374,6 +374,6 @@ def test_services_tab_in_settings(qtbot, monkeypatch):
     ssh = FakeSsh()
     tab = SettingsTab(cfg, lambda c: None, ssh=ssh, drive_share=FakeShare())
     qtbot.addWidget(tab)
-    tab.sub_buttons["Services"].click()
-    assert tab.current_sub_tab == "Services"
+    tab.sub_buttons["Network"].click()  # services are on the Network page
+    assert tab.current_sub_tab == "Network" and tab.sub_pages["Network"].isAncestorOf(tab.services_page)
     qtbot.waitUntil(lambda: tab.services_page.ssh_toggle.text() == "Off")

@@ -26,7 +26,7 @@ TOUR = [
      "Continue playing sits at the top of Games. On a game's page, Options lets you choose the Proton "
      "version and an own power and FPS limit for that game."),
     ("✓", "If something doesn't work",
-     "Settings → Health shows what's missing and how to fix it - usually by running ./install.sh again."),
+     "Settings → System shows what's missing and how to fix it - usually by running ./install.sh again."),
 ]
 MAX_NEWS_LINES = 40  # the list scrolls
 WINDOW_MARGIN = 40  # the card keeps this far from the window's edges

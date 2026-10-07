@@ -15,7 +15,7 @@ from gamingcrypt.helper.veracrypt_helper import HELPER_VERSION
 from gamingcrypt.unlock.veracrypt import DEFAULT_HELPER
 
 Runner = Callable[..., subprocess.CompletedProcess]
-OUTDATED = "The GamingCrypt helper is outdated - finish the update in Settings → Updates"
+OUTDATED = "The GamingCrypt helper is outdated - finish the update in Settings → System"
 
 
 def installed_version(helper: str = DEFAULT_HELPER, runner: Runner = subprocess.run,

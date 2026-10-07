@@ -266,12 +266,12 @@ def test_a_list_with_nothing_on_screen_yet_can_be_entered(qtbot, app):
     w, nav, pages = app
     w.shell.show_tab("Settings")
     settings = w.shell.pages["Settings"]
-    settings.show_sub_tab("Health")
+    settings.show_sub_tab("System")
     qtbot.wait(200)
-    nav.focus(settings.sub_buttons["Health"])
+    nav.focus(settings.sub_buttons["System"])
     target = go(qtbot, nav, "D")
-    assert target is not settings.sub_buttons["Health"]
-    assert settings.sub_pages["Health"].isAncestorOf(target)
+    assert target is not settings.sub_buttons["System"]
+    assert settings.sub_pages["System"].isAncestorOf(target)
 
 
 @pytest.mark.parametrize("library", ["steam", "favorites", "recent", "system"])

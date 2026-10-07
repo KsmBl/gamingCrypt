@@ -21,7 +21,9 @@ from gamingcrypt.ui.system_settings import AudioSection, DisplaySection, PowerSe
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button, enable_touch_scroll, set_status
 
-SUB_TABS = ["Device", "Network", "Services", "Controller", "Games", "Storage", "Security", "Health", "Updates"]
+SUB_TABS = ["Device", "Network", "Controller", "Games", "Storage", "Security", "System"]
+# where what had a tab of its own before is now (notices and older callers still name them)
+MOVED = {"Services": "Network", "Health": "System", "Updates": "System"}
 LOCK_AFTER_SLEEP = [("Never", None), ("Right away", 0), ("After 5 minutes", 5), ("After 15 minutes", 15),
                     ("After 1 hour", 60)]
 API_KEY_RE = re.compile(r"^[0-9A-Fa-f]{32}$")
@@ -160,12 +162,9 @@ class SettingsTab(QStackedWidget):
         layout.addWidget(self.wifi_section)
         self.bluetooth_section = BluetoothSection(bluetooth)
         layout.addWidget(self.bluetooth_section)
-        layout.addStretch()
-
-        # Services (SSH, the drive as network share)
+        # services: SSH, the drive as network share
         from gamingcrypt.ui.services_page import ServicesPage
 
-        layout = page("Services")
         self.services_page = ServicesPage(config, save, ssh=ssh, share=drive_share)
         layout.addWidget(self.services_page)
         layout.addStretch()
@@ -253,20 +252,22 @@ class SettingsTab(QStackedWidget):
         layout.addWidget(self.storage_page)
         layout.addStretch()
 
-        # Health
+        # System: updates, then health (what GamingCrypt needs)
         from gamingcrypt.ui.health_page import HealthPage
-
-        layout = page("Health")
-        self.health_page = HealthPage(health)
-        layout.addWidget(self.health_page)
-        layout.addStretch()
-
-        # Updates
         from gamingcrypt.ui.updates_page import UpdatesPage
 
-        layout = page("Updates")
-        self.updates_page = UpdatesPage(updater, restart=restart_gaming if restart_gaming else None)
-        layout.addWidget(self.updates_page)
+        layout = page("System")
+        for text in ("Updates", "Health"):
+            if text == "Health":
+                self.health_page = HealthPage(health)
+                widget = self.health_page
+            else:
+                self.updates_page = UpdatesPage(updater, restart=restart_gaming if restart_gaming else None)
+                widget = self.updates_page
+            label = QLabel(text)
+            label.setObjectName("section")
+            layout.addWidget(label)
+            layout.addWidget(widget)
         layout.addStretch()
         self.show_sub_tab(SUB_TABS[0])
         self.addWidget(self.overview)
@@ -426,20 +427,20 @@ class SettingsTab(QStackedWidget):
         return True
 
     def show_sub_tab(self, name: str) -> None:
+        name = MOVED.get(name, name)
         self.current_sub_tab = name
         self.sub_stack.setCurrentWidget(self.sub_pages[name])
         for tab, button in self.sub_buttons.items():
             button.setChecked(tab == name)
-        if name == "Health" and not self.health_page.checks:
+        if name == "System" and not self.health_page.checks:
             self.health_page.refresh()  # first visit: check now
         if name == "Storage":
             self.storage_page.refresh()
         if name == "Network":
             self.wifi_section.refresh()
             self.bluetooth_section.refresh()
-        if name == "Services":
             self.services_page.refresh()
-        if name == "Updates" and self.updates_page.info is None:
+        if name == "System" and self.updates_page.info is None:
             self.updates_page.check()
 
     @property
