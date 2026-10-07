@@ -50,9 +50,9 @@ def test_uninstall_requires_two_taps(qtbot):
     tab = make_tab(qtbot)
     tab.open_game(1145360)
     page = tab.currentWidget()
-    assert page.options_panel.isHidden()
+    assert not page.options_popup.is_open()
     page.options_button.click()
-    assert not page.options_panel.isHidden()
+    assert page.options_popup.is_open()
     page.uninstall_button.click()
     assert tab.service.client.actions == []
     assert "again" in page.uninstall_button.text()
@@ -182,7 +182,7 @@ def test_uninstall_without_steam_dialog(qtbot):
     qtbot.waitUntil(lambda: "was uninstalled" in page.status.text())
     assert tab.service.client.actions == []  # no Steam popup
     assert not page.game.installed and "Download" in page.main_button.text()
-    assert page.options_panel.isHidden()
+    assert not page.options_popup.is_open()
 
 
 def test_uninstall_failure_keeps_game(qtbot):

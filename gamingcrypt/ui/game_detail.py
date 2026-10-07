@@ -105,8 +105,9 @@ class GameDetailPage(QWidget):
         self.uninstall_button = big_button("🗑 Uninstall", "danger")
         self.uninstall_button.clicked.connect(self.uninstall_tapped)
         options.addWidget(self.uninstall_button, alignment=Qt.AlignmentFlag.AlignLeft)
-        self.options_panel.hide()
-        info.addWidget(self.options_panel)
+        from gamingcrypt.ui.options_popup import options_popup
+
+        self.options_popup = options_popup(self, self.options_panel, self.options_button, game.name)
 
         self.status = QLabel("")
         self.status.setObjectName("status")
@@ -389,11 +390,8 @@ class GameDetailPage(QWidget):
         if visible:
             self.fill_proton_choices()
             self.fill_profile_choices()
-        self.options_panel.setVisible(visible)
-        if visible:
-            # bring the opened panel into view (it's below the screen edge on a handheld)
-            QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(self.options_panel, 0, 20))
-        else:
+        self.options_popup.set_open(visible)
+        if not visible:
             self._disarm_uninstall()
 
     def uninstall_tapped(self) -> None:

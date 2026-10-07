@@ -274,8 +274,9 @@ class ShowPage(QWidget):
         self.remove_button = big_button("🗑 Remove show", "danger")
         self.remove_button.clicked.connect(self.ask_remove)
         self.options_layout.addWidget(self.remove_button, alignment=Qt.AlignmentFlag.AlignLeft)
-        self.options_panel.hide()
-        info.addWidget(self.options_panel)
+        from gamingcrypt.ui.options_popup import options_popup
+
+        self.options_popup = options_popup(self, self.options_panel, self.options_button, show.title)
         self.status = QLabel("")
         self.status.setObjectName("status")
         self.status.setWordWrap(True)
@@ -401,10 +402,8 @@ class ShowPage(QWidget):
                   lambda exc: self.say(f"Could not save it: {exc}", error=True), owner=self)
 
     def toggle_options(self, visible: bool) -> None:
-        self.options_panel.setVisible(visible)
-        if visible:
-            QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(self.options_panel, 0, 20))
-        else:
+        self.options_popup.set_open(visible)
+        if not visible:
             self.close_confirm()
 
     def ask_remove(self) -> None:

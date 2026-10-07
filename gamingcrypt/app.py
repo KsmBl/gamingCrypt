@@ -1312,6 +1312,11 @@ class MainWindow(QMainWindow):
         menu = getattr(self.shell, "power_menu", None) if self.shell is not None else None
         if menu is not None and menu.isVisible():
             return menu
+        from gamingcrypt.ui.options_popup import OptionsPopup
+
+        options = next((p for p in self.findChildren(OptionsPopup) if p.isVisible()), None)
+        if options is not None:
+            return options  # a page's ⚙ Options
         return self
 
     def switch_tab(self, delta: int) -> None:
