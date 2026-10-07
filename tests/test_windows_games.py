@@ -455,3 +455,19 @@ def test_loading_screen_shows_the_games_cover(qtbot, window, monkeypatch, tmp_pa
     qtbot.waitUntil(lambda: page.exe_combo.count() == 3)
     page.main_button.click()
     assert window.launch_overlay.isVisible() and cover_color(window.launch_overlay.cover) == "#d03020"
+
+
+def test_hold_the_picture_to_choose_another(qtbot, window, monkeypatch):
+    from gamingcrypt import cover_choice
+    from gamingcrypt.ui.cover_picker import CoverPicker
+    from tests.test_cover_choice import hold
+
+    monkeypatch.setattr(cover_choice, "steam_choices", lambda query, get=None, own=None: [])
+    games = window._games
+    knight = next(g for g in games.windows_games if g.name == "Hollow Knight")
+    games.open_windows_game(knight)
+    hold(qtbot, games.currentWidget().cover)
+    picker = games.currentWidget()
+    assert isinstance(picker, CoverPicker) and picker.game is knight and picker.search.text() == "Hollow Knight"
+    assert picker.source.path == games.windows_covers.path(knight)
+    qtbot.waitUntil(lambda: "Nothing found" in picker.status.text())

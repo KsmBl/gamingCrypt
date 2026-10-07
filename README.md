@@ -41,6 +41,7 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
   covers are downloaded for you; shaders, upscaling and save states are included.
 - 🪟 **Windows and Linux games** outside Steam: copy the game folder onto the drive, pick its start
   file, and play it with Proton, Wine or natively.
+- 🖼️ **Wrong or missing picture?** Hold it to pick another one from Steam's store or the box art of the system.
 - 🎬 **Movies and shows** with covers, descriptions and cast looked up automatically; resume
   where you stopped and watched marks; episodes are grouped into seasons.
 - 📶 **Upload over Wi-Fi**: add ROMs, games and videos from a browser (QR code) or a network share.
