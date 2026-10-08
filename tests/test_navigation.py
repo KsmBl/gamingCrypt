@@ -430,7 +430,12 @@ def test_down_reaches_every_control_of_the_device_settings(qtbot, monkeypatch):
     look = tab.appearance_section.buttons
     expected = [tab.sub_buttons["Device"], look["dark"], tab.appearance_section.size_buttons["normal"], d.gs_resolution, d.gs_refresh, d.gs_apply, d.brightness_slider,
                 tab.power_section.power_button, a.combos["output"], a.sliders["output"], a.combos["input"], a.sliders["input"], a.step_slider]
-    assert walk_down(nav, 14) == expected
+    bar = tab.overlay_bar_section
+    expected += [bar.choices["position"]["bottom"], bar.choices["size"]["medium"], bar.opacity,  # (the column kept)
+                 bar.module_buttons["cpu"]]
+    walked = walk_down(nav, 24)
+    assert walked[:len(expected)] == expected
+    assert set(walked[len(expected):]) <= set(bar.module_buttons.values())  # then the rest of what's on it
 
 
 def test_down_reaches_every_control_of_the_quick_menu(qtbot):

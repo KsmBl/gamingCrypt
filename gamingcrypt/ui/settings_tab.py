@@ -150,7 +150,10 @@ class SettingsTab(QStackedWidget):
         self.display_section = DisplaySection(self.system, config, save, restart_gaming)
         self.power_section = PowerSection(self.system, config, save)
         self.audio_section = AudioSection(self.system, config, save)
-        for section in (self.display_section, self.power_section, self.audio_section):
+        from gamingcrypt.ui.system_settings import OverlayBarSection
+
+        self.overlay_bar_section = OverlayBarSection(config, save)
+        for section in (self.display_section, self.power_section, self.audio_section, self.overlay_bar_section):
             layout.addWidget(section)
         layout.addStretch()
 

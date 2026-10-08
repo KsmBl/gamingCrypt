@@ -466,3 +466,95 @@ class AudioSection(Section):
         name = self.combos[kind].currentData()
         if not self.audio.set_volume(kind, name, percent):
             set_status(self.status, "Could not change the volume", error=True)
+
+
+class OverlayBarSection(Section):
+    """The performance bar over games (switched on in the quick menu): where, how big, how
+    see-through, and what's on it."""
+
+    def __init__(self, config: dict, save: Callable[[dict], None], write=None):
+        super().__init__("In-game bar")
+        from gamingcrypt.system import gamescope_ctl, overlay_bar
+        from gamingcrypt.ui.widgets import FlowLayout
+
+        self.config, self.save = config, save
+        self.write = write or gamescope_ctl.set_bar
+        self.settings = overlay_bar.settings_of(config)
+        self.body.addWidget(_label("Over a game: FPS, battery, time … - switched on and off in the quick menu "
+                                   "(⊞ → Performance overlay)."))
+        self.choices: dict[str, dict] = {}
+        for key, caption, table in (("position", "Position", overlay_bar.POSITIONS),
+                                    ("size", "Size", overlay_bar.SIZES)):
+            box = QWidget()
+            line = QHBoxLayout(box)
+            line.setContentsMargins(0, 0, 0, 0)
+            line.setSpacing(12)
+            buttons = {}
+            for value, (label, _x) in table.items():
+                button = big_button(label, choice=True)
+                button.setMinimumWidth(150)
+                button.clicked.connect(lambda _=False, k=key, v=value: self.choose(k, v))
+                line.addWidget(button)
+                buttons[value] = button
+            line.addStretch()
+            self.choices[key] = buttons
+            self.row(caption, box)
+        self.opacity = _slider(0, 100, self.settings["opacity"])
+        self.opacity.setSingleStep(5)
+        self.opacity_value = QLabel("")
+        self.opacity_timer = QTimer(self)  # dragged: kept once it stops (not at every step)
+        self.opacity_timer.setSingleShot(True)
+        self.opacity_timer.setInterval(300)
+        self.opacity_timer.timeout.connect(self._store)
+        self.opacity.valueChanged.connect(self._opacity_moved)
+        self.row("Background", self.opacity, self.opacity_value)
+        modules = QWidget()
+        flow = FlowLayout(modules, spacing=12)
+        self.module_buttons = {}
+        for module, (label, _keys) in overlay_bar.MODULES.items():
+            button = big_button("", checkable=True)
+            button.setChecked(module in self.settings["modules"])
+            button.toggled.connect(lambda on, m=module: self.toggle_module(m, on))
+            flow.addWidget(button)
+            self.module_buttons[module] = button
+        caption = QLabel("On it")
+        self.body.addWidget(caption)
+        self.body.addWidget(modules)
+        self.body.addWidget(self.status)
+        self._show()
+
+    def _show(self) -> None:
+        from gamingcrypt.system import overlay_bar
+
+        for key, buttons in self.choices.items():
+            for value, button in buttons.items():
+                button.setChecked(value == self.settings[key])
+        self.opacity_value.setText(f"{self.settings['opacity']} %")
+        for module, button in self.module_buttons.items():
+            label = overlay_bar.MODULES[module][0]
+            button.setText(f"✓  {label}" if button.isChecked() else label)
+
+    def choose(self, key: str, value) -> None:
+        self.settings[key] = value
+        self._store()
+
+    def _opacity_moved(self, value: int) -> None:
+        self.settings["opacity"] = int(value)
+        self.opacity_value.setText(f"{int(value)} %")
+        self.opacity_timer.start()
+
+    def toggle_module(self, module: str, on: bool) -> None:
+        from gamingcrypt.system import overlay_bar
+
+        chosen = set(self.settings["modules"]) | {module} if on else set(self.settings["modules"]) - {module}
+        self.settings["modules"] = [m for m in overlay_bar.MODULES if m in chosen]
+        self._store()
+
+    def _store(self) -> None:
+        from gamingcrypt.system import overlay_bar
+
+        self.config["overlay_bar"] = dict(self.settings)
+        self.save(self.config)
+        ok = self.write(overlay_bar.mangohud_config(self.settings))
+        set_status(self.status, "" if ok else "Couldn't save the bar's settings", error=not ok)
+        self._show()

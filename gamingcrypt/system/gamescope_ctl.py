@@ -149,8 +149,32 @@ def screenshot_pending(runner: Runner = subprocess.run) -> bool:
 
 # --- performance overlay (mangoapp, started by the gaming session with --mangoapp) ---------
 
-OVERLAY_ON = "fps\nframetime\ncpu_stats\ncpu_temp\ngpu_stats\ngpu_temp\nram\nbattery\nposition=top-left\n"
 OVERLAY_OFF = "no_display\n"
+
+
+def overlay_on_text(env: dict | None = None) -> str:
+    """What it shows when on: the bar as set in Settings (overlay_bar), else its defaults."""
+    try:
+        return _bar_file(env).read_text()
+    except OSError:
+        from gamingcrypt.system.overlay_bar import DEFAULT, mangohud_config
+
+        return mangohud_config(DEFAULT)
+
+
+def _bar_file(env: dict | None = None):
+    return overlay_config(env).with_name("overlay-bar.conf")
+
+
+def set_bar(text: str, env: dict | None = None) -> bool:
+    """Settings → In-game bar changed: kept - and on screen at once if it's shown now."""
+    try:
+        path = _bar_file(env)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    except OSError:
+        return False
+    return set_overlay(True, env) if overlay_shown(env) else True
 
 
 def overlay_config(env: dict | None = None):
@@ -177,7 +201,7 @@ def set_overlay(shown: bool, env: dict | None = None) -> bool:
     path = overlay_config(env)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(OVERLAY_ON if shown else OVERLAY_OFF)
+        path.write_text(overlay_on_text(env) if shown else OVERLAY_OFF)
     except OSError:
         return False
     return True
