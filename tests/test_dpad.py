@@ -110,6 +110,7 @@ def test_up_and_down_keep_the_column(qtbot, app):
     home = pages["Movies"].home
     third = home.cards[home.shown[2]]
     nav.focus(third)
+    qtbot.wait(200)
     assert go(qtbot, nav, "D") is home.cards[home.shown[7]]  # the row below, same column (5 per row)
     assert go(qtbot, nav, "U") is third
     up = go(qtbot, nav, "U")
@@ -118,6 +119,7 @@ def test_up_and_down_keep_the_column(qtbot, app):
         up = go(qtbot, nav, "U")
     assert up is not third and not home.grid_widget.isAncestorOf(up)  # out of the grid, into the filters
     while up is not home.search and up is not None and home.header.isAncestorOf(up):
+        qtbot.wait(200)  # as a person presses: the list and its sliding filter bar settled
         up = go(qtbot, nav, "U")
     assert up is home.search
     while not isinstance(go(qtbot, nav, "D"), type(third)):
