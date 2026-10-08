@@ -62,13 +62,14 @@ class VolumeOsd(QFrame):
 
 class GameOverlay(QWidget):
     """The volume indicator over a game (no Steam there to show one, e.g. emulators): a
-    transparent window that gamescope draws on top as an "external overlay"."""
+    transparent window that gamescope draws on top as a notification (not as an external
+    overlay: that one is the performance overlay's - see gamescope_ctl.set_notification_overlay)."""
 
     def __init__(self, mark_overlay: Callable[[int], bool] | None = None):
         super().__init__(None)
         from gamingcrypt.system import gamescope_ctl
 
-        self.mark_overlay = mark_overlay or gamescope_ctl.set_external_overlay
+        self.mark_overlay = mark_overlay or gamescope_ctl.set_notification_overlay
         self.marked = False
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
                             | Qt.WindowType.WindowDoesNotAcceptFocus | Qt.WindowType.Tool)
@@ -94,9 +95,11 @@ class GameOverlay(QWidget):
     def show_level(self, percent: int | None, muted: bool = False) -> None:
         from PySide6.QtGui import QGuiApplication
 
+        from gamingcrypt.system import gamescope_ctl
+
         screen = QGuiApplication.primaryScreen()
         if screen is not None:
-            self.setGeometry(screen.geometry())  # gamescope stretches overlays to the screen anyway
+            self.setGeometry(*gamescope_ctl.notification_geometry(screen.geometry()))  # (stretched to the screen)
         self.show()
         if not self.marked:
             self.marked = self.mark_overlay(int(self.winId()))

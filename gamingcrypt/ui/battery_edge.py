@@ -1,6 +1,6 @@
 """Low battery at a glance: a red border around the whole screen and a message at the top right
-for a few seconds - at 15 % and again at 5 %, also over a game (gamescope's external overlay,
-as for the volume over a game - see volume_osd.GameOverlay)."""
+for a few seconds - at 15 % and again at 5 %, also over a game (a gamescope notification, as
+the volume over a game - see gamescope_ctl.set_notification_overlay)."""
 
 from __future__ import annotations
 
@@ -77,7 +77,7 @@ class GameBatteryEdge(QWidget):
         super().__init__(None)
         from gamingcrypt.system import gamescope_ctl
 
-        self.mark_overlay = mark_overlay or gamescope_ctl.set_external_overlay
+        self.mark_overlay = mark_overlay or gamescope_ctl.set_notification_overlay
         self.marked = False
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
                             | Qt.WindowType.WindowDoesNotAcceptFocus | Qt.WindowType.Tool)
@@ -90,9 +90,11 @@ class GameBatteryEdge(QWidget):
     def alert(self, percent: int) -> None:
         from PySide6.QtGui import QGuiApplication
 
+        from gamingcrypt.system import gamescope_ctl
+
         screen = QGuiApplication.primaryScreen()
         if screen is not None:
-            self.setGeometry(screen.geometry())
+            self.setGeometry(*gamescope_ctl.notification_geometry(screen.geometry()))
         self.show()
         if not self.marked:
             self.marked = self.mark_overlay(int(self.winId()))

@@ -66,15 +66,24 @@ def set_window_appid(window: int, appid: int = LAUNCHER_APPID, runner: Runner = 
     return result.returncode == 0
 
 
-def set_external_overlay(window: int, runner: Runner = subprocess.run) -> bool:
-    """Draw this window over the game (gamescope stretches it to the whole screen; the
-    window is transparent but for what it shows)."""
+def set_notification_overlay(window: int, runner: Runner = subprocess.run) -> bool:
+    """Draw this window over everything as a notification (as Steam's toasts) - its own plane,
+    next to the external overlay mangoapp (the performance overlay) uses: gamescope draws only
+    one external overlay, so a second one pushed the performance overlay away.
+
+    gamescope counts an overlay as a notification when it's narrower than the screen and takes
+    no input (steamcompmgr: nWidth < root_width): give it the screen's size less one pixel."""
     try:
-        result = runner(["xprop", "-id", str(int(window)), "-f", "GAMESCOPE_EXTERNAL_OVERLAY", "32c", "-set",
-                         "GAMESCOPE_EXTERNAL_OVERLAY", "1"], capture_output=True, text=True, timeout=5)
+        result = runner(["xprop", "-id", str(int(window)), "-f", "STEAM_OVERLAY", "32c", "-set",
+                         "STEAM_OVERLAY", "1"], capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.SubprocessError):
         return False
     return result.returncode == 0
+
+
+def notification_geometry(screen) -> tuple[int, int, int, int]:
+    """(x, y, w, h) of a notification window: the screen, one pixel narrower (see above)."""
+    return screen.x(), screen.y(), max(1, screen.width() - 1), screen.height()
 
 
 def set_focus_order(appids: list[int], runner: Runner = subprocess.run) -> bool:

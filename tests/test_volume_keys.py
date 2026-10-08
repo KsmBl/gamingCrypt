@@ -274,16 +274,31 @@ def test_app_knows_when_an_emulated_game_is_in_front(qtbot, monkeypatch, tmp_pat
     assert not window.emulated_game_in_front()
 
 
-def test_external_overlay_property():
+def test_shown_as_a_notification_not_as_the_external_overlay():
+    """gamescope draws one external overlay - the performance overlay (mangoapp): the volume
+    over a game took its place, and it was gone. A notification (STEAM_OVERLAY, narrower than
+    the screen) is drawn on a plane of its own."""
     import subprocess
+
+    from PySide6.QtCore import QRect
 
     from gamingcrypt.system import gamescope_ctl
 
     calls = []
     run = lambda cmd, **kw: calls.append(cmd) or subprocess.CompletedProcess(cmd, 0, "", "")  # noqa: E731
-    assert gamescope_ctl.set_external_overlay(42, runner=run)
-    assert calls[0][:3] == ["xprop", "-id", "42"] and calls[0][-8:] == ["-id", "42", "-f", "GAMESCOPE_EXTERNAL_OVERLAY", "32c",
-                                                       "-set", "GAMESCOPE_EXTERNAL_OVERLAY", "1"]
+    assert gamescope_ctl.set_notification_overlay(42, runner=run)
+    assert calls[0] == ["xprop", "-id", "42", "-f", "STEAM_OVERLAY", "32c", "-set", "STEAM_OVERLAY", "1"]
+    assert gamescope_ctl.notification_geometry(QRect(0, 0, 1280, 800)) == (0, 0, 1279, 800)
+
+
+def test_game_overlays_use_the_notification_plane(qtbot):
+    from gamingcrypt.system import gamescope_ctl
+    from gamingcrypt.ui.battery_edge import GameBatteryEdge
+    from gamingcrypt.ui.volume_osd import GameOverlay
+
+    for overlay in (GameOverlay(), GameBatteryEdge()):
+        qtbot.addWidget(overlay)
+        assert overlay.mark_overlay is gamescope_ctl.set_notification_overlay
 
 
 def test_game_overlay_is_drawn_empty_before_it_is_hidden(qtbot, monkeypatch):
