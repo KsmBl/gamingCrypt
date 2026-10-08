@@ -260,3 +260,28 @@ def test_default_pages_pass_mount_point_to_games(monkeypatch):
     cfg["steam"]["auto_library"] = False
     app.default_pages(cfg)
     assert seen["path"] == ""
+
+
+def test_b_on_the_tab_row_goes_back_a_page(qtbot):
+    """On a game's page with the highlight up on the tabs: B still goes back."""
+    from gamingcrypt.input import evdev as e
+    from gamingcrypt.ui import navigator as nav_mod
+    from gamingcrypt.ui.games_tab import GamesTab
+    from gamingcrypt.ui.navigator import GamepadNavigator
+    from gamingcrypt.ui.shell import Shell
+    from tests.fakes import FakeService
+
+    nav_mod.set_paused(False)
+    games = GamesTab(FakeService())
+    shell = Shell({"Games": games})
+    qtbot.addWidget(shell)
+    shell.show()
+    qtbot.waitExposed(shell)
+    games.games.update({g.appid: g for g in games.service.games})
+    games.open_game(next(iter(games.games)))
+    assert games.currentWidget() is not games.home
+    nav = GamepadNavigator(shell)
+    nav.focus(shell.tab_buttons["Games"])
+    nav.on_event(e.EV_KEY, e.BTN_EAST, 1)
+    nav.on_event(e.EV_KEY, e.BTN_EAST, 0)
+    assert games.currentWidget() is games.home

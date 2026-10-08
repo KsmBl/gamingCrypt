@@ -105,6 +105,11 @@ class Shell(QWidget):
         """e.g. "Downloads (2)" - plain name when there's nothing."""
         self.tab_buttons[name].setText(f"{name} ({count})" if count else name)
 
+    def gamepad_back(self) -> bool:
+        """B with the highlight up on the tab row: the open tab goes back a page, as from inside it."""
+        hook = getattr(self.pages.get(self.current_tab), "gamepad_back", None)
+        return bool(callable(hook) and hook())
+
     def show_tab(self, name: str) -> None:
         self.current_tab = name
         self.stack.setCurrentWidget(self.pages[name])
