@@ -203,6 +203,11 @@ class GamesHome(QWidget):
         self.clear_button.clicked.connect(self.clear_filters)
         filters.addWidget(self.clear_button)
         self.clear_button.setVisible(self.filtering())
+        # games copied onto the drive another way (a terminal, a USB stick): look for them now
+        self.reload_button = big_button("⟳  Reload")
+        self.reload_button.clicked.connect(self.reload)
+        filters.addWidget(self.reload_button)
+        self.reloading = False
         header.addLayout(filters)
         self.notice = QLabel("")
         self.notice.setObjectName("status")
@@ -382,6 +387,18 @@ class GamesHome(QWidget):
 
     def remember_selection(self, appid: int) -> None:
         self.selected_appid = appid
+
+    def reload(self) -> None:
+        """Every library looked through again (Steam, emulated, Windows and Linux games)."""
+        if self.reloading:
+            return
+        self.reloading = True
+        self.reload_button.setText("⟳  Reloading…")
+        self.tab.reload_installed()
+
+    def reloaded(self) -> None:
+        self.reloading = False
+        self.reload_button.setText("⟳  Reload")
 
     def show_notice(self, text: str, error: bool = False) -> None:
         set_status(self.notice, text, error=error)
@@ -950,6 +967,7 @@ class GamesTab(QStackedWidget):
         for game in games:
             self.games[game.appid] = game
         self.home.set_installed(games)
+        self.home.reloaded()
         self.fill_facts()
 
     # genres and release dates, from the store - one game after the other ---------------------
