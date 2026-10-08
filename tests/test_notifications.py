@@ -61,6 +61,77 @@ def test_monitor_notices_once_per_discharge(qtbot):
     assert events == [("notice", 15), ("warning", 10), ("notice", 14)]  # plugged in -> fresh again
 
 
+def test_again_at_5_percent(qtbot):
+    states = [BatteryState(15, False, False), BatteryState(6, False, False), BatteryState(5, False, False),
+              BatteryState(3, False, False), BatteryState(50, True, True), BatteryState(4, False, False)]
+    monitor = BatteryMonitor(lambda: states.pop(0), interval_ms=60_000)
+    events = []
+    for name in ("notice", "warning", "critical"):
+        getattr(monitor, name).connect(lambda p, n=name: events.append((n, p)))
+    for _ in range(6):
+        monitor.check()
+    assert events == [("notice", 15), ("warning", 6), ("critical", 5),  # once each
+                      ("critical", 4), ("warning", 4)]  # plugged in, then straight down to 4 %: both again
+
+
+def test_red_border_and_message_for_10_seconds(qtbot, monkeypatch):
+    from PySide6.QtWidgets import QWidget
+
+    from gamingcrypt.ui import battery_edge
+
+    monkeypatch.setattr(battery_edge, "SHOW_MS", 100)
+    host = QWidget()
+    qtbot.addWidget(host)
+    host.resize(1280, 800)
+    host.show()
+    edge = battery_edge.BatteryEdge(host)
+    edge.alert(15)
+    assert edge.isVisible() and edge.geometry() == host.rect()
+    assert edge.text.text() == "Battery at 15 % - plug in the charger"
+    card = edge.card.geometry()
+    assert card.right() < 1280 and card.top() < 60 and card.left() > 640  # at the top right
+    image = edge.grab().toImage()
+    assert image.pixelColor(5, 400).name() == battery_edge.RED and image.pixelColor(1275, 400).name() == battery_edge.RED
+    assert edge.testAttribute(battery_edge.Qt.WidgetAttribute.WA_TransparentForMouseEvents)  # never in the way
+    qtbot.waitUntil(lambda: not edge.isVisible(), timeout=2000)
+
+
+def test_over_a_game_it_is_gamescopes_overlay(qtbot, monkeypatch):
+    from gamingcrypt.ui import battery_edge
+
+    monkeypatch.setattr(battery_edge, "SHOW_MS", 100)
+    monkeypatch.setattr(battery_edge, "UNMAP_DELAY_MS", 10)
+    marked = []
+    overlay = battery_edge.GameBatteryEdge(mark_overlay=lambda wid: marked.append(wid) or True)
+    qtbot.addWidget(overlay)
+    overlay.alert(5)
+    assert overlay.isVisible() and marked == [int(overlay.winId())] and overlay.edge.text.text().startswith(
+        "Battery at 5 %")
+    overlay.alert(5)
+    assert len(marked) == 1  # marked once
+    qtbot.waitUntil(lambda: not overlay.isVisible(), timeout=2000)  # gone after the time (drawn empty first)
+
+
+def test_the_app_shows_it(qtbot, monkeypatch):
+    import copy
+
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.config import DEFAULTS
+    from gamingcrypt.ui import battery_edge
+
+    w = MainWindow(copy.deepcopy(DEFAULTS), lambda c: None)
+    qtbot.addWidget(w)
+    w.windowed = True
+    w.show()
+    w.battery_monitor.notice.emit(15)
+    assert w.battery_edge.isVisible()  # desktop: over GamingCrypt
+    shown = []
+    monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
+    monkeypatch.setattr(battery_edge.GameBatteryEdge, "alert", lambda self, p: shown.append(p))
+    w.battery_monitor.critical.emit(5)
+    assert shown == [5]  # gaming mode: gamescope draws it over everything, also a game
+
+
 def test_warning_counts_down_to_sleep(qtbot, monkeypatch):
     from PySide6.QtWidgets import QWidget
 

@@ -100,7 +100,12 @@ class MainWindow(QMainWindow):
         self.battery_warning.sleep_now.connect(self.go_to_sleep)
         self.battery_warning.dismissed.connect(self._back_to_game)
         self.battery_monitor = BatteryMonitor(self.battery_reader, self)
-        self.battery_monitor.notice.connect(lambda p: self.toasts.notify(f"Battery at {p} % - time to plug in", "🔋"))
+        self.battery_monitor.notice.connect(self.battery_low)  # 15 %: the red border
+        self.battery_monitor.critical.connect(self.battery_low)  # 5 %: again
+        from gamingcrypt.ui.battery_edge import BatteryEdge
+
+        self.battery_edge = BatteryEdge(self)  # (over GamingCrypt; over a game: game_battery_edge)
+        self.game_battery_edge = None
         self.battery_monitor.warning.connect(self.warn_battery)
         self.download_notifier = None
         self.adopt_timer = QTimer(self)
@@ -448,6 +453,21 @@ class MainWindow(QMainWindow):
                            error=not result.success)
 
         run_async(work, done, lambda exc: done(UnlockResult(False, str(exc))), owner=self)
+
+    def battery_low(self, percent: int) -> None:
+        """A red border around the screen and a message, 10 s - in gaming mode drawn by gamescope
+        over everything (also a game); otherwise over GamingCrypt's window."""
+        from gamingcrypt.session.mode import in_gaming_session
+
+        log.warning("battery at %s %%", percent)
+        if in_gaming_session():
+            if self.game_battery_edge is None:
+                from gamingcrypt.ui.battery_edge import GameBatteryEdge
+
+                self.game_battery_edge = GameBatteryEdge()
+            self.game_battery_edge.alert(percent)
+        else:
+            self.battery_edge.alert(percent)
 
     def warn_battery(self, percent: int) -> None:
         log.warning("battery at %s %%", percent)
@@ -1357,6 +1377,8 @@ class MainWindow(QMainWindow):
             self.sleep_lock.setGeometry(self.rect())
         if self.battery_warning.isVisible():
             self.battery_warning.setGeometry(self.rect())
+        if self.battery_edge.isVisible():
+            self.battery_edge.setGeometry(self.rect())
         for name in ("tour", "whats_new"):
             overlay = getattr(self, name, None)
             if overlay is not None and overlay.isVisible():

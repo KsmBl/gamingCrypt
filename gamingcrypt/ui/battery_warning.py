@@ -1,8 +1,9 @@
 """Low battery: warn once per discharge, then put the device to sleep unless told not to.
 
-At 15 % a small notification; at 10 % a full warning in front of everything (also
-in front of a game): "Save your game - going to sleep in 2:00", with "Sleep now"
-and "Keep playing". Plugging in resets it.
+At 15 % and at 5 % a red border around the screen with a message for a few seconds (also
+over a game - see battery_edge); at 10 % a full warning in front of everything (also in
+front of a game): "Save your game - going to sleep in 2:00", with "Sleep now" and "Keep
+playing". Plugging in resets it.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from gamingcrypt.ui.widgets import big_button
 
 NOTICE_PERCENT = 15
 WARN_PERCENT = 10
+CRITICAL_PERCENT = 5
 COUNTDOWN_S = 120
 
 
@@ -100,11 +102,12 @@ class BatteryMonitor(QObject):
 
     notice = Signal(int)  # 15 %
     warning = Signal(int)  # 10 %
+    critical = Signal(int)  # 5 %
 
     def __init__(self, reader: Callable, parent: QObject | None = None, interval_ms: int = 5000):
         super().__init__(parent)
         self.reader = reader
-        self.noticed = self.warned = False
+        self.noticed = self.warned = self.critical_sent = False
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.check)
         self.timer.start(interval_ms)
@@ -117,8 +120,11 @@ class BatteryMonitor(QObject):
         if state is None:
             return
         if state.plugged:
-            self.noticed = self.warned = False  # next time it runs low: warn again
+            self.noticed = self.warned = self.critical_sent = False  # next time it runs low: warn again
             return
+        if state.percent <= CRITICAL_PERCENT and not self.critical_sent:
+            self.critical_sent = True
+            self.critical.emit(state.percent)
         if state.percent <= WARN_PERCENT and not self.warned:
             self.warned = self.noticed = True
             self.warning.emit(state.percent)
