@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEd
 
 from gamingcrypt.emulation.library import RomGame
 from gamingcrypt.emulation.systems import SHORT, System
+from gamingcrypt.ui.combo import ComboBox
 from gamingcrypt.ui.game_widgets import (COVER_H, COVER_W, Cover, card_margins, format_playtime, format_size,
                                         placeholder_cover)
 from gamingcrypt.ui.widgets import FlowLayout, big_button, enable_touch_scroll, set_status
@@ -80,12 +81,11 @@ class RomCard(QFrame):
 
 
 class SystemLanguagePage(QWidget):
-    """The console's language for every game of a system (Wii, Wii U, GameCube): the games show
+    """The console's language for every game of a system (Wii, 3DS, PS2 …): the games show
     their text in it - those that have it."""
 
     def __init__(self, tab, system, config: dict, save, parent: QWidget | None = None, environ=None):
         super().__init__(parent)
-        from PySide6.QtWidgets import QComboBox
 
         from gamingcrypt.emulation import languages
 
@@ -108,7 +108,7 @@ class SystemLanguagePage(QWidget):
         caption = QLabel("Language")
         caption.setMinimumWidth(160)
         line.addWidget(caption)
-        self.combo = QComboBox()
+        self.combo = ComboBox()
         self.combo.addItem(f"Like the device ({languages.device_language(system, environ)})", None)
         for name in languages.languages(system):
             self.combo.addItem(name, name)
@@ -131,7 +131,7 @@ class SystemUpscalingPage(QWidget):
 
     def __init__(self, tab, system, config: dict, save, parent: QWidget | None = None):
         super().__init__(parent)
-        from PySide6.QtWidgets import QComboBox, QGridLayout
+        from PySide6.QtWidgets import QGridLayout
 
         from gamingcrypt.emulation import scalers, upscaling
 
@@ -154,7 +154,7 @@ class SystemUpscalingPage(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(16)
         grid.setColumnStretch(1, 1)
-        self.scaler_combo, self.resolution_combo = QComboBox(), QComboBox()
+        self.scaler_combo, self.resolution_combo = ComboBox(), ComboBox()
         for line, (caption, combo) in enumerate((("Upscaling", self.scaler_combo),
                                                  ("Resolution", self.resolution_combo))):
             label = QLabel(caption)
@@ -521,7 +521,7 @@ class RomGamePage(QWidget):
             grid.addWidget(combo, line, 1, 1, 2)
             return label
 
-        self.core_combo = QComboBox()
+        self.core_combo = ComboBox()
         cores = self.game.system.cores
         self.core_combo.addItem(f"Automatic ({layouts.CORE_NAMES.get(cores[0], cores[0])})", None)
         for core in cores:
@@ -529,7 +529,7 @@ class RomGamePage(QWidget):
         index = self.core_combo.findData(profile.get("core")) if profile.get("core") in cores else 0
         self.core_combo.setCurrentIndex(max(index, 0))
         row("Core", self.core_combo)
-        self.card_combo = QComboBox()
+        self.card_combo = ComboBox()
         self.card_combo.addItem("Own card for this game", "own")
         self.card_combo.addItem("One card for all games", "shared")
         self.card_caption = row("Memory card", self.card_combo)
@@ -554,7 +554,7 @@ class RomGamePage(QWidget):
             self.card_caption.setVisible(has_cards)
             show_card()
 
-        self.screen_combo = QComboBox()
+        self.screen_combo = ComboBox()
         self.screen_combo.addItem("4:3 (as the console)", None)
         self.screen_combo.addItem("Widescreen 16:9 - set it in the game too", "16:9")
         self.screen_combo.setCurrentIndex(1 if profile.get("widescreen") == "16:9" else 0)
@@ -562,7 +562,7 @@ class RomGamePage(QWidget):
         self.screen_combo.currentIndexChanged.connect(
             lambda _i: self.tab.profiles.set(appid, "widescreen", self.screen_combo.currentData()))
 
-        self.renderer_combo = QComboBox()
+        self.renderer_combo = ComboBox()
         self.renderer_combo.addItem("GPU - OpenGL (fast)", None)
         self.renderer_combo.addItem("paraLLEl-GS (like a PS2, slower)", "accurate")
         self.renderer_combo.setCurrentIndex(1 if profile.get("renderer") == "accurate" else 0)
@@ -573,7 +573,7 @@ class RomGamePage(QWidget):
         # the controller the game sees (Wii U: a Pro Controller - or the GamePad, for a game that
         # needs its screen or touch); from the next start
         pads = retroarch.GAME_PADS.get(self.game.system.id, {})
-        self.pad_combo = QComboBox()
+        self.pad_combo = ComboBox()
         self.pad_combo.addItem(retroarch.DEFAULT_PADS.get(self.game.system.id, ""), None)
         for key, (_device, label) in pads.items():
             self.pad_combo.addItem(label, key)
@@ -588,9 +588,9 @@ class RomGamePage(QWidget):
         # (3D consoles, when the core has it); Resolution: its factor (2D) or the internal one (3D)
         from gamingcrypt.emulation import scalers
 
-        self.scaler_combo = QComboBox()
+        self.scaler_combo = ComboBox()
         self.scaler_caption = row("Upscaling", self.scaler_combo)
-        self.resolution_combo = QComboBox()
+        self.resolution_combo = ComboBox()
         self.resolution_caption = row("Resolution", self.resolution_combo)
         self.scaling_info = QLabel("")
         self.scaling_info.setObjectName("cardMeta")
@@ -704,7 +704,7 @@ class RomGamePage(QWidget):
             lambda _i: fill_resolutions(self.core_combo.currentData() or cores[0]))
 
         if self.game.system.id in retroarch.LOW_LAG_SYSTEMS:
-            self.lag_combo = QComboBox()
+            self.lag_combo = ComboBox()
             self.lag_combo.addItem("Reduced (preemptive frames)", None)
             self.lag_combo.addItem("Normal - if the game acts up", "normal")
             self.lag_combo.setCurrentIndex(1 if profile.get("input_lag") == "normal" else 0)

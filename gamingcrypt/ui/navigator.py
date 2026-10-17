@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from gamingcrypt.input import evdev as e
+from gamingcrypt.ui.combo import open_list
 
 STICK_PRESS, STICK_RELEASE = 0.6, 0.35
 REPEAT_DELAY_MS, REPEAT_RATE_MS = 380, 110
@@ -376,7 +377,7 @@ class GamepadNavigator(QObject):
 
     # actions -------------------------------------------------------------------
     def move(self, dx: int, dy: int) -> None:
-        popup = QApplication.activePopupWidget()
+        popup = open_list()  # (a drop-down's open list)
         if popup is not None:
             if dy:
                 self._send_key(popup, Qt.Key.Key_Down if dy > 0 else Qt.Key.Key_Up)
@@ -613,7 +614,7 @@ class GamepadNavigator(QObject):
         return items[index] if 0 <= index < len(items) else None
 
     def activate(self) -> None:
-        popup = QApplication.activePopupWidget()
+        popup = open_list()  # (a drop-down's open list)
         if popup is not None:
             self._send_key(popup, Qt.Key.Key_Return)
             return
@@ -658,7 +659,7 @@ class GamepadNavigator(QObject):
         return None
 
     def back(self) -> None:
-        popup = QApplication.activePopupWidget()
+        popup = open_list()  # (a drop-down's open list)
         if popup is not None:
             self._send_key(popup, Qt.Key.Key_Escape)
             return

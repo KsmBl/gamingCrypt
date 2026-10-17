@@ -1,4 +1,4 @@
-"""The console's language for Wii, Wii U and GameCube games."""
+"""The console's language - for every console that has one."""
 
 import copy
 
@@ -13,8 +13,10 @@ GERMAN = {"LANG": "de_DE.UTF-8"}
 
 
 def test_which_systems_have_one():
-    assert all(languages.has_language(BY_ID[s]) for s in ("wii", "wiiu", "gc"))
-    assert not languages.has_language(BY_ID["snes"]) and not languages.has_language(BY_ID["ps2"])
+    with_one = ("wii", "wiiu", "gc", "nds", "3ds", "ps2", "psp", "dreamcast", "switch")
+    assert all(languages.has_language(BY_ID[s]) for s in with_one)
+    assert [s for s in BY_ID if languages.has_language(BY_ID[s])] == [s for s in BY_ID if s in with_one]
+    assert not languages.has_language(BY_ID["snes"]) and not languages.has_language(BY_ID["psx"])
     assert "Portuguese" in languages.languages(BY_ID["wiiu"]) and "Portuguese" not in languages.languages(BY_ID["wii"])
 
 
@@ -39,6 +41,42 @@ def test_what_the_cores_get():
     assert languages.core_options("dolphin", "Japanese") == {"dolphin_language": "0"}
     assert languages.core_options("cemu", "German") == {"cemu_console_language": "German"}
     assert languages.core_options("snes9x", "German") == {} and languages.core_options("cemu", None) == {}
+
+
+@pytest.mark.parametrize("core, wanted", [
+    ("azahar", {"citra_language_value": "German"}),
+    ("citra", {"citra_language": "German"}),
+    ("melonds", {"melonds_use_fw_settings": "disabled", "melonds_language": "German"}),  # (not the firmware's)
+    ("desmume", {"desmume_firmware_language": "German"}),
+    ("ppsspp", {"ppsspp_language": "German"}),
+    ("flycast", {"reicast_language": "German"}),
+    ("pcsx2", {}),  # no option: its own settings (ps2_nvram)
+])
+def test_the_other_consoles_cores_get_it(core, wanted):
+    """The options as the cores name them (their libretro_core_options.h / core_settings.cpp)."""
+    assert languages.core_options(core, "German") == wanted
+
+
+def test_names_the_cores_spell_differently():
+    assert languages.core_options("ppsspp", "Simplified Chinese") == {"ppsspp_language": "Chinese Simplified"}
+    assert languages.core_options("flycast", "Korean") == {"reicast_language": "English"}  # it hasn't it
+    assert languages.for_system({}, BY_ID["switch"], {"LANG": "en_GB.UTF-8"}) == "British English"
+    assert languages.for_system({}, BY_ID["3ds"], {"LANG": "en_GB.UTF-8"}) == "English"
+    assert languages.for_system({}, BY_ID["ps2"], GERMAN) == "German"
+    assert languages.for_system({}, BY_ID["nds"], {"LANG": "ru_RU.UTF-8"}) == "English"  # a DS hasn't Russian
+
+
+def test_a_switch_game_starts_in_it(tmp_path):
+    from gamingcrypt.emulation import eden
+
+    emu = EmulationPaths(tmp_path / "Emulation")
+    emu.ensure()
+    eden.prepare(emu, "German")
+    ini = (emu.config / "switch" / "eden" / "qt-config.ini").read_text().splitlines()
+    assert "[System]" in ini and "language_index=3" in ini and "language_index\\default=false" in ini
+    eden.prepare(emu, "Japanese")
+    ini = (emu.config / "switch" / "eden" / "qt-config.ini").read_text().splitlines()
+    assert "language_index=0" in ini and "language_index=3" not in ini
 
 
 @pytest.fixture
@@ -77,6 +115,8 @@ def test_the_system_page_sets_it(qtbot, paths):
     assert not page.language_button.isHidden()
     snes = SystemPage(tab, BY_ID["snes"], [])
     assert snes.language_button.isHidden()
+    for system in ("ps2", "3ds", "switch"):
+        assert not SystemPage(tab, BY_ID[system], []).language_button.isHidden(), system
     page.language_button.click()
     language = tab.currentWidget()
     assert language.combo.currentData() is None and language.combo.currentText().startswith("Like the device")

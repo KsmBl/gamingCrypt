@@ -332,3 +332,30 @@ def test_resolution_choice_on_the_page(qtbot, window, emu, monkeypatch):
     ps1.show()
     ps1.options_button.click()
     assert [ps1.resolution_combo.itemData(i) for i in range(ps1.resolution_combo.count())] == [None, "none", "2x", "3x", "4x", "5x", "6x"]
+
+
+def test_the_core_list_opens_over_the_options(qtbot, window):
+    """The open list of a drop-down in a game's Options (over the page) is drawn over them,
+    inside the window - picked by tapping a row."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+
+    from gamingcrypt.ui.combo import open_list
+    from gamingcrypt.ui.emulation_pages import RomGamePage
+
+    page = RomGamePage(window._games, window._ff7)
+    qtbot.addWidget(page)
+    page.resize(1280, 800)
+    page.show()
+    page.options_button.click()
+    page.core_combo.showPopup()
+    listing = open_list()
+    assert listing is not None and listing.window() is page.window() and not listing.isWindow()
+    assert QApplication.activePopupWidget() is None
+    root = page.window()
+    over = root.childAt(listing.mapTo(root, listing.rect().center()))
+    assert over is listing or listing.isAncestorOf(over)  # nothing of the Options over it
+    row = listing.model().index(page.core_combo.findData("pcsx_rearmed"), 0)
+    qtbot.mouseClick(listing.viewport(), Qt.MouseButton.LeftButton, pos=listing.visualRect(row).center())
+    assert page.core_combo.currentData() == "pcsx_rearmed" and open_list() is None
+    assert window.game_profiles.get(window._ff7.appid)["core"] == "pcsx_rearmed"

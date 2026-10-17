@@ -13,12 +13,13 @@ from pathlib import Path
 import shiboken6
 from PySide6.QtCore import QObject, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPixmap
-from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QSizePolicy,
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QSizePolicy,
                                QStackedWidget, QVBoxLayout, QWidget)
 
 from gamingcrypt.movies import library
 from gamingcrypt.movies.library import Movie
 from gamingcrypt.ui import theme
+from gamingcrypt.ui.combo import ComboBox
 from gamingcrypt.ui.game_widgets import COVER_H, COVER_W, Cover, Tappable, card_margins, format_size, placeholder_cover
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.upload_page import UploadPage
@@ -240,17 +241,17 @@ class MoviesHome(QWidget):
         choices = QHBoxLayout(self.choices)
         choices.setContentsMargins(0, 0, 0, 0)
         choices.setSpacing(10)
-        self.genre_combo = QComboBox()
+        self.genre_combo = ComboBox()
         self.genre_combo.addItem("All genres", "")
         self.genre_combo.currentIndexChanged.connect(lambda _i: self.refresh())
         choices.addWidget(self.genre_combo, 1)
-        self.age_combo = QComboBox()
+        self.age_combo = ComboBox()
         self.age_combo.addItem("Any age", None)
         for age in library.AGES:
             self.age_combo.addItem(f"Up to FSK {age}", age)
         self.age_combo.currentIndexChanged.connect(lambda _i: self.refresh())
         choices.addWidget(self.age_combo)
-        self.sort_combo = QComboBox()
+        self.sort_combo = ComboBox()
         for key, label in self.sorts().items():
             self.sort_combo.addItem(label, key)
         self.sort_combo.currentIndexChanged.connect(lambda _i: self.refresh())

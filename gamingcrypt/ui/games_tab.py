@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import shiboken6
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QStackedWidget,
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QStackedWidget,
                                QVBoxLayout, QWidget)
 
 from gamingcrypt.steam.models import SteamGame
 from gamingcrypt.steam.sorting import filter_games, sort_games
+from gamingcrypt.ui.combo import ComboBox
 from gamingcrypt.ui.game_widgets import (Cover, GameCard, SourceCard, format_date, format_playtime, load_cover,
                                         placeholder_cover)
 from gamingcrypt.ui.tasks import run_async
@@ -182,15 +183,15 @@ class GamesHome(QWidget):
         self.facts: dict = {}  # app id -> Facts, made when needed (invalidate_facts: new info)
         filters = QHBoxLayout()
         filters.setSpacing(10)
-        self.genre_combo = QComboBox()
+        self.genre_combo = ComboBox()
         self.genre_combo.addItem("All genres", "")
-        self.platform_combo = QComboBox()
+        self.platform_combo = ComboBox()
         self.platform_combo.addItem("All platforms", "")
-        self.decade_combo = QComboBox()
+        self.decade_combo = ComboBox()
         self.decade_combo.addItem("Any year", "")
         for key, label in game_facts.DECADES.items():
             self.decade_combo.addItem(label, key)
-        self.sort_combo = QComboBox()
+        self.sort_combo = ComboBox()
         for key, label in game_facts.SORTS.items():
             self.sort_combo.addItem(label, key)
         from gamingcrypt.ui import view_state

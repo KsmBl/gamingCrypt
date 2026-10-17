@@ -154,8 +154,9 @@ def merge_ini(text: str, section: str, values: dict[str, str]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def prepare(paths: EmulationPaths) -> dict[str, str]:
-    """Eden's folders on the drive, keys + firmware from bios/switch, settings; the environment to start it."""
+def prepare(paths: EmulationPaths, language: str | None = None) -> dict[str, str]:
+    """Eden's folders on the drive, keys + firmware from bios/switch, settings (the console's
+    language too); the environment to start it."""
     data, config = paths.saves / "switch", paths.config / "switch"
     eden_data = data / "eden"
     keys = eden_data / "keys"
@@ -178,17 +179,22 @@ def prepare(paths: EmulationPaths) -> dict[str, str]:
     text = merge_ini(text, "Controls", controls())
     for section, values in SETTINGS.items():
         text = merge_ini(text, section, values)
+    if language:
+        from gamingcrypt.emulation import languages
+
+        key, numbers = languages.CORES["eden"]
+        text = merge_ini(text, "System", {key: numbers.get(language, numbers[languages.ENGLISH])})
     ini.write_text(text)
     return {"XDG_DATA_HOME": str(data), "XDG_CONFIG_HOME": str(config), "QT_QPA_PLATFORM": "xcb"}
 
 
 def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, popen=subprocess.Popen,
-           folder: Path | None = None) -> tuple[bool, str]:
+           folder: Path | None = None, language: str | None = None) -> tuple[bool, str]:
     from gamingcrypt.emulation import retroarch
 
     if not available(folder):
         return False, "The Switch emulator (Eden) isn't installed yet"
-    env = dict(os.environ, **prepare(paths))
+    env = dict(os.environ, **prepare(paths, language))
     command = [str(retroarch.reaper(data_dir)), "SteamLaunch", f"AppId={game.appid}", "--",
                str(app_run(folder)), "-f", "-g", str(game.path)]
     log_dir.mkdir(parents=True, exist_ok=True)

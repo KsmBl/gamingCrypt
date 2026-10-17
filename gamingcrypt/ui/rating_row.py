@@ -3,9 +3,10 @@ wrong one) - what users with an age get to see goes by it (gamingcrypt/ratings.p
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 from gamingcrypt import ratings
+from gamingcrypt.ui.combo import ComboBox
 
 
 def rating_row(tab, game) -> QWidget | None:
@@ -19,7 +20,7 @@ def rating_row(tab, game) -> QWidget | None:
     caption = QLabel("Age rating")
     caption.setObjectName("cardMeta")
     line.addWidget(caption)
-    combo = QComboBox()
+    combo = ComboBox()
     found = ratings.automatic(game, tab)
     combo.addItem(f"Automatic: from {found}" if found is not None else "Automatic: not rated - hidden from users "
                                                                       "with an age", None)

@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QBoxLayout, QComboBox, QFrame, QHBoxLayout, QLabe
 from gamingcrypt.system import gamescope_ctl
 from gamingcrypt.system.battery import read_battery
 from gamingcrypt.system.controls import SystemControls
+from gamingcrypt.ui.combo import ComboBox
 from gamingcrypt.ui.system_settings import _label, _on_change, _slider
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import big_button, set_status
@@ -25,7 +26,7 @@ KEEP_SECONDS = 15
 def _combo() -> QComboBox:
     """Long device names ("Family 17h/19h HD Audio Controller Speaker …") must not
     widen the panel past the screen - they get elided, the open list shows them whole."""
-    combo = QComboBox()
+    combo = ComboBox()
     combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
     combo.setMinimumContentsLength(8)
     return combo
@@ -512,9 +513,13 @@ class QuickMenu(QWidget):
         self.show()
         self.back_button.setFocus()
 
-    def set_lock_shortcut(self, binding) -> None:
-        """The device buttons that lock (hotkeys.Binding) - set in Settings, they differ per device."""
-        self.lock_hint.setText(f"Lock shortcut: {binding.how_to()}")
+    def set_lock_shortcut(self, binding, controller=None) -> None:
+        """The device buttons that lock (hotkeys.Binding) - set in Settings, they differ per device -
+        and a connected controller's, where they're others."""
+        text = f"Lock shortcut: {binding.how_to()}"
+        if controller is not None and controller != binding:
+            text += f" - on a controller: {controller.how_to()}"
+        self.lock_hint.setText(text)
 
     def fit(self) -> None:
         """Everything inside the panel, with every text size (nothing cut off at the right):

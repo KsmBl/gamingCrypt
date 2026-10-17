@@ -6,9 +6,10 @@ from __future__ import annotations
 import shutil
 from typing import Callable
 
-from PySide6.QtWidgets import QComboBox, QLabel
+from PySide6.QtWidgets import QLabel
 
 from gamingcrypt.system import upscaling
+from gamingcrypt.ui.combo import ComboBox
 
 NOTE = ("The game renders smaller and is scaled up to the screen (AMD FSR): more FPS, or less power with an "
         "FPS limit - the picture gets a little softer. From the next start.")
@@ -20,7 +21,7 @@ class UpscaleOption:
                  changed: Callable[[], None] | None = None, note: str = NOTE):
         self.profiles, self.appid, self.screen_size, self.changed = profiles, appid, screen_size, changed
         self.text_note = note
-        self.combo = QComboBox()
+        self.combo = ComboBox()
         self.note = QLabel("")
         self.note.setObjectName("cardMeta")
         self.note.setWordWrap(True)

@@ -10,13 +10,14 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QPainter
-from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from gamingcrypt.emulation import layouts
 from gamingcrypt.emulation.systems import BY_ID
 from gamingcrypt.input import evdev as e
 from gamingcrypt.ui import console_pictures as pictures
 from gamingcrypt.ui import navigator, theme
+from gamingcrypt.ui.combo import ComboBox
 from gamingcrypt.ui.controller_test import BUTTONS, TRIGGER_PICK
 from gamingcrypt.ui.widgets import FlowLayout, big_button
 
@@ -142,7 +143,7 @@ class ControlsPage(QWidget):
         self.title = QLabel("Emulator controls")
         self.title.setObjectName("title")
         top.addWidget(self.title, 1)
-        self.system_combo = QComboBox()
+        self.system_combo = ComboBox()
         for sid in systems or []:
             self.system_combo.addItem(BY_ID[sid].name, sid)
         if system_id and self.system_combo.findData(system_id) < 0:

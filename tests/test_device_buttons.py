@@ -230,3 +230,94 @@ def test_settings_change_reaches_the_app(qtbot):
     hk.save(settings.config, "quick_menu", Binding(PAD, (e.BTN_MODE,)))
     settings.device_buttons.changed.emit()
     assert window.hotkeys["quick_menu"] == Binding(PAD, (e.BTN_MODE,))
+
+
+# --- a connected controller's own buttons ------------------------------------------------------
+
+def test_a_controllers_buttons_are_its_own():
+    """A controller has no Windows key: its own buttons for both - Guide and Guide + View until
+    others are set; only controller buttons."""
+    cfg = {"input": {}}
+    assert hotkeys.load_external(cfg) == {"quick_menu": Binding(PAD, (e.BTN_MODE,)),
+                                          "lock": Binding(PAD, (e.BTN_MODE, e.BTN_SELECT))}
+    hotkeys.save(cfg, "lock", Binding(PAD, (e.BTN_START, e.BTN_SELECT)), external=True)
+    hotkeys.save(cfg, "quick_menu", Binding(KEY, (148,)), external=True)  # (no controller button: ignored)
+    external = hotkeys.load_external(cfg)
+    assert external["lock"] == Binding(PAD, (e.BTN_START, e.BTN_SELECT))
+    assert external["quick_menu"] == Binding(PAD, (e.BTN_MODE,))
+    assert hotkeys.load(cfg, ("AYANEO", "")) == hotkeys.WINDOWS  # the device's stay as they were
+    hotkeys.save(cfg, "lock", None, external=True)
+    assert hotkeys.load_external(cfg)["lock"] == hotkeys.EXTERNAL["lock"]
+
+
+def test_both_sets_fire_each_action_once():
+    t = Tracker(dict(hotkeys.CONTROLLER), PAD, also=dict(hotkeys.EXTERNAL))  # (a Steam Deck: the same buttons)
+    assert t.feed(e.BTN_MODE, True) == (["quick_menu"], True)  # not twice: it would open and close again
+    assert t.feed(e.BTN_SELECT, True) == (["lock"], True)
+    t = Tracker(dict(hotkeys.WINDOWS), PAD, also={"quick_menu": Binding(PAD, (e.BTN_START,))})
+    assert t.feed(e.BTN_START, True) == (["quick_menu"], True) and t.watched() == {e.BTN_START}
+
+
+@pytest.fixture
+def aya(qtbot, monkeypatch):
+    """The handheld of the user: Windows key for both - and a controller connected."""
+    from gamingcrypt.app import MainWindow
+
+    monkeypatch.setattr(hotkeys, "dmi", lambda sys_root=None: ("AYANEO", "AYANEO 2021 Pro"))
+    w = MainWindow(copy.deepcopy(DEFAULTS), lambda c: None)
+    qtbot.addWidget(w)
+    w.windowed = True
+    w.show()
+    w.show_shell()
+    w.panic_lock = lambda: w._locked.append(1)
+    w._locked = []
+    return w
+
+
+def tap_pad(window, *codes):
+    for code in codes:
+        window.pad_hotkey(e.EV_KEY, code, 1)
+    for code in reversed(codes):
+        window.pad_hotkey(e.EV_KEY, code, 0)
+
+
+def test_a_controller_opens_the_quick_menu_and_locks(qtbot, aya):
+    assert aya.hotkeys["quick_menu"] == Binding(KEY, (e.KEY_LEFTMETA,))  # the device: its Windows key
+    tap_pad(aya, e.BTN_MODE)
+    assert aya.quick_menu.isVisible()
+    assert aya.quick_menu.lock_hint.text() == ("Lock shortcut: hold Windows and press Volume Down"
+                                               " - on a controller: hold Guide and press View")
+    aya.quick_menu.close_menu()
+    tap_pad(aya, e.BTN_MODE, e.BTN_SELECT)
+    assert aya._locked == [1]
+
+
+def test_a_controllers_buttons_set_in_settings_reach_the_app(qtbot, aya):
+    settings = aya.shell.pages["Settings"]
+    hotkeys.save(settings.config, "quick_menu", Binding(PAD, (e.BTN_START, e.BTN_SELECT)), external=True)
+    settings.device_buttons.changed.emit()
+    tap_pad(aya, e.BTN_MODE)
+    assert getattr(aya, "quick_menu", None) is None or not aya.quick_menu.isVisible()  # not Guide any more
+    tap_pad(aya, e.BTN_START, e.BTN_SELECT)
+    assert aya.quick_menu.isVisible()
+    assert aya.hotkeys["quick_menu"] == Binding(KEY, (e.KEY_LEFTMETA,))  # and the Windows key still
+
+
+def test_record_a_controllers_button(qtbot, section):
+    from gamingcrypt.ui import navigator as nav_mod
+
+    made = len(FakeCapture.made)
+    section.pad_change_buttons["lock"].click()
+    assert len(FakeCapture.made) == made  # its buttons only: the keys aren't read
+    assert "on the controller" in section.status.text()
+    listener = nav_mod.LISTENERS[-1]
+    for code, value in ((e.BTN_START, 1), (e.BTN_TR, 1), (e.BTN_TR, 0), (e.BTN_START, 0)):
+        listener(e.EV_KEY, code, value)
+    assert section._cfg["input"][hotkeys.EXTERNAL_KEY]["lock"] == {"source": "pad",
+                                                                    "codes": [e.BTN_START, e.BTN_TR], "device": ""}
+    assert section.pad_labels["lock"].text() == "Menu + RB (controller)"
+    assert "hotkeys" not in section._cfg["input"] or "lock" not in section._cfg["input"]["hotkeys"]
+    assert section.labels["lock"].text().endswith("(default)")  # the device's: as they were
+    assert section.status.text() == "Lock now on a controller: Menu + RB (controller)"
+    section.pad_default_buttons["lock"].click()
+    assert section.pad_labels["lock"].text() == "Guide + View (controller)   (default)"

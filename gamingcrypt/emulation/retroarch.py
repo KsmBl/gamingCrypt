@@ -396,6 +396,10 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
     from gamingcrypt.emulation import languages
 
     options.update(languages.core_options(short, language))  # the console's language (Wii, Wii U …)
+    if short == "pcsx2" and language:  # (the PS2's: in its own settings, next to the BIOS)
+        from gamingcrypt.emulation import bios, ps2_nvram
+
+        ps2_nvram.set_language(paths.bios / bios.PS2_BIOS_DIR, language)
     if options:  # the game's own core options file
         extra["global_core_options"] = "true"
         extra["core_options_path"] = write_core_options(core_options_file(paths, game), options)

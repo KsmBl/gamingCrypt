@@ -14,9 +14,10 @@ from pathlib import Path
 import shiboken6
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QScrollArea,
+from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QScrollArea,
                                QSizePolicy, QVBoxLayout, QWidget)
 
+from gamingcrypt.ui.combo import ComboBox
 from gamingcrypt.ui.game_widgets import (COVER_H, COVER_W, Cover, Tappable, card_margins, format_date,
                                         format_playtime, format_size, placeholder_cover)
 from gamingcrypt.ui.movies_tab import MovieUploadPage
@@ -279,8 +280,8 @@ class WindowsGamePage(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(16)
         grid.setColumnStretch(1, 1)
-        self.exe_combo = QComboBox()
-        self.runner_combo = QComboBox()
+        self.exe_combo = ComboBox()
+        self.runner_combo = ComboBox()
         from gamingcrypt.ui.upscale_option import UpscaleOption
 
         self.upscale = UpscaleOption(tab.profiles, game.appid, lambda: self.screen_size(), lambda: self._show_facts())

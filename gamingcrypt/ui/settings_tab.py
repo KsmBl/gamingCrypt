@@ -7,7 +7,7 @@ from typing import Callable
 import re
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QStackedWidget, QVBoxLayout,
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QScrollArea, QStackedWidget, QVBoxLayout,
                                QWidget)
 
 from gamingcrypt.steam import accounts, library
@@ -16,6 +16,7 @@ from gamingcrypt.ui.auth_setup import AuthSetupWizard, UnlockerFactory
 from gamingcrypt.ui.secret_input import METHOD_LABELS
 from gamingcrypt.system.controls import SystemControls
 from gamingcrypt.input.service import InputService
+from gamingcrypt.ui.combo import ComboBox
 from gamingcrypt.ui.controller_settings import ControllerPage
 from gamingcrypt.ui.system_settings import AudioSection, DisplaySection, PowerSection
 from gamingcrypt.ui.tasks import run_async
@@ -253,7 +254,7 @@ class SettingsTab(QStackedWidget):
         caption = QLabel("Lock after sleep")
         caption.setFixedWidth(220)
         row.addWidget(caption)
-        self.sleep_lock = QComboBox()
+        self.sleep_lock = ComboBox()
         for label, minutes in LOCK_AFTER_SLEEP:
             self.sleep_lock.addItem(label, minutes)
         current = self.config.setdefault("system", {}).get("lock_after_sleep_min")

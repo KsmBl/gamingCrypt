@@ -1,5 +1,5 @@
-"""Gaming mode: drop-down lists are windows of their own and need GamingCrypt's
-gamescope app id - otherwise gamescope's Steam mode never shows them."""
+"""Gaming mode: every window GamingCrypt opens needs its gamescope app id - otherwise
+gamescope's Steam mode never shows it. Drop-down lists open inside the window instead."""
 
 import copy
 
@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication, QComboBox, QWidget
 from gamingcrypt.config import DEFAULTS
 from gamingcrypt.session import mode
 from gamingcrypt.system.controls import SystemControls
+from gamingcrypt.ui.combo import open_list
 from gamingcrypt.ui.gamescope_windows import WindowAppIds
 from tests.test_quick_menu import Audio, Brightness
 from tests.test_system_settings import FakeAudio
@@ -23,14 +24,18 @@ def tagged(qtbot):
 
 
 def opened_list_is_tagged(qtbot, combo: QComboBox, ids: list) -> None:
+    """The open list is part of the window (gaming mode or not): no window of its own that
+    gamescope could leave out or put behind GamingCrypt's."""
+    before = list(ids)
     combo.showPopup()
-    popup = combo.view().window()
     try:
-        qtbot.waitUntil(popup.isVisible)
-        assert popup is not combo.window() and popup.isWindow()  # a window of its own
-        assert int(popup.winId()) in ids, "the open list would be invisible in gamescope"
+        listing = open_list()
+        qtbot.waitUntil(lambda: listing is not None and listing.isVisible())
+        assert not listing.isWindow() and listing.window() is combo.window()
+        assert QApplication.activePopupWidget() is None and ids == before  # (nothing to tag)
     finally:
         combo.hidePopup()
+    assert open_list() is None
 
 
 def test_every_shown_window_gets_the_app_id_once(qtbot, tagged):

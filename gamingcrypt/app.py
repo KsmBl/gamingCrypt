@@ -252,7 +252,8 @@ class MainWindow(QMainWindow):
         from gamingcrypt.input import hotkeys
 
         self.hotkeys = hotkeys.load(self.config)
-        self.pad_tracker = hotkeys.Tracker(self.hotkeys, hotkeys.PAD)
+        self.controller_hotkeys = hotkeys.load_external(self.config)  # (a connected controller's own)
+        self.pad_tracker = hotkeys.Tracker(self.hotkeys, hotkeys.PAD, also=self.controller_hotkeys)
         keys = getattr(self, "volume_keys", None)
         if keys is not None:
             keys.tracker.bindings = self.hotkeys
@@ -762,7 +763,7 @@ class MainWindow(QMainWindow):
                       getattr(self, "running_pad", pad), getattr(self, "_chosen_pad", None) or (pad,))
         menu.set_speed_busy(getattr(self, "_speed_changing", False))
         menu.set_discs(len(rom.discs) if retroarch_game else 0, getattr(self, "disc_index", 0))
-        menu.set_lock_shortcut(self.hotkeys["lock"])
+        menu.set_lock_shortcut(self.hotkeys["lock"], self.controller_hotkeys["lock"])
         menu.open_menu(appid, self.game_name(appid) if appid else "")
         if rom is not None and watcher.phase == "playing":
             self.pause_game(rom)  # an emulated game stands still while the menu is open
@@ -1529,7 +1530,10 @@ class MainWindow(QMainWindow):
                 game, installer, "the Switch emulator (Eden)",
                 "Couldn't download the Switch emulator (Eden) - no network?")
             return None, message
-        return eden.launch(game, paths, data_dir(), config_mod.cache_dir() / "logs")
+        from gamingcrypt.emulation import languages
+
+        return eden.launch(game, paths, data_dir(), config_mod.cache_dir() / "logs",
+                           language=languages.for_system(self.config, game.system))
 
     def _rom_started(self, game, games, ok: bool, message: str, emulator: str) -> tuple[bool, str]:
         if ok:

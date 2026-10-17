@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabe
 from gamingcrypt.steam.installer import InstallResult
 from gamingcrypt.steam.models import SteamGame
 from gamingcrypt.steam.webapi import format_price
+from gamingcrypt.ui.combo import ComboBox
 from gamingcrypt.ui.game_widgets import Cover, format_date, format_playtime, format_size, load_cover, placeholder_cover
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import big_button, enable_touch_scroll, set_status
@@ -81,12 +82,12 @@ class GameDetailPage(QWidget):
         grid.setHorizontalSpacing(18)
         grid.setVerticalSpacing(10)
         grid.setColumnStretch(1, 1)
-        self.proton_combo = QComboBox()
+        self.proton_combo = ComboBox()
         self.proton_combo.currentIndexChanged.connect(self.proton_chosen)
         # while this game runs: own power limit / frame limit (applied by the main window)
-        self.power_combo = QComboBox()
+        self.power_combo = ComboBox()
         self.power_combo.currentIndexChanged.connect(lambda _i: self._profile_chosen("power_w", self.power_combo))
-        self.fps_combo = QComboBox()
+        self.fps_combo = ComboBox()
         self.fps_combo.currentIndexChanged.connect(lambda _i: self._profile_chosen("fps", self.fps_combo))
         for row, (caption, combo) in enumerate((("Proton", self.proton_combo), ("Power limit", self.power_combo),
                                                 ("FPS limit", self.fps_combo))):

@@ -12,10 +12,11 @@ from typing import Callable
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from gamingcrypt.input import evdev as e
 from gamingcrypt.ui import navigator, theme
+from gamingcrypt.ui.combo import ComboBox
 from gamingcrypt.ui.widgets import big_button
 
 EXIT_HOLD_S = 1.5
@@ -207,7 +208,7 @@ class ControllerTestPage(QWidget):
         title.setObjectName("title")
         top.addWidget(title)
         top.addStretch()
-        self.system_combo = QComboBox()
+        self.system_combo = ComboBox()
         self.system_combo.addItem("Plain controller", "")
         for system_id, name in systems or []:
             self.system_combo.addItem(name, system_id)

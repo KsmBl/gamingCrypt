@@ -5,6 +5,11 @@ Settings -> Controller -> Device buttons (pressed once to record them). A bindin
 one button or a combination (hold the first, press the second), either on a
 keyboard-like device (Windows key, volume buttons ...) or on the controller (Guide,
 Select ...). Defaults depend on the handheld model.
+
+A controller connected to the handheld (Bluetooth, USB) has no Windows key: it has
+buttons of its own for both, set there too ("On a controller") - Guide and Guide + View
+until then. Every controller feeds the same virtual one, so they work on the
+built-in controller as well.
 """
 
 from __future__ import annotations
@@ -70,6 +75,8 @@ WINDOWS = {"quick_menu": Binding(KEY, (e.KEY_LEFTMETA,)),
            "lock": Binding(KEY, (e.KEY_LEFTMETA, e.KEY_VOLUMEDOWN))}
 CONTROLLER = {"quick_menu": Binding(PAD, (e.BTN_MODE,)),
               "lock": Binding(PAD, (e.BTN_MODE, e.BTN_SELECT))}
+EXTERNAL = dict(CONTROLLER)  # a connected controller's buttons, until others are set
+EXTERNAL_KEY = "controller_hotkeys"  # (where they're kept in the config's "input")
 # vendor (DMI sys_vendor) -> defaults: handhelds with a Windows key use it for the menu
 KNOWN = {"AYANEO": WINDOWS, "AYADEVICE": WINDOWS, "GPD": WINDOWS, "ONE-NETBOOK": WINDOWS,
          "Valve": CONTROLLER}
@@ -100,8 +107,19 @@ def load(config: dict, vendor_product: tuple[str, str] | None = None) -> dict[st
     return bindings
 
 
-def save(config: dict, action: str, binding: Binding | None) -> None:
-    hotkeys = config.setdefault("input", {}).setdefault("hotkeys", {})
+def load_external(config: dict) -> dict[str, Binding]:
+    """A connected controller's buttons for the quick menu and lock now (controller buttons only)."""
+    bindings = dict(EXTERNAL)
+    for action, data in (config.get("input", {}).get(EXTERNAL_KEY) or {}).items():
+        binding = Binding.from_dict(data) if isinstance(data, dict) else None
+        if action in ACTIONS and binding is not None and binding.source == PAD:
+            bindings[action] = binding
+    return bindings
+
+
+def save(config: dict, action: str, binding: Binding | None, external: bool = False) -> None:
+    """external: a connected controller's button (else the device's)."""
+    hotkeys = config.setdefault("input", {}).setdefault(EXTERNAL_KEY if external else "hotkeys", {})
     if binding is None:
         hotkeys.pop(action, None)  # back to the default for this device
     else:
@@ -119,6 +137,10 @@ class Tracker:
     bindings: dict[str, Binding]
     source: str
     held: set[int] = field(default_factory=set)
+    also: dict[str, Binding] = field(default_factory=dict)  # a connected controller's (load_external)
+
+    def _all(self) -> list[tuple[str, Binding]]:
+        return [(a, b) for a, b in [*self.bindings.items(), *self.also.items()] if b.source == self.source]
 
     def feed(self, code: int, pressed: bool) -> tuple[list[str], bool]:
         """-> (actions, consumed)."""
@@ -127,19 +149,15 @@ class Tracker:
             self.held.discard(code)
             return [], False
         self.held.add(code)
-        actions, consumed = [], False
-        for action, binding in self.bindings.items():
-            if binding.source != self.source:
-                continue
+        actions = []  # (each once: the device's and a controller's can be the same button)
+        for action, binding in self._all():
             if len(binding.codes) == 2 and code == binding.codes[1] and binding.codes[0] in self.held:
-                actions.append(action)
-                consumed = True
+                actions += [] if action in actions else [action]
         if not actions:
-            for action, binding in self.bindings.items():
-                if binding.source == self.source and binding.codes == (code,):
+            for action, binding in self._all():
+                if binding.codes == (code,) and action not in actions:
                     actions.append(action)
-                    consumed = True
-        return actions, consumed
+        return actions, bool(actions)
 
     def watched(self) -> set[int]:
-        return {c for b in self.bindings.values() if b.source == self.source for c in b.codes}
+        return {c for _a, b in self._all() for c in b.codes}

@@ -213,8 +213,9 @@ def test_a_consoles_name_is_whole_on_1280_px_with_every_text_size(qtbot, emu, st
     assert page.gamepad_back() and not page.options_popup.is_open()  # B: Options closes first
 
 
-def test_no_options_without_any(qtbot, emu):
-    """A console without any of them (Eden: the Switch has its own): no ⚙ Options at all."""
+def test_only_the_options_a_console_has(qtbot, emu):
+    """Eden (the Switch) has no shaders, upscaling or button layout of RetroArch's - its ⚙ Options
+    hold only the console's language."""
     from gamingcrypt.emulation.systems import BY_ID
 
     folder = emu.roms / BY_ID["switch"].folder
@@ -222,7 +223,9 @@ def test_no_options_without_any(qtbot, emu):
     (folder / f"Game{BY_ID['switch'].extensions[0]}").write_text("x")
     tab = games_tab(qtbot, emu)
     tab.open_system("switch")
-    assert not tab.currentWidget().options_button.isVisibleTo(tab.currentWidget())
+    page = tab.currentWidget()
+    assert page.options_button.isVisibleTo(page)
+    assert [b for b in page._options if b.property("offered")] == [page.language_button]
 
 
 def test_no_controls_button_without_a_store(qtbot, emu):

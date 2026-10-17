@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
 
 from gamingcrypt.system.controls import SystemControls
+from gamingcrypt.ui.combo import ComboBox
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import big_button, set_status
 
@@ -162,8 +163,8 @@ class DisplaySection(Section):
                              "(needs KDE, a wlroots compositor or X11).")
         else:
             self.output = outputs[0]
-            self.resolution = QComboBox()
-            self.refresh = QComboBox()
+            self.resolution = ComboBox()
+            self.refresh = ComboBox()
             for w, h in self.output.resolutions():
                 # Plain string as item data: PySide would turn a tuple into a list.
                 self.resolution.addItem(f"{w}×{h}", f"{w}x{h}")
@@ -208,13 +209,13 @@ class DisplaySection(Section):
         self.gamescope = True
         native = mode.panel_size() or (1280, 800)
         current = mode.parse_display(mode.read_args())
-        self.gs_resolution = QComboBox()
+        self.gs_resolution = ComboBox()
         for w, h in mode.render_sizes(native):
             label = f"{w}×{h}" + (" (native)" if (w, h) == native else "")
             self.gs_resolution.addItem(label, f"{w}x{h}")
         wanted = f"{current.get('width', native[0])}x{current.get('height', native[1])}"
         self.gs_resolution.setCurrentIndex(max(0, self.gs_resolution.findData(wanted)))
-        self.gs_refresh = QComboBox()
+        self.gs_refresh = ComboBox()
         self.gs_refresh.addItem("Default (screen)", 0)
         for hz in mode.REFRESH_RATES:
             self.gs_refresh.addItem(f"{hz} Hz", hz)
@@ -403,7 +404,7 @@ class PowerSection(Section):
             self.body.addWidget(_label(hint))
         # power button (gaming mode)
         system = self.config.setdefault("system", {})
-        self.power_button = QComboBox()
+        self.power_button = ComboBox()
         self.power_button.addItem("Open the power menu", "menu")
         self.power_button.addItem("Sleep", "sleep")
         choice = "menu" if system.get("sleep_broken") else system.get("power_button", "menu")
@@ -490,7 +491,7 @@ class AudioSection(Section):
         if not devices:
             self.unavailable(f"No audio {kind} device found.")
             return
-        combo = QComboBox()
+        combo = ComboBox()
         # long device names get elided instead of widening the page
         combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         combo.setMinimumContentsLength(8)

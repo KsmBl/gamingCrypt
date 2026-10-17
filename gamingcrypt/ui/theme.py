@@ -350,7 +350,7 @@ QComboBox:hover {{ {box('field', c['SURFACE_HI'], c['BORDER'], 2)} }}
 QComboBox:hover:focus {{ {box('field', c['SURFACE_HI'], c['ACCENT'], 2, glow=True)} }}
 QComboBox::drop-down {{ border: none; width: 44px; background: transparent; }}
 QComboBox::down-arrow {{ image: url({chevron}); width: 22px; height: 22px; }}
-QComboBox QAbstractItemView {{
+QComboBox QAbstractItemView, QListView#comboList {{
     background: {c['SURFACE']};
     color: {c['TEXT']};
     border: 2px solid {c['BORDER']};
@@ -362,7 +362,9 @@ QComboBox QAbstractItemView {{
     selection-color: {c['ON_ACCENT']};
     font-size: 21px;
 }}
-QComboBox QAbstractItemView::item {{ min-height: 52px; padding: 0 12px; border-radius: 0; }}
+QComboBox QAbstractItemView::item, QListView#comboList::item {{ min-height: 52px; padding: 0 12px; border-radius: 0; }}
+QListView#comboList::item:hover {{ background: {c['SURFACE_HOVER']}; }}
+QListView#comboList::item:selected {{ background: {c['ACCENT']}; color: {c['ON_ACCENT']}; }}
 
 QSlider {{ min-height: 48px; background: transparent; }}
 QSlider::groove:horizontal {{ height: 6px; background: {c['SURFACE_HOVER']}; border-radius: 0; }}

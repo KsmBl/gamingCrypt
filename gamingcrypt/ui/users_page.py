@@ -6,9 +6,10 @@ from __future__ import annotations
 from typing import Callable
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from gamingcrypt import users
+from gamingcrypt.ui.combo import ComboBox
 from gamingcrypt.ui.secret_input import METHOD_LABELS, SecretInput
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button, set_status
@@ -271,7 +272,7 @@ class UsersSection(QFrame):
                 line.addWidget(rename)
                 widgets["rename"] = rename
             if me.admin and not user.admin:
-                age = QComboBox()
+                age = ComboBox()
                 age.addItem("Any age", None)
                 for years in users.AGES:
                     age.addItem(f"Age {years}", years)
@@ -283,7 +284,7 @@ class UsersSection(QFrame):
                 widgets["age"] = age
             if me.admin and not user.admin and self.steam_accounts():
                 # (Settings -> Games isn't there for users: the admin says which Steam account is theirs)
-                steam = QComboBox()
+                steam = ComboBox()
                 steam.addItem("Steam: as it is", "")
                 for account in self.steam_accounts():
                     steam.addItem(f"Steam: {account.persona}", account.steam_id)

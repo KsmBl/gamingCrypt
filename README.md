@@ -61,8 +61,9 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
   included. Wii U games as `.wua` (or `.wud` / `.wux` with your console's keys in
   `bios/Cemu/keys.txt`) - they can't be saved as states. They're played with a Wii U Pro
   Controller; a game that needs the GamePad's screen or touch gets the GamePad in its ⚙ Options.
-- 🌐 **Console language** for Wii, Wii U and GameCube (⚙ Options → 🌐 Language on the system's page): the
-  games show their text in it - like the device's language until you choose one.
+- 🌐 **Console language** for every console that has one - GameCube, Wii, Wii U, DS, 3DS, PS2, PSP,
+  Dreamcast and Switch (⚙ Options → 🌐 Language on the system's page): the games show their text in it -
+  like the device's language until you choose one.
 - 💾 **Save states**: nine slots per game in a 3 by 3 grid, each with a picture of the moment,
   the date and time it was saved and how long you had played up to it. States are only saved and
   loaded when you pick a slot - RetroArch never saves, loads or deletes one by itself.
