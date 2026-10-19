@@ -368,6 +368,9 @@ class MinecraftInstancePage(QWidget):
         self.folder_note.setObjectName("cardMeta")
         self.folder_note.setWordWrap(True)
         options.addWidget(self.folder_note)
+        self.mods_button = big_button("🧩  Mods")
+        self.mods_button.clicked.connect(self.open_mods)
+        options.addWidget(self.mods_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.reinstall_button = big_button("⟳  Install again")
         self.reinstall_button.clicked.connect(self.reinstall)
         options.addWidget(self.reinstall_button, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -396,6 +399,8 @@ class MinecraftInstancePage(QWidget):
         game = self.game
         state = "installed" if game.installed else "installed on its first Play"
         self.facts.setText(f"{installer.describe(game)} · {state}\n{played(game)}")
+        # (mods need Fabric - and the Minecraft version they're for, known once it's installed)
+        self.mods_button.setVisible(game.controller and bool(game.installed and game.game_version))
 
     def _favorite_text(self) -> None:
         self.favorite_button.setText("★ Favorite" if self.favorite_button.isChecked() else "☆ Favorite")
@@ -468,6 +473,12 @@ class MinecraftInstancePage(QWidget):
         self.progress.setValue(int(fraction * 1000))
         self.show_status(text)
 
+    def open_mods(self) -> None:
+        self.options_popup.set_open(False)
+        page = ModsPage(self.tab, self.game)
+        self.tab.push(page)
+        page.search.setFocus()
+
     def reinstall(self) -> None:
         """Everything checked and downloaded again (a broken download) - the worlds stay."""
         self.options_popup.set_open(False)
@@ -492,3 +503,183 @@ class MinecraftInstancePage(QWidget):
 
         run_async(lambda: library.remove(game), done,
                   lambda exc: self.show_status(f"Could not remove it: {exc}", error=True), owner=self)
+
+
+class ModsPage(QWidget):
+    """An instance's mods: the ones in its folder (remove), and any Fabric mod from Modrinth for its
+    Minecraft version (search, add - with what it needs)."""
+
+    def __init__(self, tab, game: MinecraftInstance, parent: QWidget | None = None, get=None, fetch=None):
+        super().__init__(parent)
+        self.tab, self.game = tab, game
+        self.get, self.fetch = get or mods.get_json, fetch or mods.get_bytes
+        self.folder = game.path / mods.MODS
+        self.busy = False
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(30, 16, 30, 10)
+        top = QHBoxLayout()
+        top.addWidget(tab.back_button())
+        title = QLabel(f"Mods · {game.name}")
+        title.setObjectName("title")
+        top.addWidget(title, 1)
+        layout.addLayout(top)
+        search_row = QHBoxLayout()
+        self.search = QLineEdit()
+        self.search.setPlaceholderText(f"🔍  Search Modrinth for Minecraft {game.game_version}")
+        self.search.returnPressed.connect(self.run_search)
+        search_row.addWidget(self.search, 1)
+        self.search_button = big_button("Search")
+        self.search_button.clicked.connect(self.run_search)
+        search_row.addWidget(self.search_button)
+        layout.addLayout(search_row)
+        self.status = QLabel("")
+        self.status.setObjectName("status")
+        self.status.setWordWrap(True)
+        self.status.hide()
+        layout.addWidget(self.status)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        enable_touch_scroll(scroll)
+        content = QWidget()
+        self.rows = QVBoxLayout(content)
+        self.rows.setContentsMargins(0, 8, 0, 8)
+        self.rows.setSpacing(10)
+        self.installed_heading = QLabel("Installed")
+        self.installed_heading.setObjectName("section")
+        self.rows.addWidget(self.installed_heading)
+        self.installed_box = QVBoxLayout()
+        self.installed_box.setSpacing(10)
+        self.rows.addLayout(self.installed_box)
+        self.found_heading = QLabel("Popular on Modrinth")
+        self.found_heading.setObjectName("section")
+        self.rows.addWidget(self.found_heading)
+        self.found_box = QVBoxLayout()
+        self.found_box.setSpacing(10)
+        self.rows.addLayout(self.found_box)
+        self.rows.addStretch()
+        scroll.setWidget(content)
+        layout.addWidget(scroll, 1)
+        self.keyboard = OnScreenKeyboard(self.search, compact=True)
+        self.keyboard.submitted.connect(lambda: (self.keyboard.hide(), self.run_search()))
+        self.keyboard.dismissable = True
+        self.keyboard.hide()
+        self._focus_filter = KeyboardFocusFilter(self.keyboard, self)
+        self._focus_filter.watch(self.search)
+        layout.addWidget(self.keyboard)
+        self.found: list = []
+        self.show_installed()
+        self.run_search()
+
+    def show_status(self, text: str, error: bool = False) -> None:
+        set_status(self.status, text, error=error)
+        self.status.setVisible(bool(text))
+
+    @staticmethod
+    def _clear(box: QVBoxLayout) -> None:
+        while box.count():
+            item = box.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+
+    def _row(self, title: str, meta: str, action: str, slot, danger: bool = False, enabled: bool = True) -> QFrame:
+        row = QFrame()
+        row.setObjectName("card")
+        line = QHBoxLayout(row)
+        line.setContentsMargins(18, 12, 18, 12)
+        text = QVBoxLayout()
+        name = QLabel(title)
+        name.setObjectName("cardTitle")
+        name.setWordWrap(True)
+        text.addWidget(name)
+        if meta:
+            detail = QLabel(meta)
+            detail.setObjectName("cardMeta")
+            detail.setWordWrap(True)
+            text.addWidget(detail)
+        line.addLayout(text, 1)
+        button = big_button(action, "danger" if danger else "")
+        button.setEnabled(enabled)
+        button.clicked.connect(slot)
+        line.addWidget(button, alignment=Qt.AlignmentFlag.AlignVCenter)
+        row.button = button
+        return row
+
+    # what's there -----------------------------------------------------------------------
+    def show_installed(self) -> None:
+        self._clear(self.installed_box)
+        names = mods.installed(self.folder)
+        for name in names:
+            needed = name.lower().startswith(mods.CONTROLLER)
+            meta = "for the controller" if needed else ("" if name in self.game.mods else "put there by hand")
+            self.installed_box.addWidget(self._row(mods.friendly(name), meta, "🗑 Remove",
+                                                   lambda _c=False, n=name: self.ask_remove(n)))
+        if not names:
+            empty = QLabel("No mods yet.")
+            empty.setObjectName("cardMeta")
+            self.installed_box.addWidget(empty)
+
+    def ask_remove(self, name: str) -> None:
+        from gamingcrypt.ui.modal import ask
+
+        warning = " Without it there's no controller support." if name.lower().startswith(mods.CONTROLLER) else ""
+        ask(self, f"Remove {mods.friendly(name)}?{warning}", "🗑 Remove", lambda: self.remove(name))
+
+    def remove(self, name: str) -> None:
+        self.game.mods = mods.remove(name, self.folder, self.game.mods)
+        self.game.projects.pop(name, None)
+        library.save(self.game)
+        self.show_installed()
+        self.show_found()
+        self.show_status(f"{mods.friendly(name)} removed")
+
+    # Modrinth ---------------------------------------------------------------------------
+    def run_search(self) -> None:
+        query, version, get = self.search.text(), self.game.game_version, self.get
+        if not version:
+            self.show_status("Play it once first - mods are for the Minecraft version it gets", error=True)
+            return
+        self.found_heading.setText(f'Found for "{query.strip()}"' if query.strip() else "Popular on Modrinth")
+        self.show_status("Searching Modrinth…")
+        run_async(lambda: mods.search(query, version, get), self._found,
+                  lambda exc: self.show_status(f"Modrinth can't be reached - is the device online? ({exc})",
+                                               error=True), owner=self)
+
+    def _found(self, found: list) -> None:
+        self.found = found
+        self.show_status("" if found else "Nothing found for this Minecraft version")
+        self.show_found()
+
+    def show_found(self) -> None:
+        self._clear(self.found_box)
+        files = set(mods.installed(self.folder))
+        have = {project for name, project in self.game.projects.items() if name in files}
+        for mod in self.found:
+            there = mod.project in have
+            meta = f"{mod.description}\n{mod.author} · {mod.downloads:,} downloads".replace(",", ".")
+            self.found_box.addWidget(self._row(mod.title, meta, "Installed" if there else "+  Add",
+                                               lambda _c=False, m=mod: self.add(m), enabled=not there and not self.busy))
+
+    def add(self, mod) -> None:
+        if self.busy:
+            return
+        self.busy = True
+        self.show_status(f"Adding {mod.title}…")
+        self.show_found()
+        game, folder, get, fetch = self.game, self.folder, self.get, self.fetch
+
+        def done(files: list) -> None:
+            self.busy = False
+            game.mods = sorted(set(game.mods) | {f.filename for f in files}, key=str.casefold)
+            game.projects.update({f.filename: f.project for f in files})
+            library.save(game)
+            self.show_installed()
+            self.show_found()
+            self.show_status(f"✓ {mod.title} added - it's there on the next start")
+
+        def failed(exc: Exception) -> None:
+            self.busy = False
+            self.show_found()
+            self.show_status(f"{mod.title} could not be added: {exc}", error=True)
+
+        run_async(lambda: mods.add(mod.project, game.game_version, folder, get, fetch), done, failed, owner=self)

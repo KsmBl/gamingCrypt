@@ -376,3 +376,74 @@ def test_an_instance_with_controller_support_gets_fabric_and_the_mods(root):
     plain = library.create(root, "Plain", "26.2")
     ok, _m, version = installer.install(portable.Paths(root, ""), plain, lambda *a: None, popen=popen, get=get)
     assert ok and specs[-1] == "26.2" and not plain.mods
+
+
+# --- the Mods page ---------------------------------------------------------------------------
+
+def test_search_add_and_remove(tmp_path):
+    from gamingcrypt.minecraft import mods
+
+    asked = []
+    versions, _asked = modrinth(MODRINTH)
+
+    def get(url, params):
+        asked.append((url.rsplit("/", 1)[-1], params))
+        if url.endswith("/search"):
+            return {"hits": [{"project_id": "MAP", "title": "Minimap", "description": "A map", "downloads": 5,
+                              "author": "x"}]}
+        return versions(url, params)
+
+    found = mods.search("map", "26.3", get)
+    assert found == [mods.Found("MAP", "Minimap", "A map", 5, "x")]
+    assert "versions:26.3" in asked[0][1]["facets"] and "index" not in asked[0][1]
+    mods.search("", "26.3", get)
+    assert asked[-1][1]["index"] == "downloads"  # nothing asked for: the popular ones
+    MODRINTH["MAP"] = [mod_version("MAP", "minimap.jar", ["26.3"], [("FAPI", "required")])]
+    try:
+        files = mods.add("MAP", "26.3", tmp_path, get, lambda url: b"jar")
+        assert sorted(f.filename for f in files) == ["fabric-api.jar", "minimap.jar"]
+        with pytest.raises(LookupError):
+            mods.add("MAP", "1.8.9", tmp_path, get, lambda url: b"jar")
+    finally:
+        del MODRINTH["MAP"]
+    assert mods.installed(tmp_path) == ["fabric-api.jar", "minimap.jar"]
+    assert mods.remove("minimap.jar", tmp_path, ["minimap.jar", "x.jar"]) == ["x.jar"]
+    assert mods.installed(tmp_path) == ["fabric-api.jar"]
+    assert mods.friendly("fabric-api-0.119.4+1.21.4.jar") == "fabric api"
+    assert mods.friendly("sodium-fabric-0.6.13+mc1.21.4.jar") == "sodium"
+
+
+def test_mods_page(qtbot, window, root):
+    from gamingcrypt.minecraft import mods
+    from gamingcrypt.ui.minecraft_pages import MinecraftInstancePage, ModsPage
+
+    games = window._games
+    instance = games.minecraft_games[0]
+    instance.loader, instance.installed, instance.game_version = "fabric", "fabric-26.3-0.19.5", "26.3"
+    page = MinecraftInstancePage(games, instance)
+    games.push(page)
+    assert not page.mods_button.isHidden()  # Fabric, installed: mods
+    (instance.path / "mods").mkdir()
+    (instance.path / "mods" / "controlify-26.3.jar").write_bytes(b"jar")
+    (instance.path / "mods" / "handmade.jar").write_bytes(b"jar")
+    instance.mods, instance.projects = ["controlify-26.3.jar"], {"controlify-26.3.jar": "CTRL"}
+
+    def get(url, params):
+        if url.endswith("/search"):
+            return {"hits": [{"project_id": "CTRL", "title": "Controlify", "description": "", "downloads": 9},
+                             {"project_id": "MAP", "title": "Minimap", "description": "A map", "downloads": 5}]}
+        return [mod_version("MAP", "minimap.jar", ["26.3"])] if "/MAP/" in url else []
+
+    mods_page = ModsPage(games, instance, get=get, fetch=lambda url: b"jar")
+    games.push(mods_page)
+    qtbot.waitUntil(lambda: mods_page.found_box.count() == 2)
+    rows = [mods_page.found_box.itemAt(i).widget() for i in range(2)]
+    assert rows[0].button.text() == "Installed" and not rows[0].button.isEnabled()  # (by its project)
+    installed = [mods_page.installed_box.itemAt(i).widget() for i in range(mods_page.installed_box.count())]
+    assert len(installed) == 2
+    rows[1].button.click()
+    qtbot.waitUntil(lambda: "minimap.jar" in instance.mods)
+    assert library.scan(root)[0].projects["minimap.jar"] == "MAP"  # kept
+    assert mods.installed(instance.path / "mods") == ["controlify-26.3.jar", "handmade.jar", "minimap.jar"]
+    mods_page.remove("minimap.jar")
+    assert "minimap.jar" not in instance.mods and not (instance.path / "mods" / "minimap.jar").exists()

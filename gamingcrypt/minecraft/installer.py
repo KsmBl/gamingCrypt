@@ -39,6 +39,7 @@ def install(paths: portable.Paths, instance: MinecraftInstance, progress: Callab
         return ok, message, version
     try:
         instance.mods = mods.download(files, instance.path / mods.MODS, instance.mods, fetch, progress)
+        instance.projects = {f.filename: f.project for f in files if f.filename in instance.mods}
     except (OSError, ValueError, mods.requests.RequestException) as exc:
         return False, f"The controller mods didn't download: {exc}", ""
     instance.game_version = game_version

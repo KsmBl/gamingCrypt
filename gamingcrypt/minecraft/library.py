@@ -36,6 +36,7 @@ class MinecraftInstance(WindowsGame):
     loader: str = VANILLA  # FABRIC: with the mods for a controller
     game_version: str = ""  # the Minecraft it got (the mods are for it)
     mods: list = field(default_factory=list)  # the mod files put into its mods folder
+    projects: dict = field(default_factory=dict)  # mod file -> its Modrinth project (what's there already)
 
     KIND = "minecraft"
     LABEL = "Minecraft"
@@ -63,12 +64,13 @@ def _read(folder: Path) -> MinecraftInstance | None:
         return None
     if not isinstance(data, dict):
         return None
-    mods = data.get("mods")
+    mods, projects = data.get("mods"), data.get("projects")
     return MinecraftInstance(folder, str(data.get("name") or folder.name), version=str(data.get("version") or LATEST),
                              installed=str(data.get("installed") or ""),
                              loader=FABRIC if data.get("loader") == FABRIC else VANILLA,
                              game_version=str(data.get("game_version") or ""),
-                             mods=[str(m) for m in mods] if isinstance(mods, list) else [])
+                             mods=[str(m) for m in mods] if isinstance(mods, list) else [],
+                             projects={str(k): str(v) for k, v in projects.items()} if isinstance(projects, dict) else {})
 
 
 def scan(root: Path) -> list[MinecraftInstance]:
@@ -84,7 +86,8 @@ def scan(root: Path) -> list[MinecraftInstance]:
 def save(instance: MinecraftInstance) -> None:
     (instance.path / SETTINGS).write_text(json.dumps(
         {"name": instance.name, "version": instance.version, "installed": instance.installed,
-         "loader": instance.loader, "game_version": instance.game_version, "mods": instance.mods}, indent=1))
+         "loader": instance.loader, "game_version": instance.game_version, "mods": instance.mods,
+         "projects": instance.projects}, indent=1))
 
 
 def folder_name(name: str) -> str:

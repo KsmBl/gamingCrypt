@@ -137,3 +137,64 @@ def download(files: list[ModFile], folder: Path, before: list[str] = (), fetch: 
         if name not in wanted and "/" not in name:
             (folder / name).unlink(missing_ok=True)  # (an older version of one of ours)
     return sorted(wanted)
+
+
+# the Mods page: any mod from Modrinth, for the instance's Minecraft ---------------------------------
+@dataclass(frozen=True)
+class Found:
+    project: str
+    title: str
+    description: str
+    downloads: int
+    author: str
+
+
+def search(query: str, game_version: str, get: Get = get_json, limit: int = 20) -> list[Found]:
+    """Fabric mods for this Minecraft version, the most downloaded first."""
+    facets = [[f"categories:{LOADER}"], [f"versions:{game_version}"], ["project_type:mod"]]
+    params = {"query": query, "limit": limit, "facets": json.dumps(facets)}
+    if not query.strip():
+        params["index"] = "downloads"  # (nothing asked for: the popular ones)
+    found = get(f"{API}/search", params)
+    hits = found.get("hits", []) if isinstance(found, dict) else []
+    return [Found(h.get("project_id", ""), h.get("title", ""), h.get("description", ""), int(h.get("downloads") or 0),
+                  h.get("author", "")) for h in hits if isinstance(h, dict) and h.get("project_id")]
+
+
+def installed(folder: Path) -> list[str]:
+    """The mod files in the folder - put there here or by hand."""
+    try:
+        return sorted((p.name for p in folder.iterdir() if p.suffix == ".jar"), key=str.casefold)
+    except OSError:
+        return []
+
+
+def add(project: str, game_version: str, folder: Path, get: Get = get_json,
+        fetch: Callable[[str], bytes] = get_bytes) -> list[ModFile]:
+    """One more mod and what it needs -> their files (now in the folder). Not there for the
+    version: LookupError."""
+    files, missing = resolve([project], game_version, get, required=(project,))
+    if missing:
+        raise LookupError(f"not there for Minecraft {game_version}")
+    download(files, folder, (), fetch)  # (nothing of ours goes)
+    return files
+
+
+def remove(name: str, folder: Path, ours: list[str]) -> list[str]:
+    (folder / name).unlink(missing_ok=True)
+    return [n for n in ours if n != name]
+
+
+def friendly(name: str) -> str:
+    """"sodium-fabric-0.6.13+mc1.21.4.jar" -> "sodium fabric" - a file name as a mod's name."""
+    import re
+
+    stem = name.removesuffix(".jar")
+    words = re.split(r"[-_+ ]", stem)
+    kept = []
+    for word in words:
+        loader_word = kept and word.lower() in ("fabric", "lts")  # ("fabric-api": its first word is its name)
+        if re.match(r"^v?\d", word) or word.lower().startswith("mc1") or loader_word:
+            break
+        kept.append(word)
+    return " ".join(kept).strip() or stem
