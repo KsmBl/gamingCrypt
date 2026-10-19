@@ -1,4 +1,5 @@
-"""Device buttons: which button opens the quick menu and which locks right away.
+"""Device buttons: which button opens the quick menu, which locks right away and which
+opens the on-screen keyboard.
 
 Not every handheld has a Windows key for the quick menu, so the buttons are set in
 Settings -> Controller -> Device buttons (pressed once to record them). A binding is
@@ -7,8 +8,8 @@ keyboard-like device (Windows key, volume buttons ...) or on the controller (Gui
 Select ...). Defaults depend on the handheld model.
 
 A controller connected to the handheld (Bluetooth, USB) has no Windows key: it has
-buttons of its own for both, set there too ("On a controller") - Guide and Guide + View
-until then. Every controller feeds the same virtual one, so they work on the
+buttons of its own for them, set there too ("On a controller") - Guide, Guide + View and
+Guide + X until then. Every controller feeds the same virtual one, so they work on the
 built-in controller as well.
 """
 
@@ -19,9 +20,9 @@ from pathlib import Path
 
 from gamingcrypt.input import evdev as e
 
-ACTIONS = {"quick_menu": "Quick menu", "lock": "Lock now"}
+ACTIONS = {"quick_menu": "Quick menu", "lock": "Lock now", "keyboard": "On-screen keyboard"}
 # reported by the key reader instead of the key code when a binding fired
-ACTION_CODES = {"lock": e.PANIC_COMBO, "quick_menu": -2}
+ACTION_CODES = {"lock": e.PANIC_COMBO, "quick_menu": -2, "keyboard": -3}
 KEY = "key"  # keyboard-like device (read by the volume key reader)
 PAD = "pad"  # the controller (through the UI's controller input)
 
@@ -72,9 +73,11 @@ class Binding:
 
 
 WINDOWS = {"quick_menu": Binding(KEY, (e.KEY_LEFTMETA,)),
-           "lock": Binding(KEY, (e.KEY_LEFTMETA, e.KEY_VOLUMEDOWN))}
+           "lock": Binding(KEY, (e.KEY_LEFTMETA, e.KEY_VOLUMEDOWN)),
+           "keyboard": Binding(KEY, (e.KEY_LEFTMETA, e.KEY_VOLUMEUP))}
 CONTROLLER = {"quick_menu": Binding(PAD, (e.BTN_MODE,)),
-              "lock": Binding(PAD, (e.BTN_MODE, e.BTN_SELECT))}
+              "lock": Binding(PAD, (e.BTN_MODE, e.BTN_SELECT)),
+              "keyboard": Binding(PAD, (e.BTN_MODE, e.BTN_NORTH))}  # Guide + X, as Steam + X on a Deck
 EXTERNAL = dict(CONTROLLER)  # a connected controller's buttons, until others are set
 EXTERNAL_KEY = "controller_hotkeys"  # (where they're kept in the config's "input")
 # vendor (DMI sys_vendor) -> defaults: handhelds with a Windows key use it for the menu
@@ -108,7 +111,8 @@ def load(config: dict, vendor_product: tuple[str, str] | None = None) -> dict[st
 
 
 def load_external(config: dict) -> dict[str, Binding]:
-    """A connected controller's buttons for the quick menu and lock now (controller buttons only)."""
+    """A connected controller's buttons for the quick menu, lock now and the keyboard (controller
+    buttons only)."""
     bindings = dict(EXTERNAL)
     for action, data in (config.get("input", {}).get(EXTERNAL_KEY) or {}).items():
         binding = Binding.from_dict(data) if isinstance(data, dict) else None

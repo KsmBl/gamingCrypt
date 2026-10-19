@@ -10,7 +10,7 @@ from typing import Callable
 
 import shiboken6
 from PySide6.QtCore import QObject, Qt, QThreadPool, QTimer, Signal
-from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QWidget
+from PySide6.QtWidgets import QAbstractButton, QApplication, QMainWindow, QStackedWidget, QWidget
 
 import logging
 
@@ -297,10 +297,42 @@ class MainWindow(QMainWindow):
             self.panic_lock()
         elif code == hotkeys.ACTION_CODES["quick_menu"]:
             self.toggle_quick_menu()
+        elif code == hotkeys.ACTION_CODES["keyboard"]:
+            self.toggle_keyboard()
         elif code == e.KEY_POWER:
             self.power_button()
         else:
             self.volume.handle(code)
+
+    # on-screen keyboard (its device button) ----------------------------------------------
+    def toggle_keyboard(self) -> None:
+        """For the highlighted text field (or the page's first one): its own keyboard when it has
+        one, else the keyboard docked at the bottom of the window."""
+        from gamingcrypt.ui import keyboard_overlay
+        from gamingcrypt.ui.widgets import focus_and_reveal
+
+        overlay = getattr(self, "keyboard_overlay", None)
+        if overlay is not None and overlay.isVisible():
+            overlay.close_keyboard()
+            return
+        menu = getattr(self, "quick_menu", None)
+        if menu is not None and menu.isVisible():
+            menu.close_menu()  # (its button is often the combination's first: it opened the menu)
+        if not self.isVisible() or self.isMinimized():
+            return
+        edit = keyboard_overlay.text_field(self.nav_root())
+        if edit is None:
+            self.notify("No text field here to type into", "⌨")
+            return
+        own = keyboard_overlay.page_keyboard(edit)
+        if own is not None:
+            keys = [k for k in own.findChildren(QAbstractButton) if k.isVisible()]
+            if keys:
+                focus_and_reveal(keys[0])
+            return
+        if overlay is None:
+            overlay = self.keyboard_overlay = keyboard_overlay.KeyboardOverlay(self)
+        overlay.open_for(edit)
 
     # sleep -----------------------------------------------------------------------------
     def start_power_key(self):
@@ -1853,6 +1885,9 @@ class MainWindow(QMainWindow):
         """Controller navigation stays inside the loading screen / power menu while shown."""
         from gamingcrypt.ui.modal import open_modal
 
+        keyboard = getattr(self, "keyboard_overlay", None)
+        if keyboard is not None and keyboard.isVisible():
+            return keyboard  # (over everything)
         modal = open_modal(self)
         if modal is not None:
             return modal  # a question: answer it first

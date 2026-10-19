@@ -1,4 +1,4 @@
-"""Settings -> Controller -> Device buttons: record the quick menu / lock button - the device's,
+"""Settings -> Controller -> Device buttons: record the quick menu / lock / keyboard button - the device's,
 and a connected controller's own (it has no Windows key)."""
 
 from __future__ import annotations
@@ -66,8 +66,9 @@ class DeviceButtonsSection(QFrame):
         heading = QLabel("Device buttons")
         heading.setObjectName("section")
         body.addWidget(heading)
-        hint = QLabel("Which button opens the quick menu and which locks right away - not every handheld "
-                      "has a Windows key. Hold one button and press another for a combination.")
+        hint = QLabel("Which button opens the quick menu, which locks right away and which opens the "
+                      "on-screen keyboard - not every handheld has a Windows key. Hold one button and press "
+                      "another for a combination.")
         hint.setObjectName("cardMeta")
         hint.setWordWrap(True)
         body.addWidget(hint)
@@ -75,7 +76,7 @@ class DeviceButtonsSection(QFrame):
         heading = QLabel("On a controller")
         heading.setObjectName("section")
         body.addWidget(heading)
-        hint = QLabel("A controller you connect (Bluetooth, USB) has buttons of its own for both - "
+        hint = QLabel("A controller you connect (Bluetooth, USB) has buttons of its own for them - "
                       "they work on the built-in one too.")
         hint.setObjectName("cardMeta")
         hint.setWordWrap(True)

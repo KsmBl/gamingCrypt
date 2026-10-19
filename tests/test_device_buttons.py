@@ -46,7 +46,7 @@ def test_tracker_single_combo_and_consumed():
     pad.feed(e.BTN_START, False)
     pad.feed(e.BTN_SELECT, True)
     assert pad.feed(e.BTN_START, True) == (["quick_menu"], True)
-    assert t.watched() == {e.KEY_LEFTMETA, e.KEY_VOLUMEDOWN}
+    assert t.watched() == {e.KEY_LEFTMETA, e.KEY_VOLUMEDOWN, e.KEY_VOLUMEUP}
 
 
 def test_reader_uses_the_recorded_key():
@@ -239,7 +239,8 @@ def test_a_controllers_buttons_are_its_own():
     others are set; only controller buttons."""
     cfg = {"input": {}}
     assert hotkeys.load_external(cfg) == {"quick_menu": Binding(PAD, (e.BTN_MODE,)),
-                                          "lock": Binding(PAD, (e.BTN_MODE, e.BTN_SELECT))}
+                                          "lock": Binding(PAD, (e.BTN_MODE, e.BTN_SELECT)),
+                                          "keyboard": Binding(PAD, (e.BTN_MODE, e.BTN_NORTH))}
     hotkeys.save(cfg, "lock", Binding(PAD, (e.BTN_START, e.BTN_SELECT)), external=True)
     hotkeys.save(cfg, "quick_menu", Binding(KEY, (148,)), external=True)  # (no controller button: ignored)
     external = hotkeys.load_external(cfg)
