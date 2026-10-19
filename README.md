@@ -3,7 +3,7 @@
 **A console-style launcher for Linux gaming handhelds, with your games on an encrypted drive.**
 
 Unlock with a PIN, password or pattern, and you land in a fullscreen launcher for your
-Steam library, emulated games, Windows and Linux games, movies and shows. It works with
+Steam library, emulated games, Windows and Linux games, Minecraft, movies and shows. It works with
 touch and controller, and can boot the device straight into a SteamOS-like gaming mode.
 
 | Games | Game page | Quick menu |
@@ -13,6 +13,10 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
 | Movies | Shows | Lock screen |
 |---|---|---|
 | ![movies](docs/screenshots/movies.png) | ![shows](docs/screenshots/shows.png) | ![lock](docs/screenshots/lock.png) |
+
+| Minecraft | Minecraft instance | On-screen keyboard |
+|---|---|---|
+| ![minecraft](docs/screenshots/minecraft.png) | ![minecraft-instance](docs/screenshots/minecraft-instance.png) | ![keyboard](docs/screenshots/keyboard.png) |
 
 | Light theme | Game page | Quick menu |
 |---|---|---|
@@ -77,6 +81,19 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
   screen (a fifth faster) instead of stuttering.
 - ❓ **Not recognised?** A file with an unusual name (patched, translated, renamed) gets no cover,
   genre or year by itself: choose the game from a list on its page, and the filters find it.
+- 🧱 **Minecraft** (Java Edition), playable with the controller: sign in with your Microsoft account
+  by scanning a QR code with your phone (no typing on the handheld), make an instance (its own worlds
+  and settings, the Minecraft version you choose) and press Play - Minecraft and its Java are
+  downloaded the first time. With **Controller support** (on by default) it runs on Fabric with
+  Controlify - menus, inventory, crafting and chat all with the controller - and Sodium for a smoother
+  game; **🧩 Mods** in its Options adds any Fabric mod from Modrinth (searched with the controller) or
+  removes one. Each user has their own account; everything stays on the encrypted drive. Installed
+  and started by [portablemc](https://github.com/theorzr/portablemc), set up by itself.
+- ⌨️ **On-screen keyboard on a button combination** (Guide + X on a controller, Windows + Volume Up on
+  handhelds with a Windows key - set your own in Settings → Controller → Device buttons): in
+  GamingCrypt it types into the text field; **in a game** it opens over the game and types into it
+  (a virtual keyboard), steered with the controller - with Esc, Tab, Ctrl, Alt, arrows and F1 - F12 for PC
+  games. While it's open the game doesn't get the controller.
 - 🪟 **Windows and Linux games** outside Steam: copy the game folder onto the drive, pick its start
   file, and play it with Proton, Wine or natively.
 - 🖼️ **Wrong or missing picture?** Hold it (or **Options → Change picture**) to pick another one, for games, movies and shows.
@@ -85,7 +102,7 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
 - 📶 **Upload over Wi-Fi**: add ROMs, games and videos from a browser (QR code) or a network share.
 - 🖧 **Services**: switch on SSH, or share your whole drive in the network while it's unlocked.
 - 🕹️ **Controller first**: console-style D-pad navigation, stick and trigger calibration, button
-  remapping, and a quick menu (volume, brightness, refresh rate, FPS limit, Bluetooth, force quit)
+  remapping, your own buttons for the quick menu, lock and keyboard, and a quick menu (volume, brightness, refresh rate, FPS limit, Bluetooth, force quit)
   during games.
 - 📺 **Refresh rate**: changed while you play - from the quick menu and from Settings (no
   restart) - on screens gamescope has other rates for (e.g. the Steam Deck); hidden on the others.

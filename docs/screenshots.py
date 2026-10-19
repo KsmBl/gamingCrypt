@@ -86,6 +86,12 @@ def sample_drive(base: Path) -> tuple[Path, Path, Path]:
     for system, name in (("snes", "Super Space Quest.sfc"), ("gba", "Pocket Racer.gba"), ("psx", "Shadow Run.chd")):
         (emu / "roms" / system).mkdir(parents=True, exist_ok=True)
         (emu / "roms" / system / name).write_bytes(b"x")
+    from gamingcrypt.minecraft import library as minecraft
+
+    survival = minecraft.create(base / "Minecraft", "Survival", loader=minecraft.FABRIC)
+    survival.installed, survival.game_version = "fabric-26.3-0.19.5", "26.3"
+    minecraft.save(survival)
+    minecraft.create(base / "Minecraft", "Creative builds", "26.2")
     return base / "Movies", base / "Shows", emu
 
 
@@ -97,14 +103,41 @@ def pump(ms: int) -> None:
         time.sleep(0.005)
 
 
+def game_keyboard(window) -> None:
+    """The on-screen keyboard over a game (its device button): the screen's size, on the game's
+    dark picture - steered with the controller, typing into the game."""
+    from PySide6.QtGui import QColor, QPainter, QPixmap
+
+    from gamingcrypt.input.virtual_keyboard import VirtualKeyboard
+    from gamingcrypt.ui.game_keyboard import GameKeyboard
+
+    keyboard = GameKeyboard(sink=VirtualKeyboard(make_uinput=lambda: None), mark_overlay=lambda w: True)
+    keyboard.open_over_game()
+    keyboard.setGeometry(0, 0, *SIZE)
+    keyboard._place()
+    keyboard.select(2, 4)  # (the highlight on a key)
+    pump(300)
+    picture = QPixmap(*SIZE)
+    picture.fill(QColor(theme.BG))
+    painter = QPainter(picture)
+    painter.drawPixmap(keyboard.panel.pos(), keyboard.panel.grab())
+    painter.end()
+    picture.save(str(OUT / "keyboard.png"))
+    keyboard.close_keyboard()
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     movies_root, shows_root, emu = sample_drive(Path(tempfile.mkdtemp()))
     service = FakeService(games=GAMES)
     pages = {}
+    from gamingcrypt.minecraft import portable
+
+    portable.available = lambda: True  # (never started here: who's signed in is set below)
 
     def factory(cfg):
-        pages["Games"] = GamesTab(service, library_settings=cfg["libraries"], emulation_root=str(emu))
+        pages["Games"] = GamesTab(service, library_settings=cfg["libraries"], emulation_root=str(emu),
+                                  minecraft_root=str(emu.parent / "Minecraft"))
         pages["Movies"] = MoviesTab(movies_root, lookup=NoLookup())
         pages["Shows"] = ShowsTab(shows_root, lookup=NoLookup())
         return dict(pages)
@@ -121,6 +154,7 @@ def main() -> None:
         shell = window.shell
         games = pages["Games"]
         games.games.update({g.appid: g for g in GAMES})
+        games.minecraft_accounts = [portable.Account("Steve", "1")]
 
         def shot(file: str) -> None:
             pump(400)
@@ -144,6 +178,13 @@ def main() -> None:
             window.quick_menu.close_menu()
             window.close()
             break
+        games.open_minecraft_library()
+        shot("minecraft")
+        games.open_minecraft_game(next(g for g in games.minecraft_games if g.name == "Survival"))
+        shot("minecraft-instance")
+        games.back()
+        games.back()
+        game_keyboard(window)
         shell.show_tab("Movies")
         shot("movies")
         movie_tab = pages["Movies"]
