@@ -315,10 +315,13 @@ class MainWindow(QMainWindow):
         if overlay is not None and overlay.isVisible():
             overlay.close_keyboard()
             return
-        menu = getattr(self, "quick_menu", None)
-        if menu is not None and menu.isVisible():
-            menu.close_menu()  # (its button is often the combination's first: it opened the menu)
+        over_game = getattr(self, "game_keyboard", None)
+        if over_game is not None and over_game.is_open():
+            over_game.close_keyboard()
+            return
         if not self.isVisible() or self.isMinimized():
+            if self.game_watcher.active and self.game_watcher.phase == "playing":
+                self.open_game_keyboard()
             return
         edit = keyboard_overlay.text_field(self.nav_root())
         if edit is None:
@@ -333,6 +336,19 @@ class MainWindow(QMainWindow):
         if overlay is None:
             overlay = self.keyboard_overlay = keyboard_overlay.KeyboardOverlay(self)
         overlay.open_for(edit)
+
+    def open_game_keyboard(self) -> None:
+        """Over the game: what's typed reaches it as key presses (see ui/game_keyboard)."""
+        keyboard = getattr(self, "game_keyboard", None)
+        if keyboard is None:
+            from gamingcrypt.ui.game_keyboard import GameKeyboard
+
+            keyboard = self.game_keyboard = GameKeyboard(hotkeys=self.pad_hotkey, divert=self.divert_controller)
+        keyboard.open_over_game()
+
+    def divert_controller(self, target) -> None:
+        if self.input_service is not None:
+            self.input_service.divert(target)
 
     # sleep -----------------------------------------------------------------------------
     def start_power_key(self):
@@ -468,9 +484,12 @@ class MainWindow(QMainWindow):
         service = getattr(games, "service", None)
         unlocker = self.unlocker_factory(self.config["unlock"])
         for overlay in (getattr(self, "quick_menu", None), getattr(self, "controls_overlay", None), self.sleep_lock,
-                        self.battery_warning):
+                        self.battery_warning, getattr(self, "keyboard_overlay", None)):
             if overlay is not None:
                 overlay.hide()
+        keyboard = getattr(self, "game_keyboard", None)
+        if keyboard is not None:
+            keyboard.close_keyboard()
         self.sleep_lock = None
         self.game_watcher._stop()
         self.launch_overlay.hide()
@@ -748,6 +767,9 @@ class MainWindow(QMainWindow):
 
     # quick menu (Windows button) ------------------------------------------------------
     def toggle_quick_menu(self) -> None:
+        keyboard = getattr(self, "game_keyboard", None)
+        if keyboard is not None and keyboard.is_open():
+            keyboard.close_keyboard()  # (the menu comes to the front instead)
         menu = getattr(self, "quick_menu", None)
         if menu is not None and menu.isVisible():
             menu.close_menu()
@@ -1701,6 +1723,9 @@ class MainWindow(QMainWindow):
         overlay = getattr(self, "game_volume_osd", None)
         if overlay is not None:
             overlay.dismiss()  # gamescope would keep drawing it over GamingCrypt
+        keyboard = getattr(self, "game_keyboard", None)
+        if keyboard is not None:
+            keyboard.close_keyboard()  # (and the controller back)
         menu = getattr(self, "quick_menu", None)
         if menu is not None and menu.isVisible():
             menu.hide()  # the game is gone - nothing to go back to

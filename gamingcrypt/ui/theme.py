@@ -314,6 +314,8 @@ QPushButton#key:hover {{ {box('key', c['SURFACE_HOVER'])} }}
 QPushButton#key:pressed, QPushButton#key:checked {{ {box('key', c['ACCENT'])} }}
 QPushButton#key:focus {{ {box('key', c['SURFACE_HI'], c['ACCENT'], RING)} }}
 QPushButton#key:checked:focus {{ {box('key', c['ACCENT'], c['FOCUS'], RING)} }}
+QPushButton#key[current="true"] {{ {box('key', c['SURFACE_HI'], c['ACCENT'], RING)} }}
+QPushButton#key[current="true"]:checked {{ {box('key', c['ACCENT'], c['FOCUS'], RING)} }}
 QPushButton#pinKey {{ {box('pin', c['SURFACE_HI'])} {pad('pin', 13, 25)} min-height: 72px; min-width: 96px;
                       font-size: 32px; font-weight: 500; }}
 QPushButton#pinKey:hover {{ {box('pin', c['SURFACE_HOVER'])} }}

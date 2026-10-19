@@ -36,10 +36,12 @@ def test_config_overrides_and_bad_entries():
 
 def test_tracker_single_combo_and_consumed():
     t = Tracker(dict(hotkeys.WINDOWS), KEY)
-    assert t.feed(e.KEY_RIGHTMETA, True) == (["quick_menu"], True)  # either Windows key
+    assert t.feed(e.KEY_RIGHTMETA, True) == ([], True)  # either Windows key - first of a combination: waits
+    assert t.feed(e.KEY_RIGHTMETA, False) == (["quick_menu"], True)  # let go alone: the quick menu
+    t.feed(e.KEY_RIGHTMETA, True)
     assert t.feed(e.KEY_VOLUMEDOWN, True) == (["lock"], True)  # held Windows + Volume Down
     t.feed(e.KEY_VOLUMEDOWN, False)
-    t.feed(e.KEY_RIGHTMETA, False)
+    assert t.feed(e.KEY_RIGHTMETA, False) == ([], False)  # no quick menu after the combination
     assert t.feed(e.KEY_VOLUMEDOWN, True) == ([], False)  # alone: just volume
     pad = Tracker({"quick_menu": Binding(PAD, (e.BTN_SELECT, e.BTN_START))}, PAD)
     assert pad.feed(e.BTN_START, True) == ([], False)
@@ -76,7 +78,7 @@ def test_volume_repeat_after_a_combo_doesnt_change_the_volume():
     for code, value in ((e.KEY_LEFTMETA, 1), (e.KEY_VOLUMEDOWN, 1), (e.KEY_VOLUMEDOWN, 2), (e.KEY_VOLUMEDOWN, 2),
                         (e.KEY_VOLUMEDOWN, 0), (e.KEY_LEFTMETA, 0), (e.KEY_VOLUMEDOWN, 1)):
         keys._key(code, value)
-    assert got == [QUICK, LOCK, e.KEY_VOLUMEDOWN]
+    assert got == [LOCK, e.KEY_VOLUMEDOWN]
 
 
 # --- the window ---------------------------------------------------------------------------
@@ -98,8 +100,8 @@ def window(qtbot):
 
 def test_guide_button_opens_the_quick_menu(qtbot, window):
     assert window.pad_hotkey(e.EV_KEY, e.BTN_MODE, 1) is True  # used up: doesn't navigate
+    assert window.pad_hotkey(e.EV_KEY, e.BTN_MODE, 0) is True  # let go: Guide + View didn't happen
     assert window.quick_menu.isVisible()
-    window.pad_hotkey(e.EV_KEY, e.BTN_MODE, 0)
     assert window.pad_hotkey(e.EV_KEY, e.BTN_SOUTH, 1) is False  # A still navigates
     window.pad_hotkey(e.EV_KEY, e.BTN_SOUTH, 0)
     locked = []
@@ -118,8 +120,8 @@ def test_navigator_lets_hotkeys_and_listeners_go_first(qtbot, window):
     activated = []
     nav.activate = lambda: activated.append(1)
     nav.on_event(e.EV_KEY, e.BTN_MODE, 1)
-    assert window.quick_menu.isVisible() and activated == []
     nav.on_event(e.EV_KEY, e.BTN_MODE, 0)
+    assert window.quick_menu.isVisible() and activated == []
     seen = []
     listener = lambda *ev: seen.append(ev) or True  # noqa: E731
     nav_mod.LISTENERS.append(listener)
@@ -253,7 +255,9 @@ def test_a_controllers_buttons_are_its_own():
 
 def test_both_sets_fire_each_action_once():
     t = Tracker(dict(hotkeys.CONTROLLER), PAD, also=dict(hotkeys.EXTERNAL))  # (a Steam Deck: the same buttons)
-    assert t.feed(e.BTN_MODE, True) == (["quick_menu"], True)  # not twice: it would open and close again
+    t.feed(e.BTN_MODE, True)
+    assert t.feed(e.BTN_MODE, False) == (["quick_menu"], True)  # not twice: it would open and close again
+    t.feed(e.BTN_MODE, True)
     assert t.feed(e.BTN_SELECT, True) == (["lock"], True)
     t = Tracker(dict(hotkeys.WINDOWS), PAD, also={"quick_menu": Binding(PAD, (e.BTN_START,))})
     assert t.feed(e.BTN_START, True) == (["quick_menu"], True) and t.watched() == {e.BTN_START}

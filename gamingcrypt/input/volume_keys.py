@@ -62,7 +62,9 @@ class VolumeKeys:
 
     def _key(self, code: int, value: int) -> None:
         if value == RELEASE:
-            self.tracker.feed(code, False)
+            actions, _consumed = self.tracker.feed(code, False)
+            for action in actions:
+                self.on_key(hotkeys.ACTION_CODES[action])  # (one that waited for a combination)
             self.consumed.discard(code)
             return
         if value == PRESS:

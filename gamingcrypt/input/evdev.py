@@ -232,7 +232,8 @@ class UInput:
     """A virtual controller (Xbox 360 layout so Steam/SDL know it everywhere)."""
 
     def __init__(self, name: str = VIRTUAL_NAME, path: str = "/dev/uinput",
-                 keys: list[int] | None = None, axes: list[AxisSpec] | None = None):
+                 keys: list[int] | None = None, axes: list[AxisSpec] | None = None,
+                 vendor: int = VIRTUAL_VENDOR, product: int = VIRTUAL_PRODUCT):
         self.fd = os.open(path, os.O_WRONLY | os.O_NONBLOCK)
         try:
             fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_KEY)
@@ -244,7 +245,7 @@ class UInput:
                 fcntl.ioctl(self.fd, UI_SET_ABSBIT, axis.code)
                 fcntl.ioctl(self.fd, UI_ABS_SETUP, struct.pack("H2x6i", axis.code, 0, axis.minimum, axis.maximum,
                                                                0, axis.flat, 0))
-            fcntl.ioctl(self.fd, UI_DEV_SETUP, struct.pack("HHHH80sI", BUS_USB, VIRTUAL_VENDOR, VIRTUAL_PRODUCT,
+            fcntl.ioctl(self.fd, UI_DEV_SETUP, struct.pack("HHHH80sI", BUS_USB, vendor, product,
                                                            0x0110, name.encode()[:79], 0))
             fcntl.ioctl(self.fd, UI_DEV_CREATE)
         except OSError:

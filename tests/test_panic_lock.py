@@ -51,12 +51,12 @@ def test_reader_reports_the_combo_only_while_windows_is_held():
     keys = VolumeKeys(got.append, finder=lambda: [e.DeviceInfo("/dev/x", "kbd")], open_device=lambda p: device)
     keys.start()
     deadline = time.time() + 2
-    while time.time() < deadline and len(got) < 3:
+    while time.time() < deadline and len(got) < 2:
         time.sleep(0.01)
     keys.stop()
     from gamingcrypt.input import hotkeys
 
-    assert got == [hotkeys.ACTION_CODES["quick_menu"], e.PANIC_COMBO, e.KEY_VOLUMEDOWN]
+    assert got == [e.PANIC_COMBO, e.KEY_VOLUMEDOWN]  # no quick menu on the way
 
 
 class Unlocker:

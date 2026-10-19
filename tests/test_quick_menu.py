@@ -113,7 +113,7 @@ def test_reader_reports_windows_button_once_per_press():
     from tests.test_volume_keys import FakeDevice
 
     device = FakeDevice([[(e.EV_KEY, e.KEY_LEFTMETA, 1), (e.EV_KEY, e.KEY_LEFTMETA, 2),
-                          (e.EV_KEY, e.KEY_LEFTMETA, 0)], [(e.EV_KEY, e.KEY_RIGHTMETA, 1)]])
+                          (e.EV_KEY, e.KEY_LEFTMETA, 0)], [(e.EV_KEY, e.KEY_RIGHTMETA, 1), (e.EV_KEY, e.KEY_RIGHTMETA, 0)]])
     got = []
     keys = VolumeKeys(got.append, finder=lambda: [e.DeviceInfo("/dev/x", "Buttons")], open_device=lambda p: device)
     keys.start()
@@ -121,7 +121,7 @@ def test_reader_reports_windows_button_once_per_press():
     while time.time() < deadline and len(got) < 2:
         time.sleep(0.01)
     keys.stop()
-    assert got == [hotkeys.ACTION_CODES["quick_menu"]] * 2  # either Windows key, once per press
+    assert got == [hotkeys.ACTION_CODES["quick_menu"]] * 2  # either Windows key, once per press (when let go)
 
 
 # --- menu ----------------------------------------------------------------------------------

@@ -31,6 +31,13 @@ def read_absinfo(device: e.InputDevice, codes: set[int]) -> dict[int, e.AbsInfo]
     return result
 
 
+def neutral() -> list[tuple[int, int, int]]:
+    """The virtual controller's state with nothing pressed or pushed."""
+    events = [(e.EV_KEY, key, 0) for key in e.XBOX_KEYS]
+    events += [(e.EV_ABS, axis.code, 0) for axis in e.XBOX_AXES]
+    return events + [(e.EV_SYN, e.SYN_REPORT, 0)]
+
+
 class Remapper:
     def __init__(self, info: e.DeviceInfo, profile: Profile,
                  open_device: Callable[[str], e.InputDevice] = e.InputDevice,
@@ -50,6 +57,8 @@ class Remapper:
         self._thread: threading.Thread | None = None
         self._ready = threading.Event()
         self._pads: dict[str, tuple[e.DeviceInfo, e.InputDevice, Translator]] = {}
+        # set: the controller goes there instead of to the game (the on-screen keyboard over it)
+        self.divert: Callable[[list[tuple[int, int, int]]], None] | None = None
 
     @property
     def running(self) -> bool:
@@ -121,6 +130,7 @@ class Remapper:
             return
         self._ready.set()
         rescan_at = time.monotonic() + RESCAN_S
+        diverted = False
         try:
             while not self._stop.is_set():
                 if self.find is not None and time.monotonic() >= rescan_at:
@@ -148,7 +158,13 @@ class Remapper:
                         continue
                     for event in events:
                         out.extend(translator.feed(*event))
-                if out:
+                divert = self.divert
+                if divert is not None and not diverted:
+                    virtual.emit(neutral())  # the game sees everything let go meanwhile
+                diverted = divert is not None
+                if out and divert is not None:
+                    divert(out)
+                elif out:
                     virtual.emit(out)
         finally:
             for path in list(self._pads):

@@ -87,6 +87,12 @@ class InputService:
             self.remapper.stop()
             self.remapper = None
 
+    def divert(self, target) -> None:
+        """target(events): the controller goes there instead of to the game (the on-screen keyboard
+        over it) - None: to the game again. Without the mapping the game reads the real one itself."""
+        if self.remapper is not None:
+            self.remapper.divert = target
+
     def pause(self) -> bool:
         """While calibrating/mapping we need the raw controller. Returns whether it was running."""
         was_running = self.running

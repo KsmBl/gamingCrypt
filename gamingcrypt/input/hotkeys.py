@@ -136,12 +136,16 @@ class Tracker:
 
     A combination fires when its second button is pressed while the first is held;
     the second button is then "used up" (e.g. Volume Down doesn't change the volume).
+    A button that's an action of its own and the first of a combination too (Guide: the quick
+    menu, Guide + X: the keyboard) does its own when it's let go without the second one -
+    the combination doesn't open the quick menu on its way.
     """
 
     bindings: dict[str, Binding]
     source: str
     held: set[int] = field(default_factory=set)
     also: dict[str, Binding] = field(default_factory=dict)  # a connected controller's (load_external)
+    waiting: set[int] = field(default_factory=set)  # pressed, its own action when let go
 
     def _all(self) -> list[tuple[str, Binding]]:
         return [(a, b) for a, b in [*self.bindings.items(), *self.also.items()] if b.source == self.source]
@@ -151,17 +155,26 @@ class Tracker:
         code = ALIASES.get(code, code)
         if not pressed:
             self.held.discard(code)
-            return [], False
+            if code not in self.waiting:
+                return [], False
+            self.waiting.discard(code)
+            return self._single(code), True
         self.held.add(code)
         actions = []  # (each once: the device's and a controller's can be the same button)
         for action, binding in self._all():
             if len(binding.codes) == 2 and code == binding.codes[1] and binding.codes[0] in self.held:
                 actions += [] if action in actions else [action]
-        if not actions:
-            for action, binding in self._all():
-                if binding.codes == (code,) and action not in actions:
-                    actions.append(action)
+                self.waiting.discard(binding.codes[0])  # (used for the combination)
+        if actions:
+            return actions, True
+        actions = self._single(code)
+        if actions and any(len(b.codes) == 2 and b.codes[0] == code for _a, b in self._all()):
+            self.waiting.add(code)
+            return [], True
         return actions, bool(actions)
+
+    def _single(self, code: int) -> list[str]:
+        return list(dict.fromkeys(action for action, binding in self._all() if binding.codes == (code,)))
 
     def watched(self) -> set[int]:
         return {c for _a, b in self._all() for c in b.codes}

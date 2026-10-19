@@ -56,10 +56,12 @@ def field_on_page(window) -> QLineEdit:
 def test_combination_opens_the_keyboard_for_the_field_and_types(qtbot, window):
     edit = field_on_page(window)
     edit.setFocus()
-    window.pad_hotkey(e.EV_KEY, e.BTN_MODE, 1)  # Guide: the quick menu first …
-    window.pad_hotkey(e.EV_KEY, e.BTN_NORTH, 1)  # … + X: the keyboard instead
+    window.pad_hotkey(e.EV_KEY, e.BTN_MODE, 1)  # Guide …
+    window.pad_hotkey(e.EV_KEY, e.BTN_NORTH, 1)  # … + X: the keyboard
+    window.pad_hotkey(e.EV_KEY, e.BTN_NORTH, 0)
+    window.pad_hotkey(e.EV_KEY, e.BTN_MODE, 0)
     overlay = window.keyboard_overlay
-    assert overlay.isVisible() and not window.quick_menu.isVisible()
+    assert overlay.isVisible() and getattr(window, "quick_menu", None) is None  # no quick menu on the way
     assert overlay.target() is edit and window.nav_root() is overlay
     overlay.keys.type_text("h")
     overlay.keys.type_text("i")
