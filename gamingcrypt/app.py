@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Callable
@@ -679,11 +680,12 @@ class MainWindow(QMainWindow):
         from gamingcrypt import users
         from gamingcrypt.emulation.library import EMU_APPID_BASE
         from gamingcrypt.linux.library import is_linux_appid
+        from gamingcrypt.minecraft.library import is_minecraft_appid
         from gamingcrypt.movies.library import is_movie_appid
         from gamingcrypt.wine.library import is_wine_appid
 
         return (appid is not None and appid < EMU_APPID_BASE and not is_wine_appid(appid)
-                and not is_linux_appid(appid) and not is_movie_appid(appid)
+                and not is_linux_appid(appid) and not is_minecraft_appid(appid) and not is_movie_appid(appid)
                 and not users.current(self.config).admin)
 
     def game_started(self, appid: int) -> None:
@@ -1015,11 +1017,12 @@ class MainWindow(QMainWindow):
         from gamingcrypt.emulation.library import EMU_APPID_BASE
 
         from gamingcrypt.linux.library import is_linux_appid
+        from gamingcrypt.minecraft.library import is_minecraft_appid
         from gamingcrypt.movies.library import is_movie_appid
         from gamingcrypt.wine.library import is_wine_appid
 
         games = self.shell.pages.get("Games") if self.shell else None
-        if is_wine_appid(appid) or is_linux_appid(appid):  # Windows / Linux game: Steam's patience (launchers)
+        if is_wine_appid(appid) or is_linux_appid(appid) or is_minecraft_appid(appid):  # Steam's patience
             name = self.game_name(appid)
             self.game_watcher.describe = lambda a: f"Starting {name}…"
             self.launch_overlay.show_for(name, appid, None, self.cover_loader(appid))
@@ -1215,12 +1218,14 @@ class MainWindow(QMainWindow):
     # running speed of RetroArch games ----------------------------------------------------------
     def emulated_game_in_front(self) -> bool:
         """Steam shows its own volume indicator over its games - over emulators, movies and Windows /
-        Linux games started here nobody does."""
+        Linux games (and Minecraft) started here nobody does."""
         from gamingcrypt.linux.library import is_linux_appid
+        from gamingcrypt.minecraft.library import is_minecraft_appid
         from gamingcrypt.wine.library import is_wine_appid
 
         appid = self.game_watcher.appid
-        windows = self.game_watcher.active and (is_wine_appid(appid) or is_linux_appid(appid))
+        windows = self.game_watcher.active and (is_wine_appid(appid) or is_linux_appid(appid)
+                                                or is_minecraft_appid(appid))
         return not self.isVisible() and (self.running_rom() is not None or self.running_movie() is not None
                                          or windows)
 
@@ -1318,6 +1323,53 @@ class MainWindow(QMainWindow):
             screen = self.screen_size()
             run_async(lambda: upscaling.stop(screen), owner=self, pool=self._power_pool)
 
+    # Minecraft: an instance, started by portablemc --------------------------------------------------
+    def launch_minecraft(self, instance) -> tuple[bool, str]:
+        """An installed instance (its page installs it first), with the signed-in account."""
+        import time
+
+        from gamingcrypt.emulation.retroarch import reaper
+        from gamingcrypt.minecraft import portable
+        from gamingcrypt.ui.tour import data_dir
+
+        games = self.shell.pages.get("Games") if self.shell else None
+        if not portable.available():
+            return False, "Minecraft's launcher isn't set up yet - open the Minecraft library while online"
+        if not instance.installed:
+            return False, f"{instance.name} isn't installed yet - press Play on its page"
+        account = games.minecraft_account() if hasattr(games, "minecraft_account") else None
+        if account is None:
+            return False, "Sign in with your Microsoft account first (Minecraft library)"
+        args = portable.launch_command(games.minecraft_paths(), instance, account)
+        log_dir = config_mod.cache_dir() / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(log_dir / "minecraft.log", "wb") as out:
+                subprocess.Popen([str(reaper(data_dir())), "SteamLaunch", f"AppId={instance.appid}", "--", *args],
+                                 cwd=str(instance.path), stdin=subprocess.DEVNULL, stdout=out,
+                                 stderr=subprocess.STDOUT, start_new_session=True)
+        except OSError as exc:
+            return False, f"It didn't start: {exc}"
+        log.info("starting Minecraft %s (%s) as %s", instance.name, instance.installed, account.username)
+        self._windows_started = getattr(self, "_windows_started", {})
+        self._windows_started[instance.appid] = time.time()
+        self.game_launched(instance.appid)
+        return True, f"Starting {instance.name}…"
+
+    def minecraft_problem(self) -> str:
+        """Why Minecraft didn't start, from portablemc's output - "" when it doesn't say."""
+        from gamingcrypt.minecraft import portable
+
+        try:
+            lines = (config_mod.cache_dir() / "logs" / "minecraft.log").read_text(errors="replace").splitlines()
+        except OSError:
+            return ""
+        for line in lines:
+            kind, values = portable.parse(line)
+            if kind.startswith("error_"):
+                return portable.error_text(kind, values)
+        return ""
+
     def windows_game_ended(self, appid: int | None) -> None:
         """Play time and "last played" of a Windows or Linux game (Steam keeps its own games')."""
         import time
@@ -1333,6 +1385,8 @@ class MainWindow(QMainWindow):
             games.reload_windows()  # Continue playing, Recently played
         if hasattr(games, "reload_linux"):
             games.reload_linux()
+        if hasattr(games, "reload_minecraft"):
+            games.reload_minecraft()
 
     def video_tabs(self) -> list:
         """Movies and Shows: what the player plays."""
@@ -1743,6 +1797,12 @@ class MainWindow(QMainWindow):
                     hook(appid, failed)
         self.launch_overlay.hide()
         self.bring_to_front()
+        from gamingcrypt.minecraft.library import is_minecraft_appid
+
+        if is_minecraft_appid(appid):
+            problem = self.minecraft_problem()  # (portablemc says why - e.g. signed out meanwhile)
+            if problem:
+                self.notify(problem, "⚠")
 
     def stop_watching_game(self) -> None:
         appid = self.game_watcher.appid
@@ -2027,6 +2087,8 @@ class MainWindow(QMainWindow):
                 games.windows_launcher = self.launch_windows
             if hasattr(games, "linux_launcher"):
                 games.linux_launcher = self.launch_linux
+            if hasattr(games, "minecraft_launcher"):
+                games.minecraft_launcher = self.launch_minecraft
             if hasattr(games, "layout_store"):
                 from gamingcrypt.emulation import layouts
 
@@ -2263,10 +2325,12 @@ def default_pages(config: dict) -> dict[str, QWidget]:
     emulation_root = os.path.join(mount_point, "Emulation") if mount_point else ""
     windows_root = os.path.join(mount_point, "Windows Games") if mount_point else ""
     linux_root = os.path.join(mount_point, "Linux Games") if mount_point else ""
+    minecraft_root = os.path.join(mount_point, "Minecraft") if mount_point else ""
     from gamingcrypt import users
 
     games = GamesTab(service, library_path=library_path, library_settings=libraries, emulation_root=emulation_root,
-                     windows_root=windows_root, linux_root=linux_root, user=users.current(config),
+                     windows_root=windows_root, linux_root=linux_root, minecraft_root=minecraft_root,
+                     user=users.current(config),
                      rate_games=users.current(config).admin and any(u.age is not None
                                                                     for u in users.all_users(config)))
     from gamingcrypt.emulation import cores, retroarch

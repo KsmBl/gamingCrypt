@@ -19,8 +19,8 @@ def recently_played(games: list[SteamGame], limit: int = LIMIT) -> list[SteamGam
 
 
 def pc_games(tab) -> list:
-    """The tab's Windows and Linux games."""
-    return [*getattr(tab, "windows_games", []), *getattr(tab, "linux_games", [])]
+    """The tab's Windows and Linux games - and Minecraft instances."""
+    return [*getattr(tab, "windows_games", []), *getattr(tab, "linux_games", []), *getattr(tab, "minecraft_games", [])]
 
 
 class RecentPage(QWidget):

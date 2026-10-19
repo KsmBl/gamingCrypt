@@ -243,8 +243,9 @@ def test_default_pages_pass_mount_point_to_games(monkeypatch):
 
     class Probe:
         def __init__(self, service, library_path="", library_settings=None, emulation_root="", windows_root="",
-                     linux_root="", user=None, rate_games=False):
+                     linux_root="", minecraft_root="", user=None, rate_games=False):
             seen["user"] = user
+            seen["minecraft"] = minecraft_root
             seen["path"] = library_path
             seen["libraries"] = library_settings
             seen["windows"] = windows_root
@@ -258,6 +259,7 @@ def test_default_pages_pass_mount_point_to_games(monkeypatch):
     assert seen["libraries"] is cfg["libraries"]  # shared: Settings changes reach the Games tab
     assert seen["windows"].endswith("/GamingCrypt/Windows Games")  # Windows games on the drive too
     assert seen["linux"].endswith("/GamingCrypt/Linux Games")  # and Linux games
+    assert seen["minecraft"].endswith("/GamingCrypt/Minecraft")  # and Minecraft
     assert seen["user"].admin  # who's using the device (nobody else there: the admin)
     cfg["steam"]["auto_library"] = False
     app.default_pages(cfg)

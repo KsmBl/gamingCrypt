@@ -59,6 +59,8 @@ def automatic(game, tab) -> int | None:
     if isinstance(game, RomGame):
         facts = getattr(tab, "rom_facts", None)
         return from_esrb(facts.rating(game)) if facts is not None else None
+    if getattr(game, "AGE", None) is not None:
+        return game.AGE  # its own (Minecraft)
     stored = getattr(tab.service, "stored_metadata", None)
     if stored is None:
         return None

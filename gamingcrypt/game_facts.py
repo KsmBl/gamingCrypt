@@ -43,6 +43,8 @@ def facts_of(game, tab) -> Facts:
         known = getattr(tab, "rom_facts", None)
         genres, year = known.facts(game) if known is not None else ((), None)
         return Facts(short_name(game.system.id), genres, year)
+    if isinstance(game, WindowsGame) and hasattr(game, "GENRES"):
+        return Facts(game.LABEL, tuple(game.GENRES), getattr(game, "YEAR", None))  # its own (Minecraft)
     if isinstance(game, WindowsGame):
         appid = steam_appid_of(game, tab)
         stored = getattr(tab.service, "stored_metadata", None)
@@ -88,5 +90,5 @@ def all_genres(facts: dict[int, Facts]) -> list[str]:
 
 def all_platforms(facts: dict[int, Facts]) -> list[str]:
     """Steam, Windows, Linux first, then the systems by name."""
-    order = {"Steam": 0, "Windows": 1, "Linux": 2}
+    order = {"Steam": 0, "Windows": 1, "Linux": 2, "Minecraft": 3}
     return sorted({f.platform for f in facts.values() if f.platform}, key=lambda p: (order.get(p, 3), p))

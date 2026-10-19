@@ -118,3 +118,40 @@ def penguin(w: int, h: int) -> QPixmap:
     painter.drawEllipse(QRectF(size * 0.56, size * 0.84, size * 0.24, size * 0.1))
     painter.end()
     return pixmap
+
+
+def block(w: int, h: int) -> QPixmap:
+    """Minecraft: a block of earth with grass on top - drawn, generic (the grass in steps on its sides)."""
+    from PySide6.QtGui import QPolygonF
+
+    size = min(w, h)
+    pixmap, painter = _pixmap(size, size)
+    s = size / 16
+    cx, top, left, right, bottom = size / 2, s * 1.5, s * 2, size - s * 2, size - s * 1.5
+    rise = s * 3.5  # the top face's half height
+
+    def face(points, color, pen=True) -> None:
+        painter.setPen(QPen(QColor(theme.TEXT), max(1.0, size / 48)) if pen else Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(color))
+        painter.drawPolygon(QPolygonF([QPointF(x, y) for x, y in points]))
+
+    face([(left, top + rise), (cx, top + 2 * rise), (cx, bottom), (left, bottom - rise)], "#8a5a34")
+    face([(cx, top + 2 * rise), (right, top + rise), (right, bottom - rise), (cx, bottom)], "#6e4526")
+    for x0, x1, y0, y1, color in ((left, cx, top + rise, top + 2 * rise, "#5fa83a"),
+                                  (cx, right, top + 2 * rise, top + rise, "#4c8f2c")):
+        steps = 4
+        points = [(x0, y0), (x1, y1)]
+        for i in range(steps, 0, -1):  # the lower edge, back in steps of two heights
+            xa, xb = x0 + (x1 - x0) * i / steps, x0 + (x1 - x0) * (i - 1) / steps
+            ya, yb = y0 + (y1 - y0) * i / steps, y0 + (y1 - y0) * (i - 1) / steps
+            drop = s * (2.2 if i % 2 else 1.4)
+            points += [(xa, ya + drop), (xb, yb + drop)]
+        face(points, color, pen=False)
+    face([(cx, top), (right, top + rise), (cx, top + 2 * rise), (left, top + rise)], "#6cbd43")
+    painter.setPen(QPen(QColor(theme.TEXT), max(1.0, size / 48)))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawPolygon(QPolygonF([QPointF(x, y) for x, y in [(cx, top), (right, top + rise), (right, bottom - rise),
+                                                              (cx, bottom), (left, bottom - rise), (left, top + rise)]]))
+    painter.drawLine(QPointF(cx, top + 2 * rise), QPointF(cx, bottom))
+    painter.end()
+    return pixmap

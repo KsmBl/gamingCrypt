@@ -27,7 +27,7 @@ from gamingcrypt.ui.widgets import (
 
 # Libraries on the Games tab: id -> name (Settings -> Games -> Libraries hides them)
 LIBRARIES = {"favorites": "Favorites", "steam": "Steam", "recent": "Recently played", "windows": "Windows games",
-             "linux": "Linux games"}
+             "linux": "Linux games", "minecraft": "Minecraft"}
 
 
 def heading(text: str) -> QLabel:
@@ -258,6 +258,9 @@ class GamesHome(QWidget):
         self.linux_card = SourceCard("Linux games", "Native games", icon=lambda w, h: icons.penguin(w, h))
         self.linux_card.tapped.connect(tab.open_linux_library)
         sources.addWidget(self.linux_card)
+        self.minecraft_card = SourceCard("Minecraft", "Java Edition", icon=lambda w, h: icons.block(w, h))
+        self.minecraft_card.tapped.connect(tab.open_minecraft_library)
+        sources.addWidget(self.minecraft_card)
         self.add_card = SourceCard("⬆ Add ROMs", "Emulator games, cores, BIOS · over Wi-Fi")
         self.add_card.tapped.connect(tab.open_upload)
         self.add_card.setVisible(tab.emulation is not None)
@@ -382,6 +385,8 @@ class GamesHome(QWidget):
             cards["windows"] = self.windows_card
         if self.tab.linux_root is not None:
             cards["linux"] = self.linux_card
+        if self.tab.minecraft_root is not None:
+            cards["minecraft"] = self.minecraft_card
         return cards
 
     def set_systems(self, found: dict) -> None:
@@ -405,6 +410,7 @@ class GamesHome(QWidget):
 
         self.sources_row.take_all()
         for card in [self.favorites_card, self.steam_card, self.recent_card, self.windows_card, self.linux_card,
+                     self.minecraft_card,
                      *(self.system_cards[s.id] for s in SYSTEMS if s.id in self.system_cards), self.add_card]:
             self.sources_row.addWidget(card)
         self.apply_libraries()
@@ -412,11 +418,12 @@ class GamesHome(QWidget):
     def apply_libraries(self) -> None:
         """Only the libraries chosen in Settings; no heading when none is left."""
         hidden = set(self.tab.library_settings.get("hidden", []))
-        for card, games, idle in ((self.windows_card, self.tab.windows_games, "Proton / Wine"),
-                                  (self.linux_card, self.tab.linux_games, "Native games")):
+        for card, games, idle, noun in ((self.windows_card, self.tab.windows_games, "Proton / Wine", "game"),
+                                        (self.linux_card, self.tab.linux_games, "Native games", "game"),
+                                        (self.minecraft_card, self.tab.minecraft_games, "Java Edition", "instance")):
             card.setVisible(False)  # (shown below when the drive has the folder)
             count = len(games)
-            card.subtitle.setText(f"{count} game{'s' if count != 1 else ''}" if count else idle)
+            card.subtitle.setText(f"{count} {noun}{'s' if count != 1 else ''}" if count else idle)
         for key, card in self.library_cards().items():
             card.setVisible(key not in hidden)
         any_shown = any(key not in hidden for key in self.library_cards()) or self.add_card.isVisibleTo(self)
@@ -583,7 +590,7 @@ class GamesTab(QStackedWidget):
 
     def __init__(self, service, library_path: str = "", parent: QWidget | None = None,
                  library_settings: dict | None = None, emulation_root: str = "", windows_root: str = "",
-                 linux_root: str = "", user=None, rate_games: bool = False):
+                 linux_root: str = "", minecraft_root: str = "", user=None, rate_games: bool = False):
         """user: who's using the device (users.User) - None: the admin. rate_games: the game
         pages offer "Age rating" (the admin, when a user has an age)."""
         super().__init__(parent)
@@ -644,6 +651,12 @@ class GamesTab(QStackedWidget):
             self.linux_covers = PcCovers(self.linux_root)  # Steam's store knows most Linux games too
         else:
             self.linux_covers = None
+        # Minecraft: an instance each in <drive>/Minecraft/Instances, installed and started by portablemc
+        self.minecraft_root = _Path(minecraft_root) if minecraft_root else None
+        self.minecraft_games: list = []
+        self.minecraft_launcher = None  # set by the app: MinecraftInstance -> (ok, message)
+        self.minecraft_covers = None  # (a drawn cover)
+        self.minecraft_accounts = None  # signed in (portable.Account), looked up when the library opens
         self.rom_launcher = None  # set by the app: RomGame -> (ok, message)
         self.core_fetcher = None  # (paths, system, wanted) -> core path: downloads missing RetroArch cores
         self._fetching_cores = False
@@ -743,6 +756,7 @@ class GamesTab(QStackedWidget):
     def reload_roms(self) -> None:
         self.reload_windows()
         self.reload_linux()
+        self.reload_minecraft()
         if self.emulation is None:
             return
         paths = self.emulation
@@ -762,10 +776,10 @@ class GamesTab(QStackedWidget):
         """The starred games that are still here: a removed (or renamed) ROM, Windows or Linux game
         keeps its star - it's back when the game is - but isn't counted. Steam games always are (the
         Favorites page shows uninstalled ones too)."""
-        from gamingcrypt.linux.library import LINUX_APPID_BASE
+        from gamingcrypt.minecraft.library import MINECRAFT_APPID_BASE
 
         here = {g.appid for games in [*self.roms.values(), self.pc_games()] for g in games}
-        return [appid for appid in self.profiles.favorites() if appid < LINUX_APPID_BASE or appid in here]
+        return [appid for appid in self.profiles.favorites() if appid < MINECRAFT_APPID_BASE or appid in here]
 
     def rated(self, games: list) -> list:
         """The games whoever uses the tab may see."""
@@ -848,8 +862,8 @@ class GamesTab(QStackedWidget):
         return next((g for g in self.pc_games() if g.appid == appid), None)
 
     def pc_games(self) -> list:
-        """The Windows and the Linux games."""
-        return [*self.windows_games, *self.linux_games]
+        """The Windows and the Linux games - and the Minecraft instances."""
+        return [*self.windows_games, *self.linux_games, *self.minecraft_games]
 
     def windows_runners(self) -> list:
         """Every Proton and Wine (looked for once)."""
@@ -947,6 +961,81 @@ class GamesTab(QStackedWidget):
         page = (self.upload_page_factory or LinuxUploadPage)(self.linux_root)
         page.closed.connect(self._linux_upload_closed)
         self.push(page)
+
+    # Minecraft -----------------------------------------------------------------------------------
+    def reload_minecraft(self) -> None:
+        root = self.minecraft_root
+        if root is None:
+            return
+
+        def work():
+            from gamingcrypt.minecraft.library import scan
+
+            return scan(root)
+
+        run_async(work, self._minecraft_loaded, lambda _e: None, owner=self)
+
+    def _minecraft_loaded(self, games: list) -> None:
+        for game in games:
+            profile = self.profiles.get(game.appid)
+            game.last_played, game.minutes = profile.get("last_played"), profile.get("minutes", 0)
+        games = self.rated(games)
+        self.minecraft_games = games
+        from gamingcrypt.ui.minecraft_pages import MinecraftLibraryPage
+
+        for page in self.pages_of(MinecraftLibraryPage):
+            if [g.appid for g in page.games] != [g.appid for g in games]:
+                page.set_games(games)
+        self.home.apply_libraries()
+        self.home.update_continue()
+        self.home.update_favorites()
+        self.home.refresh_results()
+
+    def minecraft_paths(self):
+        from gamingcrypt.minecraft.portable import Paths
+
+        own = "" if self.user is None or self.user.admin else self.user.id  # (each user's own account)
+        return Paths(self.minecraft_root, own)
+
+    def minecraft_account(self):
+        """The signed-in Microsoft account (looked up once)."""
+        if self.minecraft_accounts is None and self.minecraft_root is not None:
+            from gamingcrypt.minecraft import portable
+
+            self.minecraft_accounts = portable.accounts(self.minecraft_paths()) if portable.available() else []
+        return (self.minecraft_accounts or [None])[0]
+
+    def open_minecraft_library(self) -> None:
+        from gamingcrypt.ui.minecraft_pages import MinecraftLibraryPage
+        from gamingcrypt.ui.wine_pages import first_card
+
+        page = MinecraftLibraryPage(self, self.minecraft_games)
+        self.push(page)
+        first_card(page)
+
+    def open_minecraft_game(self, game) -> None:
+        from gamingcrypt.ui.minecraft_pages import MinecraftInstancePage
+
+        page = MinecraftInstancePage(self, game)
+        self.push(page)
+        page.main_button.setFocus()
+
+    def open_minecraft_upload(self) -> None:
+        """(The library's add button:) a new instance."""
+        from gamingcrypt.ui.minecraft_pages import NewInstancePage
+
+        if self.minecraft_root is None:
+            return
+        page = NewInstancePage(self)
+        self.push(page)
+        page.name.setFocus()
+
+    def open_minecraft_signin(self) -> None:
+        from gamingcrypt.ui.minecraft_pages import SignInPage
+
+        page = SignInPage(self)
+        self.push(page)
+        page.cancel_button.setFocus()
 
     def _linux_upload_closed(self) -> None:
         self.back()
