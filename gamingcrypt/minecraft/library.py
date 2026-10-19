@@ -1,6 +1,8 @@
 """Minecraft instances in <drive>/Minecraft/Instances: a folder each, with its own worlds, settings,
 resource packs (and later mods) - and instance.json: which Minecraft it runs.
 
+An instance with controller support runs on Fabric with Controlify (see minecraft/mods).
+
 What every instance shares - the game's versions, libraries, sounds and Java - is downloaded once
 into <drive>/Minecraft/Shared (see minecraft/portable). An instance is a game like a Linux one
 (play time, Continue, Favorites, search): it's a WindowsGame without Proton / Wine.
@@ -11,7 +13,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from gamingcrypt.wine.library import WindowsGame
@@ -21,7 +23,8 @@ INSTANCES = "Instances"
 SHARED = "Shared"
 ACCOUNTS = ".accounts"
 SETTINGS = "instance.json"
-LATEST = "release"  # portablemc: the newest release, whatever it is when the instance is started
+LATEST = "release"
+VANILLA, FABRIC = "vanilla", "fabric"  # portablemc: the newest release, whatever it is when the instance is started
 # Minecraft is fullscreen in gaming mode (gamescope shows one window anyway); the GUI scaled to the screen
 OPTIONS = "fullscreen:true\nguiScale:0\n"
 
@@ -29,7 +32,10 @@ OPTIONS = "fullscreen:true\nguiScale:0\n"
 @dataclass
 class MinecraftInstance(WindowsGame):
     version: str = LATEST
-    installed: str = ""  # the version last installed for it ("" - not yet)
+    installed: str = ""  # the version last installed for it ("" - not yet), e.g. "fabric-1.21.4-0.19.5"
+    loader: str = VANILLA  # FABRIC: with the mods for a controller
+    game_version: str = ""  # the Minecraft it got (the mods are for it)
+    mods: list = field(default_factory=list)  # the mod files put into its mods folder
 
     KIND = "minecraft"
     LABEL = "Minecraft"
@@ -40,6 +46,10 @@ class MinecraftInstance(WindowsGame):
 
     def describe_version(self) -> str:
         return "the newest release" if self.version == LATEST else self.version
+
+    @property
+    def controller(self) -> bool:
+        return self.loader == FABRIC
 
 
 def is_minecraft_appid(appid: int | None) -> bool:
@@ -53,8 +63,12 @@ def _read(folder: Path) -> MinecraftInstance | None:
         return None
     if not isinstance(data, dict):
         return None
+    mods = data.get("mods")
     return MinecraftInstance(folder, str(data.get("name") or folder.name), version=str(data.get("version") or LATEST),
-                             installed=str(data.get("installed") or ""))
+                             installed=str(data.get("installed") or ""),
+                             loader=FABRIC if data.get("loader") == FABRIC else VANILLA,
+                             game_version=str(data.get("game_version") or ""),
+                             mods=[str(m) for m in mods] if isinstance(mods, list) else [])
 
 
 def scan(root: Path) -> list[MinecraftInstance]:
@@ -69,7 +83,8 @@ def scan(root: Path) -> list[MinecraftInstance]:
 
 def save(instance: MinecraftInstance) -> None:
     (instance.path / SETTINGS).write_text(json.dumps(
-        {"name": instance.name, "version": instance.version, "installed": instance.installed}, indent=1))
+        {"name": instance.name, "version": instance.version, "installed": instance.installed,
+         "loader": instance.loader, "game_version": instance.game_version, "mods": instance.mods}, indent=1))
 
 
 def folder_name(name: str) -> str:
@@ -77,7 +92,7 @@ def folder_name(name: str) -> str:
     return cleaned or "Minecraft"
 
 
-def create(root: Path, name: str, version: str = LATEST) -> MinecraftInstance:
+def create(root: Path, name: str, version: str = LATEST, loader: str = VANILLA) -> MinecraftInstance:
     """A new instance (a folder of its own also when the name is taken)."""
     instances = root / INSTANCES
     instances.mkdir(parents=True, exist_ok=True)
@@ -87,7 +102,7 @@ def create(root: Path, name: str, version: str = LATEST) -> MinecraftInstance:
         folder, number = instances / f"{base} {number}", number + 1
     folder.mkdir()
     (folder / "options.txt").write_text(OPTIONS)
-    instance = MinecraftInstance(folder, name.strip() or base, version=version)
+    instance = MinecraftInstance(folder, name.strip() or base, version=version, loader=loader)
     save(instance)
     return instance
 

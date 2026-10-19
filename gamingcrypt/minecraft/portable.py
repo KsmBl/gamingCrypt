@@ -200,13 +200,14 @@ def installed_version(lines: list[str]) -> str:
 
 
 def install(paths: Paths, instance: MinecraftInstance, progress: Callable[[float, str], None],
-            popen=subprocess.Popen) -> tuple[bool, str, str]:
+            popen=subprocess.Popen, spec: str | None = None) -> tuple[bool, str, str]:
     """Download everything it needs (portablemc's dry run: all but starting it) -> (ok, message,
-    the version installed). progress(0..1, what) as it goes."""
+    the version installed). progress(0..1, what) as it goes. spec: e.g. "fabric:1.21.4" (else its
+    own version)."""
     paths.prepare()
     try:
         process = popen(paths.command("start", "--dry", "--jvm-policy", JVM_POLICY, "--mc-dir", str(instance.path),
-                                      version_spec(instance)),
+                                      spec or version_spec(instance)),
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True)
     except OSError as exc:
         return False, f"portablemc didn't start: {exc}", ""

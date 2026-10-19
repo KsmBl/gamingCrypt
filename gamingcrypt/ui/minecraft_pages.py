@@ -12,8 +12,8 @@ from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QScrollArea, QSizePolicy,
                                QVBoxLayout, QWidget)
 
-from gamingcrypt.minecraft import library, portable
-from gamingcrypt.minecraft.library import LATEST, MinecraftInstance
+from gamingcrypt.minecraft import installer, library, mods, portable
+from gamingcrypt.minecraft.library import FABRIC, LATEST, VANILLA, MinecraftInstance
 from gamingcrypt.ui.combo import ComboBox
 from gamingcrypt.ui.game_widgets import Cover
 from gamingcrypt.ui.tasks import run_async
@@ -182,7 +182,7 @@ class SignInPage(QWidget):
 class NewInstancePage(QWidget):
     """A name and a Minecraft version - its worlds and settings are its own."""
 
-    def __init__(self, tab, parent: QWidget | None = None, versions=None):
+    def __init__(self, tab, parent: QWidget | None = None, versions=None, supported=None):
         super().__init__(parent)
         self.tab = tab
         layout = QVBoxLayout(self)
@@ -211,6 +211,20 @@ class NewInstancePage(QWidget):
         self.version = ComboBox()
         self.version.addItem("The newest release", LATEST)
         form.addWidget(self.version)
+        self.releases: list[str] = []
+        self.supported: set[str] | None = None  # (Controlify's versions, once known)
+        self.controller_button = big_button("", checkable=True)
+        self.controller_button.setChecked(True)
+        self.controller_button.toggled.connect(self._controller_text)
+        self.controller_button.toggled.connect(lambda _on: self.fill_versions())
+        self._controller_text(True)
+        form.addWidget(self.controller_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.controller_note = QLabel("The whole game with the controller - menus, inventory, chat with an "
+                                      "on-screen keyboard (Fabric with Controlify and Sodium, from Modrinth). "
+                                      "Only the versions Controlify is made for.")
+        self.controller_note.setObjectName("cardMeta")
+        self.controller_note.setWordWrap(True)
+        form.addWidget(self.controller_note)
         note = QLabel("It stays on the version it's installed with - your worlds don't change by themselves.")
         note.setObjectName("cardMeta")
         note.setWordWrap(True)
@@ -234,6 +248,10 @@ class NewInstancePage(QWidget):
         if portable.available():
             paths = tab.minecraft_paths()
             run_async(versions or (lambda: portable.releases(paths)), self.add_versions, lambda _e: None, owner=self)
+            run_async(supported or mods.supported, self.set_supported, lambda _e: None, owner=self)
+
+    def _controller_text(self, on: bool) -> None:
+        self.controller_button.setText(f"{'☑' if on else '☐'}  Controller support")
 
     def free_name(self) -> str:
         taken = {g.name.casefold() for g in self.tab.minecraft_games}
@@ -243,8 +261,25 @@ class NewInstancePage(QWidget):
         return name
 
     def add_versions(self, found: list[str]) -> None:
-        for version in found:
-            self.version.addItem(version, version)
+        self.releases = list(found)
+        self.fill_versions()
+
+    def set_supported(self, found: set[str]) -> None:
+        self.supported = set(found)
+        self.fill_versions()
+
+    def fill_versions(self) -> None:
+        """Every release - with controller support the ones Controlify is made for (all until that's known)."""
+        chosen = self.version.currentData()
+        limit = self.supported if self.controller_button.isChecked() else None
+        self.version.blockSignals(True)
+        self.version.clear()
+        self.version.addItem("The newest release", LATEST)
+        for version in self.releases:
+            if limit is None or version in limit:
+                self.version.addItem(version, version)
+        self.version.setCurrentIndex(max(0, self.version.findData(chosen)))
+        self.version.blockSignals(False)
 
     def create(self) -> None:
         name = self.name.text().strip()
@@ -252,6 +287,7 @@ class NewInstancePage(QWidget):
             set_status(self.status, "Give it a name", error=True)
             return
         root, version = self.tab.minecraft_root, self.version.currentData() or LATEST
+        loader = FABRIC if self.controller_button.isChecked() else VANILLA
         self.create_button.setEnabled(False)
 
         def done(instance: MinecraftInstance) -> None:
@@ -263,13 +299,13 @@ class NewInstancePage(QWidget):
             self.create_button.setEnabled(True)
             set_status(self.status, f"Could not create it: {exc}", error=True)
 
-        run_async(lambda: library.create(root, name, version), done, failed, owner=self)
+        run_async(lambda: library.create(root, name, version, loader), done, failed, owner=self)
 
 
 class MinecraftInstancePage(QWidget):
     """An instance: Play (installs it the first time), Options - its version, remove; favorite."""
 
-    def __init__(self, tab, game: MinecraftInstance, parent: QWidget | None = None, installer=portable.install):
+    def __init__(self, tab, game: MinecraftInstance, parent: QWidget | None = None, installer=installer.install):
         super().__init__(parent)
         self.tab, self.game, self.installer = tab, game, installer
         self.installing = False
@@ -358,9 +394,8 @@ class MinecraftInstancePage(QWidget):
 
     def _show_facts(self) -> None:
         game = self.game
-        version = f"Minecraft {game.installed}" if game.installed else f"Minecraft ({game.describe_version()})"
         state = "installed" if game.installed else "installed on its first Play"
-        self.facts.setText(f"{version} · {state}\n{played(game)}")
+        self.facts.setText(f"{installer.describe(game)} · {state}\n{played(game)}")
 
     def _favorite_text(self) -> None:
         self.favorite_button.setText("★ Favorite" if self.favorite_button.isChecked() else "☆ Favorite")
@@ -420,7 +455,7 @@ class MinecraftInstancePage(QWidget):
                 self.show_status(message, error=True)
                 return
             game.installed = version or game.version
-            run_async(lambda: library.save(game), owner=self)
+            run_async(lambda: library.save(game), owner=self)  # (and its mods, its Minecraft version)
             self._show_facts()
             self.show_status("")
             if then_play:

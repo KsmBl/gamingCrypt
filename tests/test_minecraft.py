@@ -251,14 +251,19 @@ def test_new_instance(qtbot, window):
     from gamingcrypt.ui.minecraft_pages import MinecraftInstancePage, NewInstancePage
 
     games = window._games
-    page = NewInstancePage(games, versions=lambda: ["26.3", "26.2"])
+    page = NewInstancePage(games, versions=lambda: ["26.3", "26.2", "1.8.9"], supported=lambda: {"26.3", "26.2"})
     games.push(page)
-    qtbot.waitUntil(lambda: page.version.count() == 3)
+    qtbot.waitUntil(lambda: page.version.count() == 3)  # with controller support: Controlify's versions
     assert page.name.text() == "Survival 2"  # (Survival is taken)
+    page.controller_button.setChecked(False)
+    assert page.version.count() == 4 and "☐" in page.controller_button.text()  # every release
+    page.controller_button.setChecked(True)
     page.version.setCurrentIndex(2)
     page.create_button.click()
     qtbot.waitUntil(lambda: isinstance(games.currentWidget(), MinecraftInstancePage))
-    assert games.currentWidget().game.version == "26.2"
+    made = games.currentWidget().game
+    assert made.version == "26.2" and made.controller
+    assert library.scan(games.minecraft_root)[-1].loader == "fabric"
     qtbot.waitUntil(lambda: len(games.minecraft_games) == 2)
 
 
@@ -275,3 +280,99 @@ def test_app_starts_it_through_the_reaper(qtbot, window, monkeypatch, root):
     assert ok and started[0][1:3] == ["SteamLaunch", f"AppId={instance.appid}"]
     assert started[0][-4:] == ["-a", "-u", "Steve", "26.3"]
     assert window.game_watcher.appid == instance.appid
+
+
+# --- controller support: Fabric, Controlify and what it needs (Modrinth) -----------------------
+
+def modrinth(versions_by_project):
+    """A stand-in for Modrinth's /project/<p>/version."""
+    import json as _json
+
+    asked = []
+
+    def get(url, params):
+        project = url.split("/project/")[1].split("/")[0]
+        asked.append((project, params.get("game_versions")))
+        wanted = _json.loads(params["game_versions"])[0] if "game_versions" in params else None
+        return [v for v in versions_by_project.get(project, []) if wanted is None or wanted in v["game_versions"]]
+
+    return get, asked
+
+
+def mod_version(project_id, name, games, deps=(), date="2026-10-01", kind="release", data=b"jar"):
+    from gamingcrypt.minecraft import mods
+
+    return {"project_id": project_id, "game_versions": list(games), "version_type": kind, "date_published": date,
+            "dependencies": [{"project_id": d, "version_id": None, "dependency_type": t} for d, t in deps],
+            "files": [{"filename": name, "primary": True, "url": f"https://cdn/{name}",
+                       "hashes": {"sha512": mods.sha512(data)}}]}
+
+
+MODRINTH = {
+    "controlify": [mod_version("CTRL", "controlify-26.3.jar", ["26.3"], [("FAPI", "required"), ("YACL", "required"),
+                                                                           ("MENU", "optional")]),
+                   mod_version("CTRL", "controlify-old.jar", ["26.3"], date="2026-01-01"),
+                   mod_version("CTRL", "controlify-26.2.jar", ["26.2"], [("FAPI", "required")])],
+    "FAPI": [mod_version("FAPI", "fabric-api.jar", ["26.3", "26.2"])],
+    "YACL": [mod_version("YACL", "yacl.jar", ["26.3"], [("FAPI", "required")])],
+    "sodium": [mod_version("SOD", "sodium.jar", ["26.2"])],
+}
+
+
+def test_controller_mods_and_what_they_need():
+    from gamingcrypt.minecraft import mods
+
+    get, _asked = modrinth(MODRINTH)
+    files, missing = mods.resolve(["controlify", "sodium"], "26.3", get)
+    assert sorted(f.filename for f in files) == ["controlify-26.3.jar", "fabric-api.jar", "yacl.jar"]  # newest
+    assert missing == []  # (no Sodium for 26.3: it's an extra)
+    files, missing = mods.resolve(["controlify", "sodium"], "1.8.9", get)
+    assert files == [] and missing == ["controlify"]
+    assert mods.newest_supported(["26.4", "26.3", "26.2"], get) == "26.3"
+    assert "gamingCrypt" in mods.user_agent()
+
+
+def test_downloads_are_checked_and_old_ones_go(tmp_path):
+    from gamingcrypt.minecraft import mods
+
+    folder = tmp_path / "mods"
+    folder.mkdir()
+    (folder / "controlify-old.jar").write_bytes(b"old")
+    (folder / "my-own-mod.jar").write_bytes(b"mine")
+    files = [mods.ModFile("CTRL", "controlify-26.3.jar", "https://cdn/c", mods.sha512(b"jar"))]
+    fetched = []
+    names = mods.download(files, folder, ["controlify-old.jar"], lambda url: fetched.append(url) or b"jar")
+    assert names == ["controlify-26.3.jar"] and (folder / "controlify-26.3.jar").read_bytes() == b"jar"
+    assert not (folder / "controlify-old.jar").exists() and (folder / "my-own-mod.jar").exists()  # (not ours)
+    mods.download(files, folder, names, lambda url: fetched.append(url) or b"jar")
+    assert len(fetched) == 1  # there already
+    broken = [mods.ModFile("X", "x.jar", "https://cdn/x", mods.sha512(b"right"))]
+    with pytest.raises(ValueError):
+        mods.download(broken, folder, [], lambda url: b"wrong")
+    assert not (folder / "x.jar").exists()
+
+
+def test_an_instance_with_controller_support_gets_fabric_and_the_mods(root):
+    from gamingcrypt.minecraft import installer
+
+    instance = library.create(root, "Survival", loader="fabric")
+    get, _asked = modrinth(MODRINTH)
+    specs = []
+
+    def popen(args, **kwargs):
+        specs.append(args[-1])
+        return FakeProcess(["loaded_hierarchy\tfabric-26.3-0.19.5\t26.3"])
+
+    ok, message, version = installer.install(portable.Paths(root, ""), instance, lambda *a: None, popen=popen,
+                                             get=get, fetch=lambda url: b"jar",
+                                             releases=lambda paths: ["26.4", "26.3"])
+    assert ok and version == "fabric-26.3-0.19.5" and specs == ["fabric:26.3"]  # the newest Controlify knows
+    assert instance.game_version == "26.3" and "controlify-26.3.jar" in instance.mods
+    assert (instance.path / "mods" / "yacl.jar").exists()
+    assert installer.describe(instance) == "Minecraft 26.3 · with controller support (Controlify)"
+    pinned = library.create(root, "Old", "1.8.9", loader="fabric")
+    ok, message, _v = installer.install(portable.Paths(root, ""), pinned, lambda *a: None, popen=popen, get=get)
+    assert not ok and "Controlify isn't there for Minecraft 1.8.9" in message
+    plain = library.create(root, "Plain", "26.2")
+    ok, _m, version = installer.install(portable.Paths(root, ""), plain, lambda *a: None, popen=popen, get=get)
+    assert ok and specs[-1] == "26.2" and not plain.mods
