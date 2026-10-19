@@ -466,7 +466,8 @@ def test_down_reaches_every_control_of_the_quick_menu(qtbot):
     qtbot.wait(50)
     nav = GamepadNavigator(window)
     # two columns: the game on the right (where the menu starts), the device settings on the left
-    assert walk_down(nav, 3) == [menu.back_button, menu.overlay_button, menu.quit_button, menu.lock_button]
+    assert walk_down(nav, 4) == [menu.back_button, menu.overlay_button, menu.quit_button, menu.keyboard_button,
+                                 menu.lock_button]
     nav.focus(menu.back_button)
     nav.move(-1, 0)
     assert nav.focused() in (menu.output, menu.input)  # over to the settings
@@ -656,6 +657,7 @@ def test_quick_menu_moves_as_it_looks(qtbot):
     assert go(0, 1) is menu.disc_next
     assert go(-1, 0) is menu.disc_prev
     assert go(0, 1) is menu.quit_button
+    assert go(0, 1) is menu.keyboard_button
     assert go(0, 1) is menu.lock_button
     assert go(0, 1) is menu.lock_button  # the bottom: stays
     nav.focus(menu.save_state_button)

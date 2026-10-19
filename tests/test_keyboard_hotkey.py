@@ -90,11 +90,31 @@ def test_out_of_the_fields_way(qtbot, window):
     assert window.keyboard_overlay.y() < window.height() // 2  # docked at the top instead
 
 
-def test_no_field_says_so(qtbot, window):
+def test_no_field_types_into_what_has_the_focus(qtbot, window, monkeypatch):
     from PySide6.QtWidgets import QLineEdit as Edit
 
+    from gamingcrypt.ui import game_keyboard
+
+    monkeypatch.setattr(game_keyboard.GameKeyboard, "open_over_game", lambda self: setattr(self, "opened", True))
     for edit in window.nav_root().findChildren(Edit):
         edit.setEnabled(False)
     window.hardware_key(KEYBOARD)
     assert getattr(window, "keyboard_overlay", None) is None
-    assert any("No text field" in text for text in window.toasts.shown + [t for _i, t in window.toasts.queue])
+    assert window.game_keyboard.is_open()  # (the virtual keyboard: e.g. into a Steam window)
+    window.hardware_key(KEYBOARD)
+    assert not window.game_keyboard.is_open()
+
+
+def test_quick_menu_has_a_keyboard_button(qtbot, window, monkeypatch):
+    from gamingcrypt import app as app_mod
+
+    monkeypatch.setattr(app_mod, "KEYBOARD_DELAY_MS", 0)
+    edit = field_on_page(window)
+    window.toggle_quick_menu()
+    menu = window.quick_menu
+    assert menu.keyboard_button.isVisibleTo(menu)
+    assert [menu.keyboard_button] in menu._rows()[1]  # (reachable with the controller)
+    menu.keyboard_button.click()
+    assert not menu.isVisible()
+    qtbot.waitUntil(lambda: getattr(window, "keyboard_overlay", None) is not None and window.keyboard_overlay.isVisible())
+    assert window.keyboard_overlay.target() is edit

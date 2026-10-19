@@ -27,6 +27,7 @@ from gamingcrypt.unlock.veracrypt import UnlockResult, VeraCryptUnlocker
 
 
 log = logging.getLogger("gamingcrypt.app")
+KEYBOARD_DELAY_MS = 300  # from the quick menu: the game back in front first
 
 
 class _KeyBridge(QObject):
@@ -309,9 +310,6 @@ class MainWindow(QMainWindow):
     def toggle_keyboard(self) -> None:
         """For the highlighted text field (or the page's first one): its own keyboard when it has
         one, else the keyboard docked at the bottom of the window."""
-        from gamingcrypt.ui import keyboard_overlay
-        from gamingcrypt.ui.widgets import focus_and_reveal
-
         overlay = getattr(self, "keyboard_overlay", None)
         if overlay is not None and overlay.isVisible():
             overlay.close_keyboard()
@@ -320,14 +318,28 @@ class MainWindow(QMainWindow):
         if over_game is not None and over_game.is_open():
             over_game.close_keyboard()
             return
+        menu = getattr(self, "quick_menu", None)
+        if menu is not None and menu.isVisible():
+            menu._keyboard()  # as its ⌨ Keyboard button: closed, the game back in front first
+            return
+        self.open_keyboard()
+
+    def open_keyboard(self) -> None:
+        """Over the game when one is in front; in GamingCrypt for its text field - with none, the
+        keyboard that types into whatever has the focus (a Steam window …)."""
+        from gamingcrypt.ui import keyboard_overlay
+        from gamingcrypt.ui.widgets import focus_and_reveal
+
         if not self.isVisible() or self.isMinimized():
-            if self.game_watcher.active and self.game_watcher.phase == "playing":
-                self.open_game_keyboard()
+            log.info("on-screen keyboard over the game")
+            self.open_game_keyboard()
             return
         edit = keyboard_overlay.text_field(self.nav_root())
         if edit is None:
-            self.notify("No text field here to type into", "⌨")
+            log.info("on-screen keyboard: no text field - typing into what has the focus")
+            self.open_game_keyboard()
             return
+        overlay = getattr(self, "keyboard_overlay", None)
         own = keyboard_overlay.page_keyboard(edit)
         if own is not None:
             keys = [k for k in own.findChildren(QAbstractButton) if k.isVisible()]
@@ -785,6 +797,7 @@ class MainWindow(QMainWindow):
             menu.closed.connect(self._quick_menu_closed)
             menu.force_quit.connect(self._force_quit)
             menu.lock_now.connect(self.panic_lock)
+            menu.keyboard_requested.connect(lambda: QTimer.singleShot(KEYBOARD_DELAY_MS, self.open_keyboard))
             menu.power_chosen.connect(self.quick_power)
             menu.fps_chosen.connect(self.quick_fps)
             menu.screenshot.connect(self.take_screenshot)

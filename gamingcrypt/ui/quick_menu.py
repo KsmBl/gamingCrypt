@@ -41,6 +41,7 @@ class QuickMenu(QWidget):
     closed = Signal()
     force_quit = Signal(int)
     lock_now = Signal()
+    keyboard_requested = Signal()  # the on-screen keyboard (over the game, or in GamingCrypt)
     power_chosen = Signal(int)  # watts: the running game's profile, or Settings without a game
     fps_chosen = Signal(int)
     screenshot = Signal()
@@ -244,6 +245,9 @@ class QuickMenu(QWidget):
         self.quit_button = big_button("✕  Force quit", "danger")
         self.quit_button.clicked.connect(self._quit_tapped)
         self.box.addWidget(self.quit_button)
+        self.keyboard_button = big_button("⌨  Keyboard")
+        self.keyboard_button.clicked.connect(self._keyboard)
+        self.box.addWidget(self.keyboard_button)
         self.lock_button = big_button("🔒  Lock now")
         self.lock_button.clicked.connect(self._lock)
         self.box.addWidget(self.lock_button)
@@ -271,7 +275,7 @@ class QuickMenu(QWidget):
         right = [[self.back_button], [self.overlay_button, self.screenshot_button],
                  [self.save_state_button, self.load_state_button], [self.controls_button, self.in_step_button, self.pad_button],
                  [self.speed], [self.disc_prev, self.disc_next], [self.quit_button],
-                 [self.lock_button]]
+                 [self.keyboard_button], [self.lock_button]]
         return [r for r in map(usable, left) if r], [r for r in map(usable, right) if r]
 
     def gamepad_navigate(self, current: QWidget | None, dx: int, dy: int) -> QWidget | None:
@@ -664,6 +668,10 @@ class QuickMenu(QWidget):
         self.refresh.setCurrentIndex(max(0, self.refresh.findData(self.previous_refresh)))
         self.refresh.blockSignals(False)
         set_status(self.status, "Refresh rate reverted")
+
+    def _keyboard(self) -> None:
+        self.close_menu()  # (back to the game first: the keyboard types into it)
+        self.keyboard_requested.emit()
 
     def _lock(self) -> None:
         self.hide()
