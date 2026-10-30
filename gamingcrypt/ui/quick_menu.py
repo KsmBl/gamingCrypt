@@ -221,6 +221,7 @@ class QuickMenu(QWidget):
         # chosen here, applied once the menu is closed (the game is paused meanwhile)
         _on_change(self.speed, self._speed_chosen, lambda v: self.speed_value.setText(f"{SPEEDS[v]:g}x"))
         self.running_speed, self.running_in_step, self.with_states = 1.0, False, True  # (the game as it runs)
+        self.live = False  # the speed of a game that isn't RetroArch's: changed while it runs
         self.speed_row = self._row("Speed", self.speed, self.speed_value)
         self.speed_row.hide()
         discs = QWidget()
@@ -361,6 +362,16 @@ class QuickMenu(QWidget):
             self.show_speed(speed)
             self.running_speed = speed
 
+    def set_live_speed(self, speed: float | None) -> None:
+        """A Windows, Linux, Steam game or Minecraft: its speed changes its clock while it runs (the
+        speedhack) - no restart. None: not for this game."""
+        self.live = speed is not None
+        if speed is None:
+            return
+        self.speed_row.show()
+        self.show_speed(speed)
+        self.running_speed = speed
+
     def set_in_step(self, offered: bool, on: bool = False) -> None:
         """A 50 Hz game: the box to run it at the screen's 60 FPS - not offered for other games."""
         self.in_step_button.blockSignals(True)
@@ -406,8 +417,12 @@ class QuickMenu(QWidget):
         from gamingcrypt.emulation.retroarch import SPEEDS
 
         self.speed_chosen.emit(SPEEDS[index])  # applied once the menu is closed
+        if self.live:
+            set_status(self.status, self.LIVE_NOTE if SPEEDS[index] != self.running_speed else "")
+            return
         self._restart_note()
 
+    LIVE_NOTE = "The game's clock runs at this speed when you go back - a few games keep their own pace"
     RESTART_NOTE = "When you go back, the game starts again {what} - where you are is kept"
     NEXT_START_NOTE = "{what} from the next start - this game can't be saved while it runs"
 

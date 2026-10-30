@@ -300,7 +300,8 @@ def test_wine_skips_the_grabbed_controller(qtbot, window, monkeypatch):
 
     window.input_service = Pads()
     assert window.launch_windows(window._games.windows_games[0])[0]
-    assert seen == [{"SDL_GAMECONTROLLER_IGNORE_DEVICES": "0x045e/0x028e"}]
+    assert len(seen) == 1 and seen[0]["SDL_GAMECONTROLLER_IGNORE_DEVICES"] == "0x045e/0x028e"
+    assert "GAMINGCRYPT_SPEED_APPID" not in seen[0] or seen[0]["LD_PRELOAD"]  # (the speedhack, where there is one)
 
 
 def test_no_runner_says_what_to_do(qtbot, window):

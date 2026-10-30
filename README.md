@@ -77,6 +77,10 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
   were (kept in a hidden state of its own, not one of the nine, gone again after two minutes); the
   menu says so before you close it. Should the game not come back, that state is put into a free
   slot and you're told which.
+- ⏩ **Speed for Windows, Linux and Steam games** (and Minecraft) too, like Cheat Engine's speedhack: the
+  same slider in the quick menu changes the game's clock while it runs - no restart. Only the game's
+  own timing changes, not the time of day. A Steam game needs Steam started by GamingCrypt (restart
+  Steam once after updating); a few games keep their own pace.
 - 🇪🇺 **50 Hz games**: tick "60 FPS" in the quick menu and a PAL game runs in step with a 60 Hz
   screen (a fifth faster) instead of stuttering.
 - ❓ **Not recognised?** A file with an unusual name (patched, translated, renamed) gets no cover,

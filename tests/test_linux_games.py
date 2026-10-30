@@ -278,7 +278,9 @@ def test_launch_gives_the_controller_and_says_what_is_missing(qtbot, window, roo
     window.input_service = Pads()
     stardew = next(g for g in games.linux_games if g.name == "Stardew Valley")
     assert window.launch_linux(stardew)[0]
-    assert window._launched[-1][3] == {"SDL_GAMECONTROLLER_IGNORE_DEVICES": "0x045e/0x028e"}
+    env = window._launched[-1][3]
+    assert env["SDL_GAMECONTROLLER_IGNORE_DEVICES"] == "0x045e/0x028e"
+    assert env.get("GAMINGCRYPT_SPEED_APPID") in (None, str(stardew.appid))  # (the speedhack: which game)
     empty = make_game(root, "Empty", {"data.pak": b"x"})
     ok, message = window.launch_linux(LinuxGame(empty, "Empty"))
     assert not ok and "program or start script" in message

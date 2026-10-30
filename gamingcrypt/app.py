@@ -820,6 +820,7 @@ class MainWindow(QMainWindow):
         speed = getattr(self, "_chosen_speed", None) or getattr(self, "speed", 1.0)  # (chosen, not applied yet)
         menu.set_emulated(retroarch_game, speed if retroarch_game else None,
                           states=bool(retroarch_game and rom.system.save_states))
+        menu.set_live_speed(self.live_speed_of(appid) if rom is None else None)
         in_step = bool(retroarch_game and self.game_profiles.get(rom.appid).get("in_step"))
         chosen = getattr(self, "_chosen_in_step", None)
         menu.set_in_step(bool(retroarch_game) and (in_step or self.running_at_50_hz()),
@@ -971,6 +972,47 @@ class MainWindow(QMainWindow):
 
         run_async(resume, lambda _r: None, lambda _e: None, pool=self._pause_pool)
 
+    # the speed of Windows, Linux, Steam games and Minecraft: their clock (gamingcrypt/speedhack) --------
+    def live_speed_of(self, appid: int | None) -> float | None:
+        """The speed the quick menu shows for this game - None: not one the speedhack is for (none
+        running, RetroArch's or another emulator's, a movie)."""
+        from gamingcrypt import speedhack
+
+        if appid is None or self.running_movie(appid) is not None or not speedhack.available():
+            return None
+        chosen = getattr(self, "_chosen_speed", None)
+        return chosen or getattr(self, "live_speeds", {}).get(appid, 1.0)
+
+    def set_live_speed(self, appid: int | None, speed: float) -> None:
+        from gamingcrypt import speedhack
+        from gamingcrypt.steam.running import game_processes
+
+        if appid is None:
+            return
+        try:
+            speedhack.set_speed(appid, speed)
+        except OSError as exc:
+            self.notify(f"The speed couldn't be set: {exc}", "⚠")
+            return
+        self.live_speeds = getattr(self, "live_speeds", {})
+        self.live_speeds[appid] = speed
+        log.info("game speed of %s: %sx", appid, speed)
+
+        def reached(found: bool) -> None:
+            if not found and speed != 1.0:
+                self.notify("The speed doesn't reach this game: it was started without it. A Steam game: "
+                            "restart Steam once - started from GamingCrypt it hands the speed on.", "⏩")
+
+        run_async(lambda: speedhack.loaded(game_processes(appid)) or not game_processes(appid), reached,
+                  lambda _e: None, owner=self)
+
+    def end_live_speed(self) -> None:
+        from gamingcrypt import speedhack
+
+        if getattr(self, "live_speeds", None):
+            self.live_speeds = {}
+            speedhack.clear()
+
     def choose_speed(self, speed: float) -> None:
         """Quick menu: the speed - applied when it's closed."""
         self._chosen_speed = speed
@@ -988,6 +1030,9 @@ class MainWindow(QMainWindow):
         in_step, self._chosen_in_step = getattr(self, "_chosen_in_step", None), None
         pad, self._chosen_pad = getattr(self, "_chosen_pad", None), None
         rom = self.running_rom()
+        if rom is None and speed is not None and getattr(getattr(self, "quick_menu", None), "live", False):
+            self.set_live_speed(self.game_watcher.appid, speed)
+            return
         if rom is None or getattr(self, "_speed_changing", False):
             return
         if pad is not None and pad[0] != self.game_profiles.get(rom.appid).get("pad"):
@@ -1264,8 +1309,11 @@ class MainWindow(QMainWindow):
         if runner.kind == "proton" and runners.is_32bit(game.path / exe) and not runners.vulkan_32bit():
             return False, runners.VULKAN_32.format(game=game.name)  # it would quit after 2 s without a word
         pads = self.input_service.game_env() if self.input_service is not None else {}
+        from gamingcrypt import speedhack
+
         ok, message = runners.launch(game, exe, runner, data_dir(), config_mod.cache_dir() / "logs",
-                                     more_env={**pads, **self.start_upscaling(profile)})
+                                     more_env={**pads, **self.start_upscaling(profile),
+                                               **speedhack.game_env(game.appid)})
         self.upscaling_started(ok)
         if ok:
             log.info("starting Windows game %s: %s with %s", game.name, exe, runner.label)
@@ -1294,8 +1342,11 @@ class MainWindow(QMainWindow):
         found = games.linux_runners() if hasattr(games, "linux_runners") else runners.available()
         runner = runners.pick(found, profile.get("runner"))
         pads = self.input_service.game_env() if self.input_service is not None else {}  # SDL games too
+        from gamingcrypt import speedhack
+
         ok, message = runners.launch(game, exe, runner, data_dir(), config_mod.cache_dir() / "logs",
-                                     more_env={**pads, **self.start_upscaling(profile)})
+                                     more_env={**pads, **self.start_upscaling(profile),
+                                               **speedhack.game_env(game.appid)})
         self.upscaling_started(ok)
         if ok:
             log.info("starting Linux game %s: %s (%s)", game.name, exe, runner.label)
@@ -1341,6 +1392,7 @@ class MainWindow(QMainWindow):
         """An installed instance (its page installs it first), with the signed-in account."""
         import time
 
+        from gamingcrypt import speedhack
         from gamingcrypt.emulation.retroarch import reaper
         from gamingcrypt.minecraft import portable
         from gamingcrypt.ui.tour import data_dir
@@ -1359,7 +1411,8 @@ class MainWindow(QMainWindow):
         try:
             with open(log_dir / "minecraft.log", "wb") as out:
                 subprocess.Popen([str(reaper(data_dir())), "SteamLaunch", f"AppId={instance.appid}", "--", *args],
-                                 cwd=str(instance.path), stdin=subprocess.DEVNULL, stdout=out,
+                                 cwd=str(instance.path), env={**os.environ, **speedhack.game_env(instance.appid)},
+                                 stdin=subprocess.DEVNULL, stdout=out,
                                  stderr=subprocess.STDOUT, start_new_session=True)
         except OSError as exc:
             return False, f"It didn't start: {exc}"
@@ -1793,6 +1846,7 @@ class MainWindow(QMainWindow):
         keyboard = getattr(self, "game_keyboard", None)
         if keyboard is not None:
             keyboard.close_keyboard()  # (and the controller back)
+        self.end_live_speed()  # (the next game starts as it is)
         menu = getattr(self, "quick_menu", None)
         if menu is not None and menu.isVisible():
             menu.hide()  # the game is gone - nothing to go back to
@@ -2472,6 +2526,12 @@ def main(argv: list[str] | None = None) -> int:
     save = lambda c: config_mod.save_config(c, cfg_path)  # noqa: E731
     input_service = InputService(cfg, save)
     input_service.start()  # virtual controller with the user's mapping, if enabled
+    from gamingcrypt import speedhack
+
+    try:
+        speedhack.clear()  # a speed left from before (GamingCrypt ended during a game): games start as they are
+    except OSError:
+        pass
     window = MainWindow(cfg, save, page_factory=default_pages, system=system, input_service=input_service)
     window.windowed = args.windowed
     from gamingcrypt.input.nav_source import NavSource

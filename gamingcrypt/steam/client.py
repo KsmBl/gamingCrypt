@@ -41,6 +41,15 @@ class SteamClient:
             self.on_ui()
         return ok
 
+    def env(self) -> dict | None:
+        """A Steam started from here: with the game-speed libraries, which it hands on to its games
+        (gamingcrypt/speedhack). Not into Flatpak's sandbox - its games can't reach them there."""
+        if self.command[:1] in (["xdg-open"], ["flatpak"]):
+            return None
+        from gamingcrypt import speedhack
+
+        return speedhack.steam_env()
+
     def open_uri(self, uri: str, silent: bool = False) -> bool:
         # -silent: if Steam has to start first, it starts without any window of its own
         extra = ["-silent"] if silent and self.command != ["xdg-open"] else []
@@ -51,6 +60,7 @@ class SteamClient:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
+                env=self.env(),
             )
         except OSError:
             return False
@@ -85,7 +95,7 @@ class SteamClient:
             return False
         try:
             self.launcher([*self.command, "-silent"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                          stderr=subprocess.DEVNULL, start_new_session=True)
+                          stderr=subprocess.DEVNULL, start_new_session=True, env=self.env())
         except OSError:
             return False
         return True
