@@ -117,7 +117,12 @@ class Shell(QWidget):
     def show_tab(self, name: str) -> None:
         if name in self.locked:
             return
+        from gamingcrypt.ui import motion
+
+        previous = getattr(self, "current_tab", name)
+        old = motion.before(self.stack) if name != previous else None
         self.current_tab = name
         self.stack.setCurrentWidget(self.pages[name])
+        motion.slide(self.stack, old, 1 if TABS.index(name) > TABS.index(previous) else -1)
         for tab, button in self.tab_buttons.items():
             button.setChecked(tab == name)

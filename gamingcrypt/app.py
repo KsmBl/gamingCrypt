@@ -2576,8 +2576,9 @@ def main(argv: list[str] | None = None) -> int:
 
     volume_keys = window.start_volume_keys()
     power_key = window.start_power_key()  # noqa: F841 - holds logind's power button
-    from gamingcrypt.ui import feedback
+    from gamingcrypt.ui import feedback, motion
 
+    motion.configure(cfg)
     feedback.configure(feedback.Feedback(cfg, config_mod.cache_dir() / "sounds", window.isVisible, input_service.rumble))
     navigator = GamepadNavigator(window, tab_switch=window.switch_tab)
     navigator.hotkey_filter = window.pad_hotkey  # e.g. Guide = quick menu, also in a game

@@ -69,6 +69,8 @@ DEFAULTS: dict[str, Any] = {
         # Sounds in the menus; the controller's rumble when a game starts or something goes wrong.
         "sounds": True,
         "rumble": True,
+        # Pages that slide, a game's cover flying to its page.
+        "motion": True,
     },
     "libraries": {
         # Libraries not shown on the Games tab (Settings -> Games -> Libraries).

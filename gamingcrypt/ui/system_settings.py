@@ -68,7 +68,7 @@ class AppearanceSection(Section):
     """Dark or light - switched at once, everywhere."""
 
     changed = Signal(str)
-    SWITCHES = {"sounds": "Sounds", "rumble": "Controller rumble"}
+    SWITCHES = {"sounds": "Sounds", "rumble": "Controller rumble", "motion": "Animations"}
 
     def __init__(self, config: dict, save: Callable[[dict], None]):
         super().__init__("Appearance")

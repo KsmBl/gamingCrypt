@@ -6,7 +6,8 @@ from PySide6.QtCore import QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QConicalGradient, QPainter, QPen
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
-from gamingcrypt.ui import theme
+from gamingcrypt.ui import motion, theme
+from gamingcrypt.ui.game_look import Backdrop
 from gamingcrypt.ui.game_widgets import Cover, load_cover, placeholder_cover
 from gamingcrypt.ui.widgets import big_button
 
@@ -65,6 +66,7 @@ class LaunchOverlay(QWidget):
         layout.addStretch()
         self.cover = Cover()
         self.cover.setFixedSize(COVER_W, COVER_H)
+        self.backdrop = Backdrop(self, self.cover)
         layout.addWidget(self.cover, alignment=Qt.AlignmentFlag.AlignCenter)
         self.label = QLabel()
         self.label.setObjectName("title")
@@ -89,6 +91,8 @@ class LaunchOverlay(QWidget):
     def show_for(self, name: str, appid: int | None = None, service=None, cover=None) -> None:
         """cover: draws the game's picture into a label - cover(label, w, h) - for games that
         aren't Steam's (emulated, Windows, Linux, movies); Steam's come from ``service``."""
+        host = self.parentWidget()
+        old = motion.before(host) if self.isHidden() else None
         self.label.setText(f"Starting {name}…")
         self.phase.setText("Asking Steam to start the game…")
         self.cover.setPixmap(placeholder_cover(name, COVER_W, COVER_H))
@@ -96,9 +100,10 @@ class LaunchOverlay(QWidget):
             cover(self.cover, COVER_W, COVER_H)
         elif service is not None and appid is not None:
             load_cover(service, appid, self.cover, COVER_W, COVER_H)
-        self.setGeometry(self.parentWidget().rect())
+        self.setGeometry(host.rect())
         self.raise_()
         self.show()
+        motion.fade(host, old)
 
     def set_phase(self, text: str) -> None:
         self.phase.setText(text)

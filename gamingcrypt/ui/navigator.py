@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from gamingcrypt.input import evdev as e
-from gamingcrypt.ui import feedback
+from gamingcrypt.ui import feedback, motion
 from gamingcrypt.ui.combo import open_list
 
 STICK_PRESS, STICK_RELEASE = 0.6, 0.35
@@ -338,7 +338,7 @@ class GamepadNavigator(QObject):
             anim.destroyed.connect(lambda _o=None: QTimer.singleShot(0, self._scroll_done))
             self._scroll_anims[id(bar)] = anim
         anim.stop()
-        anim.setDuration(SCROLL_MS)
+        anim.setDuration(1 if motion.switched_off() else SCROLL_MS)
         anim.setStartValue(bar.value())
         anim.setEndValue(target)
         FoldingHeader.programmatic = True

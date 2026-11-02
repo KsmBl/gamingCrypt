@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import shiboken6
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QPoint, QRect, Qt, QTimer
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QStackedWidget,
                                QVBoxLayout, QWidget)
 
@@ -701,13 +701,25 @@ class GamesTab(QStackedWidget):
 
     def push(self, page: QWidget) -> None:
         # remember what was selected, so "back" can select it again
-        self._came_from.append(self.window().focusWidget() if self.window() else None)
+        came_from = self.window().focusWidget() if self.window() else None
+        self._came_from.append(came_from)
         home = getattr(self, "home", None)
         if home is not None and home.start_focus_tries >= 0:
             home.start_focus_tries = -1  # somewhere else already: the start's highlight isn't waited for
             home.start_focus.stop()
+        from gamingcrypt.ui import motion
+
+        old = motion.before(self)
+        cover = getattr(came_from, "cover", None)  # a game's card: its cover flies to its place on the page
+        target = getattr(page, "cover", None)
+        picture = cover.pixmap() if isinstance(cover, Cover) else None
+        start = QRect(cover.mapTo(self, QPoint(0, 0)), cover.size()) if picture is not None else None
         self.addWidget(page)
         self.setCurrentWidget(page)
+        if isinstance(target, Cover) and picture is not None and not picture.isNull():
+            motion.fly(self, old, picture, start, target)
+        else:
+            motion.slide(self, old, 1)
 
     def pages_of(self, kind, exactly: bool = False) -> list:
         """The open pages of that kind (also under another one, e.g. a game opened from it)."""
@@ -718,9 +730,13 @@ class GamesTab(QStackedWidget):
         page = self.currentWidget()
         if page is self.home:
             return
+        from gamingcrypt.ui import motion
+
+        old = motion.before(self)
         self.removeWidget(page)
         page.deleteLater()
         self.setCurrentIndex(self.count() - 1)
+        motion.slide(self, old, -1)
         current = self.currentWidget()
         previous = self._came_from.pop() if self._came_from else None
         if previous is not None and shiboken6.isValid(previous) and current.isAncestorOf(previous):
