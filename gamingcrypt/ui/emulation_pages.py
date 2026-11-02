@@ -433,6 +433,10 @@ class RomGamePage(QWidget):
         options.addWidget(self.identify_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.picture_button = picture_button(lambda: tab.open_cover_picker(self.game))
         options.addWidget(picture_row(self.picture_button))
+        if game.system.emulator == "retroarch" and getattr(tab, "emulation", None) is not None:
+            self.saves_button = big_button("💾 Saves")
+            self.saves_button.clicked.connect(lambda: tab.open_saves(self.game))
+            options.addWidget(self.saves_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.remove_button = big_button("🗑 Remove", "danger")
         self.remove_button.clicked.connect(self.ask_remove)
         options.addWidget(self.remove_button, alignment=Qt.AlignmentFlag.AlignLeft)

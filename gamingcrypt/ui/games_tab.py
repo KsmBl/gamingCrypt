@@ -590,12 +590,14 @@ class GamesTab(QStackedWidget):
 
     def __init__(self, service, library_path: str = "", parent: QWidget | None = None,
                  library_settings: dict | None = None, emulation_root: str = "", windows_root: str = "",
-                 linux_root: str = "", minecraft_root: str = "", user=None, rate_games: bool = False):
+                 linux_root: str = "", minecraft_root: str = "", user=None, rate_games: bool = False,
+                 people=None):
         """user: who's using the device (users.User) - None: the admin. rate_games: the game
-        pages offer "Age rating" (the admin, when a user has an age)."""
+        pages offer "Age rating" (the admin, when a user has an age). people: () -> all users."""
         super().__init__(parent)
         self.service = service
         self.user = user
+        self.people = people
         self.rate_games = rate_games
         # a user with an age: only the games rated for it (ratings.py) - in every list
         self.age_limit = None if user is None or user.admin else user.age
@@ -1303,6 +1305,15 @@ class GamesTab(QStackedWidget):
                 page.show_recognised()
 
     # a game's picture, chosen by hand ----------------------------------------
+    def open_saves(self, game) -> None:
+        """Who has which saves of it (a Windows or an emulated game)."""
+        from gamingcrypt import saves
+        from gamingcrypt.emulation.library import RomGame
+        from gamingcrypt.ui.saves_page import SavesPage
+
+        box = saves.RomSaves(self.emulation.root, game) if isinstance(game, RomGame) else saves.PrefixSaves(game)
+        self.push(SavesPage(self, game, box))
+
     def open_cover_picker(self, game) -> None:
         from gamingcrypt.ui.cover_picker import open_picker
 

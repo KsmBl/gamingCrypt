@@ -18,6 +18,7 @@ from pathlib import Path
 WINE_APPID_BASE = 0x50000000  # below the movies' and emulated games' ids, far above Steam's
 PREFIXES = ".prefixes"
 USERS = ".users"
+BACKUPS = ".save-backups"  # (saves.py)
 STARTABLE = (".exe",)
 # names that are almost never the game itself
 NOT_THE_GAME = re.compile(r"unins|uninstall|setup|install|redist|vcredist|vc_redist|directx|dxsetup|dxwebsetup|"
@@ -124,10 +125,20 @@ def all_prefixes(game: WindowsGame) -> list[Path]:
 
 
 def remove(game: WindowsGame, with_saves: bool) -> int:
-    """Delete the game's folder - and everybody's prefix (saves, settings) when asked. Bytes freed."""
+    """Delete the game's folder - and everybody's prefix (saves, settings) and backups of them when
+    asked. Bytes freed."""
     freed = folder_size(game.path)
     shutil.rmtree(game.path, ignore_errors=True)
-    for prefix in all_prefixes(game) if with_saves else ():
-        freed += folder_size(prefix)
-        shutil.rmtree(prefix, ignore_errors=True)
+    if with_saves:
+        for folder in [*all_prefixes(game), *_all_backups(game)]:
+            freed += folder_size(folder)
+            shutil.rmtree(folder, ignore_errors=True)
     return freed
+
+
+def _all_backups(game: WindowsGame) -> list[Path]:
+    try:
+        owners = [p for p in (game.path.parent / BACKUPS).iterdir() if p.is_dir()]
+    except OSError:
+        return []
+    return [owner / game.path.name for owner in owners if (owner / game.path.name).is_dir()]

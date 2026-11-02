@@ -216,6 +216,7 @@ class WindowsGamePage(QWidget):
     """A Windows game: Play; Options - start file, Proton / Wine, remove; favorite."""
 
     LIB = library  # what finds its start files
+    HAS_SAVES_PAGE = True  # each user's saves are theirs: its Wine prefix
     NO_START_FILE = "No .exe file in its folder - copy the whole game folder over the network share"
     NO_RUNNER = "No Proton or Wine found"
     DIDNT_START = "It didn't start - see Options (start file, Proton / Wine)"
@@ -309,6 +310,10 @@ class WindowsGamePage(QWidget):
         self.rating_row = rating_row(tab, self.game)  # the admin's rating, where users have an age
         if self.rating_row is not None:
             options.addWidget(self.rating_row)
+        if self.HAS_SAVES_PAGE:
+            self.saves_button = big_button("💾 Saves")
+            self.saves_button.clicked.connect(lambda: tab.open_saves(self.game))
+            options.addWidget(self.saves_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.remove_button = big_button("🗑 Remove", "danger")
         self.remove_button.clicked.connect(self.ask_remove)
         options.addWidget(self.remove_button, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -503,6 +508,7 @@ class LinuxGamePage(WindowsGamePage):
     """A Linux game: Play; Options - start file, directly or in Steam's runtime, remove; favorite."""
 
     LIB = linux_library
+    HAS_SAVES_PAGE = False  # (they're in the home folder, the same for everybody)
     NO_START_FILE = ("No program or start script in its folder - copy the whole (unpacked) game folder over "
                      "the network share")
     NO_RUNNER = "Directly"
