@@ -69,6 +69,10 @@ class Remapper:
         """The controllers read (and grabbed) right now."""
         return [info for info, _device, _translator in list(self._pads.values())]
 
+    def rumbling(self) -> list[e.InputDevice]:
+        """The handles to make the controllers rumble through (only the one that grabbed them can)."""
+        return [device for info, device, _translator in list(self._pads.values()) if info.rumbles]
+
     def start(self, timeout: float = 2.0) -> bool:
         """Start; returns False (with ``error`` set) if the device or uinput can't be opened."""
         self._stop.clear()

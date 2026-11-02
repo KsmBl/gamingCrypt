@@ -10,10 +10,13 @@ import fcntl
 import os
 import select
 import struct
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 EV_SYN, EV_KEY, EV_ABS = 0x00, 0x01, 0x03
+EV_FF, FF_RUMBLE = 0x15, 0x50
 SYN_REPORT = 0
 
 ABS_X, ABS_Y, ABS_Z, ABS_RX, ABS_RY, ABS_RZ = 0x00, 0x01, 0x02, 0x03, 0x04, 0x05
@@ -65,6 +68,11 @@ def EVIOCGABS(axis: int) -> int:  # noqa: N802 (kernel name)
 
 
 EVIOCGRAB = _iow("E", 0x90, 4)
+# struct ff_effect: type, id, direction, trigger (2), replay (2), then a union as big as its largest
+# member with a pointer in it (u.periodic): only its first two fields are used (u.rumble)
+FF_EFFECT_FORMAT = f"HhHHHHH2xHH{(32 if struct.calcsize('P') == 8 else 28) - 4}x"
+EVIOCSFF = _iow("E", 0x80, struct.calcsize(FF_EFFECT_FORMAT))
+EVIOCRMFF = _iow("E", 0x81, 4)
 UI_DEV_CREATE = _io("U", 1)
 UI_DEV_DESTROY = _io("U", 2)
 UI_DEV_SETUP = _iow("U", 3, struct.calcsize("HHHH80sI"))
@@ -109,6 +117,7 @@ class DeviceInfo:
     keys: set[int] = field(default_factory=set)
     axes: set[int] = field(default_factory=set)
     bus: int = 0
+    rumbles: bool = False  # it has force feedback
 
     @property
     def key(self) -> str:
@@ -139,6 +148,7 @@ def list_devices(sys_root: Path = Path("/sys"), dev_root: Path = Path("/dev/inpu
             keys=parse_bitmap(_read(dev / "capabilities/key") or "0"),
             axes=parse_bitmap(_read(dev / "capabilities/abs") or "0"),
             bus=int(_read(dev / "id/bustype") or "0", 16),
+            rumbles=EV_FF in parse_bitmap(_read(dev / "capabilities/ev") or "0"),
         ))
     return devices
 
@@ -171,7 +181,10 @@ class InputDevice:
 
     def __init__(self, path: str):
         self.path = path
-        self.fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        try:  # (writing: for its rumble - and only through the handle that grabbed it, see rumble())
+            self.fd = os.open(path, os.O_RDWR | os.O_NONBLOCK)
+        except PermissionError:
+            self.fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
         self.grabbed = False
 
     def absinfo(self, axis: int) -> AbsInfo | None:
@@ -193,6 +206,18 @@ class InputDevice:
             except OSError:
                 pass
             self.grabbed = False
+
+    def rumble(self, strong: int, weak: int, ms: int, sleep: Callable[[float], None] = time.sleep) -> None:
+        """Its motors (0-65535) for so long; blocks until it's over. A grabbed device ignores this
+        from any handle but the one that grabbed it: while mapped, the remapper's. OSError: can't."""
+        effect = bytearray(struct.pack(FF_EFFECT_FORMAT, FF_RUMBLE, -1, 0, 0, 0, ms, 0, strong, weak))
+        fcntl.ioctl(self.fd, EVIOCSFF, effect)
+        effect_id = struct.unpack_from("h", effect, 2)[0]
+        try:
+            os.write(self.fd, pack_event(EV_FF, effect_id, 1))
+            sleep(ms / 1000)
+        finally:
+            fcntl.ioctl(self.fd, EVIOCRMFF, effect_id)
 
     def read(self, timeout: float = 0.1) -> list[tuple[int, int, int]]:
         ready, _, _ = select.select([self.fd], [], [], timeout)

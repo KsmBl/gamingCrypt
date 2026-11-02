@@ -103,6 +103,35 @@ class InputService:
         if was_running:
             self.start()
 
+    def rumble(self, strong: int, weak: int, ms: int) -> None:
+        """Every controller that can, in the background (the UI doesn't wait for it)."""
+        import threading
+
+        def shake(device, opened_here: bool) -> None:
+            try:
+                device.rumble(strong, weak, ms)
+            except OSError:
+                pass  # (gone, or not allowed: no rumble is no problem)
+            finally:
+                if opened_here:
+                    device.close()
+
+        def start() -> None:
+            if self.running:
+                targets = [(device, False) for device in self.remapper.rumbling()]
+            else:
+                targets = []
+                for info in self.devices():
+                    if info.rumbles:
+                        try:
+                            targets.append((e.InputDevice(info.path), True))
+                        except OSError:
+                            pass
+            for device, opened_here in targets:
+                threading.Thread(target=shake, args=(device, opened_here), daemon=True).start()
+
+        threading.Thread(target=start, name="gamingcrypt-rumble", daemon=True).start()
+
     def game_env(self) -> dict[str, str]:
         """For games that pick a controller themselves (Wine's SDL): skip the grabbed real one - it
         gives them nothing, and as the first one found it's often their "player 1" (GTA's GInput)."""

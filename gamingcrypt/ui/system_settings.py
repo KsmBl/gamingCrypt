@@ -68,6 +68,7 @@ class AppearanceSection(Section):
     """Dark or light - switched at once, everywhere."""
 
     changed = Signal(str)
+    SWITCHES = {"sounds": "Sounds", "rumble": "Controller rumble"}
 
     def __init__(self, config: dict, save: Callable[[dict], None]):
         super().__init__("Appearance")
@@ -106,11 +107,47 @@ class AppearanceSection(Section):
         line.addWidget(caption)
         line.addLayout(row, 1)
         self.body.addLayout(line)
+        self.switches = {}
+        for key, caption in self.SWITCHES.items():
+            self._add_switch(key, caption)
         self._show(theme.current)
+
+    def _add_switch(self, key: str, caption: str) -> None:
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        self.switches[key] = {}
+        for value, label in ((True, "On"), (False, "Off")):
+            button = big_button(label, choice=True)
+            button.setMinimumWidth(180)
+            button.clicked.connect(lambda _=False, v=value: self.choose_switch(key, v))
+            row.addWidget(button)
+            self.switches[key][value] = button
+        row.addStretch()
+        label = QLabel(caption)
+        label.setFixedWidth(220)
+        line = QHBoxLayout()
+        line.addWidget(label)
+        line.addLayout(row, 1)
+        self.body.addLayout(line)
+
+    def is_on(self, key: str) -> bool:
+        return bool((self.config.get("appearance") or {}).get(key, True))
+
+    def choose_switch(self, key: str, value: bool) -> None:
+        from gamingcrypt.ui import feedback, theme
+
+        self.config.setdefault("appearance", {})[key] = value
+        self.save(self.config)
+        self._show(theme.current)
+        if value and key in ("sounds", "rumble"):
+            feedback.play("launch")  # what it's like
 
     def _show(self, name: str) -> None:
         from gamingcrypt.ui import theme
 
+        for key, buttons in self.switches.items():
+            for value, button in buttons.items():
+                button.setChecked(value == self.is_on(key))
         for key, button in self.buttons.items():
             button.setChecked(key == name)
         for key, button in self.size_buttons.items():

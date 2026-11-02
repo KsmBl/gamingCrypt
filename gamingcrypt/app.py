@@ -558,6 +558,10 @@ class MainWindow(QMainWindow):
 
     def notify(self, text: str, icon: str = "ℹ") -> None:
         log.info("notice: %s", text)
+        if icon == "⚠":
+            from gamingcrypt.ui import feedback
+
+            feedback.play("error")
         self.toasts.notify(text, icon)
 
     def _sleep_unlocked(self) -> None:
@@ -1073,6 +1077,9 @@ class MainWindow(QMainWindow):
     def game_launched(self, appid: int) -> None:
         """Stay visible ("Starting …") until the game draws, then step aside."""
         from gamingcrypt.emulation.library import EMU_APPID_BASE
+        from gamingcrypt.ui import feedback
+
+        feedback.play("launch")
 
         from gamingcrypt.linux.library import is_linux_appid
         from gamingcrypt.minecraft.library import is_minecraft_appid
@@ -2569,6 +2576,9 @@ def main(argv: list[str] | None = None) -> int:
 
     volume_keys = window.start_volume_keys()
     power_key = window.start_power_key()  # noqa: F841 - holds logind's power button
+    from gamingcrypt.ui import feedback
+
+    feedback.configure(feedback.Feedback(cfg, config_mod.cache_dir() / "sounds", window.isVisible, input_service.rumble))
     navigator = GamepadNavigator(window, tab_switch=window.switch_tab)
     navigator.hotkey_filter = window.pad_hotkey  # e.g. Guide = quick menu, also in a game
     nav_source = NavSource(input_service, navigator.bridge.event.emit)

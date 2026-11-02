@@ -66,6 +66,9 @@ DEFAULTS: dict[str, Any] = {
         "theme": "dark",
         # "normal", "large" or "larger" (every text 100 / 115 / 130 %).
         "text_size": "normal",
+        # Sounds in the menus; the controller's rumble when a game starts or something goes wrong.
+        "sounds": True,
+        "rumble": True,
     },
     "libraries": {
         # Libraries not shown on the Games tab (Settings -> Games -> Libraries).

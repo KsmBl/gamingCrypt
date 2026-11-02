@@ -418,6 +418,10 @@ def focus_and_reveal(widget: QWidget) -> None:
 
 def set_status(label: QLabel, text: str, error: bool = False) -> None:
     """Set a status label's text and switch its error styling."""
+    if error and text:
+        from gamingcrypt.ui import feedback
+
+        feedback.play("error")
     label.setText(text)
     label.setProperty("error", error)
     label.style().unpolish(label)

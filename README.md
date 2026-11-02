@@ -115,6 +115,8 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
 - 📺 **Refresh rate**: changed while you play - from the quick menu and from Settings (no
   restart) - on screens gamescope has other rates for (e.g. the Steam Deck); hidden on the others.
 - ⚙️ **Device settings**: resolution, refresh rate, brightness, power limit (TDP), audio devices.
+- 🔊 **Sounds and rumble**: quiet sounds when the controller moves through the menus, and a short rumble
+  when a game starts or something goes wrong. Each can be switched off in Settings → Device → Appearance.
 - 🌗 Dark and light theme, in a handheld look: corners cut at 45°, the controller's highlight
   lights up along the cuts, and hexagons fade in from the bottom right corner.
 

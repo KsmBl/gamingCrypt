@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from gamingcrypt.input import evdev as e
+from gamingcrypt.ui import feedback
 from gamingcrypt.ui.combo import open_list
 
 STICK_PRESS, STICK_RELEASE = 0.6, 0.35
@@ -141,7 +142,7 @@ class GamepadNavigator(QObject):
         if direction is None:
             self.repeat.stop()
             return
-        self.move(*direction)
+        self._step(*direction)
         self.repeat.start(REPEAT_DELAY_MS)
 
     def _repeat(self) -> None:
@@ -149,7 +150,7 @@ class GamepadNavigator(QObject):
             self._release()
             return
         self.repeat.setInterval(REPEAT_RATE_MS)
-        self.move(*self.held)
+        self._step(*self.held)
 
     def _release(self) -> None:
         self.held = None
@@ -376,20 +377,30 @@ class GamepadNavigator(QObject):
             QApplication.sendEvent(target, QKeyEvent(kind, key, Qt.KeyboardModifier.NoModifier))
 
     # actions -------------------------------------------------------------------
+    def _step(self, dx: int, dy: int) -> None:
+        """A press of a direction: a tick when the highlight went somewhere."""
+        before = self.focused()
+        self.move(dx, dy)
+        if self.focused() is not before:
+            feedback.play("move")
+
     def move(self, dx: int, dy: int) -> None:
         popup = open_list()  # (a drop-down's open list)
         if popup is not None:
             if dy:
                 self._send_key(popup, Qt.Key.Key_Down if dy > 0 else Qt.Key.Key_Up)
+                feedback.play("move")
             return
         current = self.focused() or self._parked()
         if current is not None and current.isEnabled():
             hook = getattr(current, "gamepad_direction", None)
             if callable(hook) and hook(dx, dy):
+                feedback.play("move")
                 return
             if isinstance(current, QSlider) and dx:
                 step = max(1, (current.maximum() - current.minimum()) // 20)
                 current.setValue(current.value() + dx * step)
+                feedback.play("move")
                 return
         node = current.parentWidget() if current is not None else None
         root = self.root()
@@ -616,6 +627,7 @@ class GamepadNavigator(QObject):
     def activate(self) -> None:
         popup = open_list()  # (a drop-down's open list)
         if popup is not None:
+            feedback.play("select")
             self._send_key(popup, Qt.Key.Key_Return)
             return
         w = self.focused()
@@ -625,7 +637,9 @@ class GamepadNavigator(QObject):
             target = self.nearest(None, 0, 1)
             if target is not None:
                 self.focus(target)
+                feedback.play("move")
             return
+        feedback.play("select")  # (first: what it opens may be a game)
         hook = getattr(w, "gamepad_activate", None)
         if callable(hook) and hook():
             return
@@ -659,10 +673,15 @@ class GamepadNavigator(QObject):
         return None
 
     def back(self) -> None:
+        if self._back():
+            feedback.play("back")
+
+    def _back(self) -> bool:
+        """False: there was nothing to go back from."""
         popup = open_list()  # (a drop-down's open list)
         if popup is not None:
             self._send_key(popup, Qt.Key.Key_Escape)
-            return
+            return True
         from gamingcrypt.ui.widgets import OnScreenKeyboard
 
         for keyboard in self.root().findChildren(OnScreenKeyboard):
@@ -671,7 +690,7 @@ class GamepadNavigator(QObject):
                 target = keyboard.target()
                 if target is not None and target.isVisible():
                     self.focus(target)
-                return
+                return True
 
         w = self.focused() or self._parked()
         node = w
@@ -681,14 +700,13 @@ class GamepadNavigator(QObject):
                 if node.dismissable:
                     node.hide()
                 self.focus(node.target())
-                return
+                return True
             hook = getattr(node, "gamepad_back", None)
             if callable(hook) and hook():
-                return
+                return True
             node = node.parentWidget()
         root_hook = getattr(self.window, "gamepad_back", None)
-        if callable(root_hook):
-            root_hook()
+        return bool(callable(root_hook) and root_hook())
 
     def start(self) -> None:
         self.hook("gamepad_start")
@@ -735,4 +753,5 @@ class GamepadNavigator(QObject):
 
     def switch_tab(self, delta: int) -> None:
         if self.tab_switch is not None:
+            feedback.play("tab")
             self.tab_switch(delta)
