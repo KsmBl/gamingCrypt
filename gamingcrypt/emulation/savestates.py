@@ -201,6 +201,12 @@ def slots(paths: EmulationPaths, game: RomGame) -> list[State]:
     return found
 
 
+def newest(paths: EmulationPaths, game: RomGame, count: int) -> list[State]:
+    """The states last saved, the newest first."""
+    saved = [s for s in slots(paths, game) if not s.empty]
+    return sorted(saved, key=lambda s: s.saved_at, reverse=True)[:count]
+
+
 def _wait_for_state(scratch: Path, timeout: float, sleep, clock) -> bool:
     """RetroArch wrote its state completely (the same size twice) - and its picture, which may
     take a moment longer."""

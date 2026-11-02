@@ -1200,8 +1200,9 @@ class MainWindow(QMainWindow):
             return movie.title
         return game.name if game is not None else "your game"
 
-    def launch_rom(self, game) -> tuple[bool, str]:
-        """Play on an emulated game: RetroArch through the "reaper" script (see emulation/retroarch)."""
+    def launch_rom(self, game, state_slot: int | None = None) -> tuple[bool, str]:
+        """Play on an emulated game: RetroArch through the "reaper" script (see emulation/retroarch).
+        state_slot: and go on from that save state, once the game is up."""
         from gamingcrypt.emulation import retroarch
 
         games = self.shell.pages.get("Games") if self.shell else None
@@ -1226,9 +1227,36 @@ class MainWindow(QMainWindow):
                 game, lambda: cores.download_system_files(paths, found), f"the system files for {game.system.name}",
                 f"Couldn't download the system files for {game.system.name} - no network?")
         ok, message = self.start_retroarch(game, paths)
-        if ok:
+        if ok and state_slot is not None:
+            self.load_state_when_up(game, paths, state_slot)
+        elif ok:
             self.start_state_clock(0)  # started without a state: played from now
         return self._rom_started(game, games, ok, message, "RetroArch")
+
+    def load_state_when_up(self, game, paths, slot: int) -> None:
+        """Started from a save state on its page: loaded as soon as RetroArch listens. Should that
+        not work the game just runs from its start, and the state is untouched."""
+        import time
+
+        from gamingcrypt.emulation import retroarch, savestates
+
+        self.start_state_clock(savestates.read_played(savestates.state_file(paths, game, slot)) or 0)
+
+        def load() -> bool:
+            deadline = time.monotonic() + 40
+            while not retroarch.playing():
+                if time.monotonic() > deadline:
+                    return False
+                time.sleep(0.25)
+            time.sleep(0.5)  # the first frames
+            return retroarch.send(savestates.load_command(slot))
+
+        def done(ok: bool) -> None:
+            if not ok:
+                self.start_state_clock(0)
+                self.notify(f"Couldn't load slot {slot + 1} - the game started from its beginning", "⚠")
+
+        run_async(load, done, lambda _e: done(False), owner=self)
 
     def start_state_clock(self, played: int) -> None:
         """Play time of save states: so much was played up to here (a state just loaded: its

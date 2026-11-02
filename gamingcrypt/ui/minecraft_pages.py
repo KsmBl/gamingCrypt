@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QProgress
 from gamingcrypt.minecraft import installer, library, mods, portable
 from gamingcrypt.minecraft.library import FABRIC, LATEST, VANILLA, MinecraftInstance
 from gamingcrypt.ui.combo import ComboBox
+from gamingcrypt.ui.game_look import Backdrop, FactChips
 from gamingcrypt.ui.game_widgets import Cover
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import (FlowLayout, KeyboardFocusFilter, OnScreenKeyboard, big_button,
@@ -319,6 +320,7 @@ class MinecraftInstancePage(QWidget):
         body.setSpacing(36)
         self.cover = Cover()
         self.cover.setFixedSize(300, 450)
+        self.backdrop = Backdrop(self, self.cover)
         load_windows_cover(self.cover, game, None, 300, 450)
         body.addWidget(self.cover, alignment=Qt.AlignmentFlag.AlignTop)
         info = QVBoxLayout()
@@ -327,9 +329,7 @@ class MinecraftInstancePage(QWidget):
         self.title.setObjectName("detailTitle")
         self.title.setWordWrap(True)
         info.addWidget(self.title)
-        self.facts = QLabel()
-        self.facts.setObjectName("detailMeta")
-        self.facts.setWordWrap(True)
+        self.facts = FactChips()
         info.addWidget(self.facts)
         self.actions = QWidget()
         actions = FlowLayout(self.actions, spacing=16)

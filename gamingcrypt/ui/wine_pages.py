@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEd
                                QSizePolicy, QVBoxLayout, QWidget)
 
 from gamingcrypt.ui.combo import ComboBox
+from gamingcrypt.ui.game_look import Backdrop, FactChips
 from gamingcrypt.ui.game_widgets import (COVER_H, COVER_W, Cover, Tappable, card_margins, format_date,
                                         format_playtime, format_size, placeholder_cover)
 from gamingcrypt.ui.movies_tab import MovieUploadPage
@@ -245,6 +246,7 @@ class WindowsGamePage(QWidget):
         body.setSpacing(36)
         self.cover = Cover()
         self.cover.setFixedSize(300, 450)
+        self.backdrop = Backdrop(self, self.cover)
         load_windows_cover(self.cover, game, getattr(tab, f"{game.KIND}_covers", None), 300, 450)
         body.addWidget(self.cover, alignment=Qt.AlignmentFlag.AlignTop)
         info = QVBoxLayout()
@@ -253,9 +255,7 @@ class WindowsGamePage(QWidget):
         self.title.setObjectName("detailTitle")
         self.title.setWordWrap(True)
         info.addWidget(self.title)
-        self.facts = QLabel()
-        self.facts.setObjectName("detailMeta")
-        self.facts.setWordWrap(True)
+        self.facts = FactChips()
         info.addWidget(self.facts)
         self.actions = QWidget()
         actions = FlowLayout(self.actions, spacing=16)

@@ -65,6 +65,11 @@ class Cover(QLabel):
     """A picture (cover, poster, still) with two corners cut off - everywhere the same (theme.py)."""
 
     CUT = theme.CUT["cover"]
+    pixmap_changed = Signal()  # (what's made of the picture follows: the page's backdrop)
+
+    def setPixmap(self, pixmap) -> None:  # noqa: N802 - Qt API
+        super().setPixmap(pixmap)
+        self.pixmap_changed.emit()
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
         pixmap = self.pixmap()

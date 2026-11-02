@@ -283,6 +283,7 @@ QLabel#cardTitle {{ font-size: 21px; font-weight: 600; {display}; }}
 QLabel#cardMeta {{ font-size: 16px; color: {c['TEXT_DIM']}; }}
 QLabel#detailTitle {{ font-size: 36px; font-weight: 700; {display}; }}
 QLabel#detailMeta {{ font-size: 19px; color: {c['TEXT_DIM']}; }}
+QLabel#factChip {{ font-size: 17px; padding: 0 6px; {box('key', c['SURFACE_HI'])} }}
 QLabel#section {{ font-size: 25px; font-weight: 700; {display}; }}
 QLabel#sourceTitle {{ font-size: 27px; font-weight: 700; {display}; }}
 

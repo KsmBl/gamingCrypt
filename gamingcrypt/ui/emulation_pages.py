@@ -5,14 +5,19 @@ from __future__ import annotations
 import shiboken6
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea,
-                               QVBoxLayout, QWidget)
+                               QSizePolicy, QVBoxLayout, QWidget)
 
 from gamingcrypt.emulation.library import RomGame
 from gamingcrypt.emulation.systems import SHORT, System
 from gamingcrypt.ui.combo import ComboBox
 from gamingcrypt.ui.game_widgets import (COVER_H, COVER_W, Cover, card_margins, format_playtime, format_size,
                                         placeholder_cover)
+from gamingcrypt.ui.game_look import Backdrop, FactChips
+from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import FlowLayout, big_button, enable_touch_scroll, set_status
+
+STATES_SHOWN = 3  # on a game's page: the newest save states
+STATE_TILE = (270, 236)
 
 def load_rom_cover(label: QLabel, game: RomGame, covers, w: int, h: int, done=None) -> None:
     """Placeholder first; the box art from the drive's cache or libretro-thumbnails when it comes.
@@ -371,6 +376,7 @@ class RomGamePage(QWidget):
         self.cover = Cover()
         self.cover.setFixedSize(300, 400)
         self.cover.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+        self.backdrop = Backdrop(self, self.cover)
         load_rom_cover(self.cover, game, getattr(tab, "covers", None), 300, 400,
                        done=lambda _path: self.show_recognised())
         body.addWidget(self.cover, alignment=Qt.AlignmentFlag.AlignTop)
@@ -385,8 +391,7 @@ class RomGamePage(QWidget):
         played = (f"Last played {format_date(game.last_played)} · {format_playtime(game.minutes)}"
                   if game.last_played else "Never played")
         files = f"{len(game.discs)} discs" if game.discs else game.path.name
-        self.facts = QLabel(f"{game.system.name}\n{files}\n{format_size(game.size)}\n{played}")
-        self.facts.setObjectName("detailMeta")
+        self.facts = FactChips(f"{game.system.name}\n{files}\n{format_size(game.size)}\n{played}")
         info.addWidget(self.facts)
         # no cover, genre or year found by the file's name: which game is it? (the filters need it)
         self.unknown_button = big_button("⚠ Not recognised - choose the game")
@@ -442,6 +447,16 @@ class RomGamePage(QWidget):
         self.status.setObjectName("status")
         self.status.setWordWrap(True)
         info.addWidget(self.status)
+        self.states_title = QLabel("Continue from a save state")
+        self.states_title.setObjectName("cardTitle")
+        self.states_title.hide()
+        info.addWidget(self.states_title)
+        self.states_row = QWidget()
+        self.states_row.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.states_flow = FlowLayout(self.states_row, spacing=12)
+        self.states_flow.setContentsMargins(0, 0, 0, 0)
+        self.states_row.hide()
+        info.addWidget(self.states_row)
         info.addStretch()  # next to the cover, from the top - like every other page
         body.addLayout(info, 1)
         # scrolls when the options don't fit (800 px high screens)
@@ -453,6 +468,39 @@ class RomGamePage(QWidget):
         self.scroll.setWidget(content)
         enable_touch_scroll(self.scroll)
         layout.addWidget(self.scroll, 1)
+        self.show_states()
+
+    # the newest save states: one press back into the game, from there ---------------------------
+    def show_states(self) -> None:
+        paths = getattr(self.tab, "emulation", None)
+        game = self.game
+        if paths is None or game.system.emulator != "retroarch" or not game.system.save_states:
+            return
+        from gamingcrypt.emulation import savestates
+
+        run_async(lambda: savestates.newest(paths, game, STATES_SHOWN), self._states_found,
+                  lambda _e: None, owner=self)
+
+    def _states_found(self, states: list) -> None:
+        from gamingcrypt.ui.save_states import StateTile
+
+        for tile in self.states_flow.take_all():
+            tile.setParent(None)
+            tile.deleteLater()
+        for state in states:
+            tile = StateTile(state, *STATE_TILE)
+            tile.tapped.connect(lambda s=state: self.play_from(s.slot))
+            self.states_flow.addWidget(tile)
+        self.states_title.setVisible(bool(states))
+        self.states_row.setVisible(bool(states))
+
+    def play_from(self, slot: int) -> None:
+        launcher = getattr(self.tab, "rom_launcher", None)
+        if launcher is None:
+            set_status(self.status, "RetroArch isn't set up yet", error=True)
+            return
+        ok, message = launcher(self.game, slot)
+        set_status(self.status, message, error=not ok)
 
     def show_recognised(self) -> None:
         """Recognised: a cover, a genre or a year was found for it - or the game was chosen by hand."""
@@ -767,6 +815,7 @@ class RomGamePage(QWidget):
 
     def game_session_ended(self, appid: int, failed: bool) -> None:
         if appid == self.game.appid:
+            self.show_states()  # (saved some meanwhile)
             if failed and getattr(self, "_failure", ""):
                 self._failure = ""
                 return  # (start_failed said why)

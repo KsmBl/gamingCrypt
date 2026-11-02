@@ -9,6 +9,7 @@ from gamingcrypt.steam.installer import InstallResult
 from gamingcrypt.steam.models import SteamGame
 from gamingcrypt.steam.webapi import format_price
 from gamingcrypt.ui.combo import ComboBox
+from gamingcrypt.ui.game_look import Backdrop, FactChips
 from gamingcrypt.ui.game_widgets import Cover, format_date, format_playtime, format_size, load_cover, placeholder_cover
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import big_button, enable_touch_scroll, set_status
@@ -36,6 +37,7 @@ class GameDetailPage(QWidget):
         body.setSpacing(36)
         self.cover = Cover()
         self.cover.setFixedSize(DETAIL_W, DETAIL_H)
+        self.backdrop = Backdrop(self, self.cover)
         self.cover.setPixmap(placeholder_cover(game.name, DETAIL_W, DETAIL_H))
         load_cover(self.service, game.appid, self.cover, DETAIL_W, DETAIL_H)
         body.addWidget(self.cover, alignment=Qt.AlignmentFlag.AlignTop)
@@ -46,9 +48,7 @@ class GameDetailPage(QWidget):
         self.title.setObjectName("detailTitle")
         self.title.setWordWrap(True)
         info.addWidget(self.title)
-        self.facts = QLabel()
-        self.facts.setObjectName("detailMeta")
-        self.facts.setTextFormat(Qt.TextFormat.PlainText)
+        self.facts = FactChips()
         info.addWidget(self.facts)
         self.description = QLabel(game.description)
         self.description.setWordWrap(True)
@@ -149,14 +149,14 @@ class GameDetailPage(QWidget):
         state = "Installed" if g.installed else "Not installed"
         if g.installed and g.update_pending:
             state += " · update pending"
-        lines = [
+        lines = [  # what isn't known isn't shown
             state,
             format_playtime(g.playtime_minutes),
             self.size_text(),
-            f"Released: {format_date(g.release_date)}",
+            f"Released: {format_date(g.release_date)}" if g.release_date else "",
             f"Genres: {', '.join(g.genres)}" if g.genres else "",
-            f"Price: {format_price(g.price_cents, g.currency)}",
-            f"Latest update: {format_date(g.last_updated)}",
+            f"Price: {format_price(g.price_cents, g.currency)}" if g.price_cents is not None else "",
+            f"Latest update: {format_date(g.last_updated)}" if g.last_updated else "",
             self.protondb_text,
         ]
         self.facts.setText("\n".join(line for line in lines if line))
@@ -292,7 +292,7 @@ class GameDetailPage(QWidget):
             return f"Size on disk: {format_size(g.size_on_disk)}"
         if g.store_size:
             return f"Size: ~{format_size(g.store_size)} (store)"
-        return "Size: loading…" if self._fetching_size else "Size: unknown"
+        return "Size: loading…" if self._fetching_size else ""
 
     def _fetch_size(self) -> None:
         """Not installed and no size yet: ask the store now instead of waiting for the library."""

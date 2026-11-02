@@ -77,4 +77,4 @@ def test_size_is_fetched_when_opening_the_page(qtbot):
 
 def test_size_unknown(qtbot):
     page, service = page_for(qtbot, SteamGame(4, "No data"))
-    assert "Size: unknown" in page.facts.text() and service.fetched == []
+    assert "Size" not in page.facts.text() and service.fetched == []  # not known: not shown
