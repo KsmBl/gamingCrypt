@@ -243,7 +243,7 @@ def test_default_pages_pass_mount_point_to_games(monkeypatch):
 
     class Probe:
         def __init__(self, service, library_path="", library_settings=None, emulation_root="", windows_root="",
-                     linux_root="", minecraft_root="", user=None, rate_games=False):
+                     linux_root="", minecraft_root="", user=None, rate_games=False, people=None):
             seen["user"] = user
             seen["minecraft"] = minecraft_root
             seen["path"] = library_path

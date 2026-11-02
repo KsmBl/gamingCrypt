@@ -726,13 +726,24 @@ def test_a_user_has_no_games_security_or_system_settings(qtbot):
         assert tab.current_sub_tab == "Device"  # no way in
 
 
+def test_sounds_rumble_and_animations_are_each_users_own():
+    cfg, mia = a_user()
+    users.enter(cfg, mia.id)
+    cfg["appearance"].update(sounds=False, rumble=False, motion=False)
+    users.leave(cfg)
+    assert all(cfg["appearance"][key] is True for key in ("sounds", "rumble", "motion"))  # the admin's stay on
+    users.enter(cfg, mia.id)
+    assert not any(cfg["appearance"][key] for key in ("sounds", "rumble", "motion"))  # hers are still off
+
+
 def test_look_overlay_and_display_settings_are_each_users_own():
     cfg, mia = a_user()
     cfg["appearance"].update(theme="dark", text_size="normal")
     cfg["overlay_bar"] = {"position": "top", "size": "small", "opacity": 30, "modules": ["fps"]}
     cfg["system"].update(gaming_refresh=60, volume_step=5, lock_after_sleep_min=10)
     users.enter(cfg, mia.id)
-    assert cfg["appearance"] == {"theme": "dark", "text_size": "normal"}  # she starts with what the admin has
+    admins_look = dict(DEFAULTS["appearance"], theme="dark", text_size="normal")
+    assert cfg["appearance"] == admins_look  # she starts with what the admin has
     assert cfg["overlay_bar"]["position"] == "top" and cfg["system"]["gaming_refresh"] == 60
     cfg["appearance"]["theme"] = "light"
     cfg["appearance"]["text_size"] = "larger"
@@ -740,11 +751,11 @@ def test_look_overlay_and_display_settings_are_each_users_own():
     cfg["system"].update(gaming_refresh=40, gaming_resolution="960x600", volume_step=10)
     cfg["system"]["lock_after_sleep_min"] = 0  # the device's: for everybody
     written = users.persistable(cfg)
-    assert written["appearance"] == {"theme": "dark", "text_size": "normal"}  # the admin's, untouched
+    assert written["appearance"] == admins_look  # the admin's, untouched
     assert written["overlay_bar"]["position"] == "top" and written["system"]["gaming_refresh"] == 60
     assert written["system"]["volume_step"] == 5 and written["system"]["lock_after_sleep_min"] == 0
     own = written["users"][0]
-    assert own["appearance"] == {"theme": "light", "text_size": "larger"} and own["overlay_bar"]["size"] == "large"
+    assert own["appearance"] == dict(admins_look, theme="light", text_size="larger") and own["overlay_bar"]["size"] == "large"
     assert own["system"]["gaming_refresh"] == 40 and own["system"]["gaming_resolution"] == "960x600"
     assert "lock_after_sleep_min" not in own["system"] and "session" not in written and users.KEPT not in written
     users.leave(cfg)
@@ -753,7 +764,7 @@ def test_look_overlay_and_display_settings_are_each_users_own():
     cfg["appearance"]["theme"] = "light"  # the admin changes theirs: hers stays hers
     cfg["system"]["volume_step"] = 2
     users.enter(cfg, mia.id)
-    assert cfg["appearance"] == {"theme": "light", "text_size": "larger"} and cfg["system"]["volume_step"] == 10
+    assert cfg["appearance"] == dict(admins_look, theme="light", text_size="larger") and cfg["system"]["volume_step"] == 10
     assert cfg["overlay_bar"]["modules"] == ["fps", "battery"]
     users.enter(cfg, "admin")
     assert cfg["system"]["volume_step"] == 2 and users.persistable(cfg)["appearance"]["text_size"] == "normal"
