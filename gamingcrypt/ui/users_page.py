@@ -445,5 +445,5 @@ class UsersSection(QFrame):
             users.remove(self.config, user.id)
             self._saved(f"{user.name} is deleted")
 
-        ask(self.tab, f"Delete the user {user.name}?\nTheir code won't open the drive any more. Their save "
-                      "states stay on the drive.", "Delete", delete)
+        ask(self.tab, f"Delete the user {user.name}?\nTheir code won't open the drive any more. Their saves "
+                      "and save states stay on the drive.", "Delete", delete)

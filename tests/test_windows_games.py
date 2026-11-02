@@ -69,6 +69,33 @@ def test_remove_keeps_saves_unless_asked(root):
     assert not adventure.path.exists() and not library.prefix_dir(adventure).exists()
 
 
+def test_each_user_has_their_own_prefix(root):
+    knight = next(g for g in library.scan(root) if g.name == "Hollow Knight")
+    assert library.prefix_dir(knight) == root / ".prefixes" / "Hollow Knight"  # the admin's: where it always was
+    mia = library.prefix_dir(knight, "u1")
+    assert mia == root / ".users" / "u1" / ".prefixes" / "Hollow Knight"
+    assert library.all_prefixes(knight) == [library.prefix_dir(knight)]  # (mia hasn't played it yet)
+    mia.mkdir(parents=True)
+    assert library.all_prefixes(knight) == [library.prefix_dir(knight), mia]
+    assert [g.name for g in library.scan(root)] == ["Big Adventure", "Hollow Knight"]  # the folder is no game
+
+
+def test_remove_with_saves_takes_everybodys_and_only_this_games(root):
+    games = {g.name: g for g in library.scan(root)}
+    knight, adventure = games["Hollow Knight"], games["Big Adventure"]
+    mine = library.prefix_dir(knight, "u1")
+    mine.mkdir(parents=True)
+    (mine / "save.dat").write_bytes(b"s" * 10)
+    other_game = library.prefix_dir(adventure, "u1")
+    other_game.mkdir(parents=True)
+    freed = library.remove(knight, with_saves=False)
+    assert freed == 7500 and mine.exists()  # kept, like the admin's
+    make_game(root, "Hollow Knight", {"hollow_knight.exe": 600})
+    freed = library.remove(knight, with_saves=True)
+    assert freed == 610 and not mine.exists() and not library.prefix_dir(knight).exists()
+    assert other_game.exists()
+
+
 # --- what runs them ---------------------------------------------------------------------------
 @pytest.fixture
 def home(tmp_path):
@@ -115,6 +142,23 @@ def test_proton_with_umu_without_and_wine(root, home):
     args, env, _ = runners.command(wine, knight, "hollow_knight.exe", home)
     assert args == [str(home / "wine"), str(knight.path / "hollow_knight.exe")]
     assert env["WINEPREFIX"].endswith("Hollow Knight/pfx")
+
+
+def test_a_user_plays_with_their_own_prefix(root, home, tmp_path):
+    knight = next(g for g in library.scan(root) if g.name == "Hollow Knight")
+    own = library.prefix_dir(knight, "u1")
+    proton = runners.Runner("proton:GE", "GE", "proton", home / "GE")
+    _, env, _ = runners.command(proton, knight, "hollow_knight.exe", home, which=lambda n: "/usr/bin/umu-run", user="u1")
+    assert env["WINEPREFIX"] == str(own / "pfx")
+    _, env, _ = runners.command(proton, knight, "hollow_knight.exe", home, which=lambda n: None, user="u1")
+    assert env["STEAM_COMPAT_DATA_PATH"] == str(own)
+    wine = runners.Runner("wine:system", "Wine", "wine", home / "wine")
+    _, env, _ = runners.command(wine, knight, "hollow_knight.exe", home, user="u1")
+    assert env["WINEPREFIX"] == str(own / "pfx")
+    started = []
+    ok, _ = runners.launch(knight, "hollow_knight.exe", wine, tmp_path / "data", tmp_path / "logs",
+                           popen=lambda args, **kw: started.append(kw), home=home, user="u1")
+    assert ok and own.is_dir() and started[0]["env"]["WINEPREFIX"] == str(own / "pfx")
 
 
 def test_launch_like_a_steam_game(root, home, tmp_path):

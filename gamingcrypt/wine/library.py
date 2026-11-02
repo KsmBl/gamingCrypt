@@ -2,7 +2,8 @@
 share as it is), started with an .exe chosen once.
 
 Each game gets its own Wine prefix (its "C:" drive, where most games keep their saves) on
-the encrypted drive too: <drive>/Windows Games/.prefixes/<game>.
+the encrypted drive too. The admin's is <drive>/Windows Games/.prefixes/<game>, where it always
+was; another user's is <drive>/Windows Games/.users/<id>/.prefixes/<game>, so each has their own saves.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from pathlib import Path
 
 WINE_APPID_BASE = 0x50000000  # below the movies' and emulated games' ids, far above Steam's
 PREFIXES = ".prefixes"
+USERS = ".users"
 STARTABLE = (".exe",)
 # names that are almost never the game itself
 NOT_THE_GAME = re.compile(r"unins|uninstall|setup|install|redist|vcredist|vc_redist|directx|dxsetup|dxwebsetup|"
@@ -106,16 +108,26 @@ def executables(game: WindowsGame) -> list[str]:
     return [rel for rel, _d, _s in sorted(found, key=rank)]
 
 
-def prefix_dir(game: WindowsGame) -> Path:
-    return game.path.parent / PREFIXES / game.path.name
+def prefix_dir(game: WindowsGame, user: str = "") -> Path:
+    """The game's prefix for that user's id ("" = the admin)."""
+    root = game.path.parent
+    return (root / USERS / user if user else root) / PREFIXES / game.path.name
+
+
+def all_prefixes(game: WindowsGame) -> list[Path]:
+    """The game's prefixes that exist: the admin's and every user's - also a deleted user's."""
+    try:
+        users = sorted(p.name for p in (game.path.parent / USERS).iterdir() if p.is_dir())
+    except OSError:
+        users = []
+    return [p for p in (prefix_dir(game, user) for user in ("", *users)) if p.exists()]
 
 
 def remove(game: WindowsGame, with_saves: bool) -> int:
-    """Delete the game's folder - and its prefix (saves, settings) when asked. Bytes freed."""
+    """Delete the game's folder - and everybody's prefix (saves, settings) when asked. Bytes freed."""
     freed = folder_size(game.path)
     shutil.rmtree(game.path, ignore_errors=True)
-    prefix = prefix_dir(game)
-    if with_saves and prefix.exists():
+    for prefix in all_prefixes(game) if with_saves else ():
         freed += folder_size(prefix)
         shutil.rmtree(prefix, ignore_errors=True)
     return freed

@@ -179,7 +179,7 @@ class RemoveWindowsConfirm(QFrame):
         self.saves_button = big_button("", checkable=True)
         self.saves_button.toggled.connect(self._saves_text)
         self._saves_text(False)
-        self.saves_button.setVisible(library.prefix_dir(game).exists())
+        self.saves_button.setVisible(bool(library.all_prefixes(game)))
         layout.addWidget(self.saves_button, alignment=Qt.AlignmentFlag.AlignLeft)
         row = QHBoxLayout()
         self.remove_button = big_button("🗑 Remove", "danger")
@@ -192,7 +192,7 @@ class RemoveWindowsConfirm(QFrame):
         layout.addLayout(row)
 
     def _saves_text(self, on: bool) -> None:
-        self.saves_button.setText(f"{'☑' if on else '☐'}  Also delete its saves and settings (its Wine prefix)")
+        self.saves_button.setText(f"{'☑' if on else '☐'}  Also delete everyone's saves and settings (their Wine prefixes)")
 
     def gamepad_back(self) -> bool:
         self.cancelled.emit()
@@ -226,8 +226,10 @@ class WindowsGamePage(QWidget):
         return self.upscale.facts()
 
     def saves_note(self) -> str:
-        return (f"Saves and settings: its own Wine prefix on the drive "
-                f"(Windows Games/{library.PREFIXES}/{self.game.path.name})")
+        user = self.tab.user
+        own = "" if user is None or user.admin else user.id
+        folder = library.prefix_dir(self.game, own).relative_to(self.game.path.parent).as_posix()
+        return f"Saves and settings: {'your' if own else 'its'} own Wine prefix on the drive (Windows Games/{folder})"
 
     def __init__(self, tab, game: WindowsGame, parent: QWidget | None = None):
         super().__init__(parent)

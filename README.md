@@ -99,7 +99,9 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
   (a virtual keyboard), steered with the controller - with Esc, Tab, Ctrl, Alt, arrows and F1 - F12 for PC
   games. While it's open the game doesn't get the controller.
 - 🪟 **Windows and Linux games** outside Steam: copy the game folder onto the drive, pick its start
-  file, and play it with Proton, Wine or natively.
+  file, and play it with Proton, Wine or natively. Every user has their own saves and settings in a
+  Windows game (their own Wine prefix) - except in a game that saves into its own folder. The saves
+  from before stay with the admin.
 - 🖼️ **Wrong or missing picture?** Hold it (or **Options → Change picture**) to pick another one, for games, movies and shows.
 - 🎬 **Movies and shows** with covers, descriptions and cast looked up automatically; resume
   where you stopped and watched marks; episodes are grouped into seasons.

@@ -1309,11 +1309,13 @@ class MainWindow(QMainWindow):
         if runner.kind == "proton" and runners.is_32bit(game.path / exe) and not runners.vulkan_32bit():
             return False, runners.VULKAN_32.format(game=game.name)  # it would quit after 2 s without a word
         pads = self.input_service.game_env() if self.input_service is not None else {}
-        from gamingcrypt import speedhack
+        from gamingcrypt import speedhack, users
 
+        user = users.current(self.config)
         ok, message = runners.launch(game, exe, runner, data_dir(), config_mod.cache_dir() / "logs",
                                      more_env={**pads, **self.start_upscaling(profile),
-                                               **speedhack.game_env(game.appid)})
+                                               **speedhack.game_env(game.appid)},
+                                     user="" if user.admin else user.id)  # their own saves
         self.upscaling_started(ok)
         if ok:
             log.info("starting Windows game %s: %s with %s", game.name, exe, runner.label)

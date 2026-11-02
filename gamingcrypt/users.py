@@ -6,8 +6,8 @@ the users the admin adds.
   were users - a config from before is simply "one admin".
 * The admin manages the users, and is the only one who can delete games.
 * A user can have an age: games rated for older ones aren't shown to them (ratings.py).
-* Steam settings and emulator saves are each user's own (see steam_settings(), and
-  emulation/library.EmulationPaths).
+* Steam settings, emulator saves and Windows games' saves are each user's own (see steam_settings(),
+  emulation/library.EmulationPaths and wine/library.prefix_dir).
 
 In config.json: "users" (a list: id, name, method, slot, age, steam), "admin" (name),
 "unlock"."keyring" (the vault and the admin's slot, once there are users). Who is using the

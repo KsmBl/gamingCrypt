@@ -149,10 +149,11 @@ def pick(runners: list[Runner], wanted: str | None) -> Runner | None:
 
 
 def command(runner: Runner, game: WindowsGame, exe: str, home: Path,
-            which: Callable[[str], str | None] = shutil.which) -> tuple[list[str], dict[str, str], Path]:
-    """(program and arguments, environment additions, working folder)."""
+            which: Callable[[str], str | None] = shutil.which,
+            user: str = "") -> tuple[list[str], dict[str, str], Path]:
+    """(program and arguments, environment additions, working folder). ``user``: whose prefix."""
     target = game.path / exe
-    prefix = prefix_dir(game)
+    prefix = prefix_dir(game, user)
     env = {"WINEDEBUG": "-all"}
     if runner.kind == "wine":
         env["WINEPREFIX"] = str(prefix / "pfx")
@@ -170,15 +171,16 @@ def command(runner: Runner, game: WindowsGame, exe: str, home: Path,
 def launch(game: WindowsGame, exe: str, runner: Runner, data_dir: Path, log_dir: Path,
            popen=subprocess.Popen, home: Path | None = None,
            which: Callable[[str], str | None] = shutil.which,
-           more_env: dict[str, str] | None = None) -> tuple[bool, str]:
-    """Start it like a Steam game (the "reaper" wrapper: gamescope, quick menu, Force quit)."""
+           more_env: dict[str, str] | None = None, user: str = "") -> tuple[bool, str]:
+    """Start it like a Steam game (the "reaper" wrapper: gamescope, quick menu, Force quit).
+    ``user``: whose prefix - a user's id, "" for the admin."""
     from gamingcrypt.emulation.retroarch import reaper
 
     home = home or Path.home()
     if not (game.path / exe).is_file():
         return False, f"{exe} isn't in the game's folder any more - pick the start file in Options"
-    args, extra, cwd = command(runner, game, exe, home, which)
-    prefix_dir(game).mkdir(parents=True, exist_ok=True)
+    args, extra, cwd = command(runner, game, exe, home, which, user)
+    prefix_dir(game, user).mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, **extra, **(more_env or {})}
     try:
