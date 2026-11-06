@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from gamingcrypt.ui.widgets import big_button
 
 WIDTH = 620
+EDGE = 12  # (the box: at least this far from the screen's top and bottom)
 
 
 class Modal(QWidget):
@@ -30,6 +31,7 @@ class Modal(QWidget):
         row = QHBoxLayout()
         row.addStretch()
         content.setFixedWidth(min(WIDTH, max(320, host.width() - 60)))
+        content.setMaximumHeight(max(200, host.height() - 2 * EDGE))  # never taller than the screen
         row.addWidget(content)
         row.addStretch()
         outer.addLayout(row)
@@ -43,6 +45,8 @@ class Modal(QWidget):
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt API
         if watched is self.host and event.type() == QEvent.Type.Resize:
             self.setGeometry(self.host.rect())
+            self.content.setFixedWidth(min(WIDTH, max(320, self.host.width() - 60)))
+            self.content.setMaximumHeight(max(200, self.host.height() - 2 * EDGE))
         return False
 
     def paintEvent(self, _event) -> None:  # noqa: N802 - Qt API

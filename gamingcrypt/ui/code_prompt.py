@@ -29,14 +29,19 @@ class CodeEntry(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
-        self.input = SecretInput(method)
+        self.input = SecretInput(method, compact=True)  # (in a box over the screen)
         self.input.secret_entered.connect(self.try_code)
-        self.input.invalid.connect(lambda message: set_status(self.status, message, error=True))
-        layout.addWidget(self.input, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self.input.invalid.connect(lambda message: self.say(message, error=True))
+        layout.addWidget(self.input, 1)  # (all the width: the input centers itself in it)
         self.status = QLabel("")
         self.status.setObjectName("status")
         self.status.setWordWrap(True)
+        self.status.hide()  # (shown with something to say: on a small screen every line counts)
         layout.addWidget(self.status)
+
+    def say(self, text: str, error: bool = False) -> None:
+        set_status(self.status, text, error=error)
+        self.status.setVisible(bool(text))
 
     def focus_first(self) -> None:
         self.input.widget.setFocus(Qt.FocusReason.TabFocusReason)
@@ -45,7 +50,7 @@ class CodeEntry(QWidget):
         if self.working:
             return
         self.working = True
-        set_status(self.status, "Checking…")
+        self.say("Checking…")
         check = self.check
         run_async(lambda: check(secret), self._checked, self._failed, owner=self)
 
@@ -53,15 +58,15 @@ class CodeEntry(QWidget):
         self.working = False
         if not password:
             self.input.clear(error=True)
-            set_status(self.status, "Wrong code - try again", error=True)
+            self.say("Wrong code - try again", error=True)
             return
-        set_status(self.status, "")
+        self.say("")
         self.accepted.emit(password)
 
     def _failed(self, exc) -> None:
         self.working = False
         self.input.clear(error=True)
-        set_status(self.status, str(exc), error=True)
+        self.say(str(exc), error=True)
 
 
 class CodePrompt(QFrame):

@@ -90,7 +90,7 @@ class UnlockStick(QFrame):
             self.input.deleteLater()
         for name, button in self.method_buttons.items():
             button.setChecked(name == method)
-        self.input = SecretInput(method)
+        self.input = SecretInput(method, compact=True)  # (in a box over the screen)
         self.input.secret_entered.connect(self.try_code)
         self.input.invalid.connect(lambda message: set_status(self.status, message, error=True))
         self.input_holder.addWidget(self.input, alignment=Qt.AlignmentFlag.AlignHCenter)
