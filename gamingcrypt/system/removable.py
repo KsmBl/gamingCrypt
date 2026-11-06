@@ -16,7 +16,7 @@ import os
 import re
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -40,6 +40,12 @@ class Removable:
     disk: str = field(default="", compare=False)  # the whole stick: /dev/sdb
     size: int = field(default=0, compare=False)  # the whole stick's, in bytes
     problem: str = field(default="", compare=False)  # not usable (not mounted): why - "" when it is
+    container: str = field(default="", compare=False)  # encrypted: its VeraCrypt container (stick_crypt.py)
+    host: Path | None = field(default=None, compare=False)  # ... and where the stick itself is mounted
+
+    @property
+    def encrypted(self) -> bool:
+        return bool(self.container)
 
     @property
     def usable(self) -> bool:
@@ -156,10 +162,13 @@ def _run(*args, **kwargs):
 class Drives:
     """What's in right now - asked again on every look (a few seconds apart, in the background)."""
 
-    def __init__(self, exclude: tuple[str, ...] = (), mount: bool = True, run=None):
+    def __init__(self, exclude: tuple[str, ...] = (), mount: bool = True, run=None, crypt_factory=None):
         self.exclude = exclude
         self.mount = mount
         self.run = run or (lambda *a, **k: _run(*a, **k))
+        self.crypt_factory = crypt_factory  # (tests: a stand-in VeraCrypt for the encrypted sticks)
+        self.opened: set[str] = set()  # the containers this opened (closed when their stick is out)
+        self.refused: dict[str, str] = {}  # container -> the password it didn't open with (not tried again)
         self.tried: dict[str, str] = {}  # partitions that wouldn't mount -> why: not tried again until they're out
         self.unusable: list[Removable] = []  # (after look()) sticks that are in but can't be used: why
 
@@ -189,8 +198,57 @@ class Drives:
             if path in self.tried:
                 unusable.append(_unusable(disk, kind_of(disk) or "usb", f"Couldn't be mounted: {self.tried[path]}",
                                           part))
+        found = self._open_encrypted(found, unusable)
         self.unusable = [d for d in [*blanks, *unusable] if d.disk not in BUSY]
         return sorted(found, key=lambda d: str(d.mount))
+
+    def _open_encrypted(self, found: list, unusable: list) -> list:
+        """A stick with GamingCrypt's container: opened with the drive's password (stick_crypt.py) -
+        the games are inside. Containers whose stick was taken out are closed."""
+        from gamingcrypt.system import stick_crypt
+
+        shown, present = [], set()
+        password = stick_crypt.keys.password
+        for stick in found:
+            volume = stick_crypt.container_of(stick.mount) if stick.disk not in BUSY else None
+            if volume is None:
+                shown.append(stick)
+                continue
+            volume = str(volume)
+            present.add(volume)
+            locked = replace(stick, container=volume, host=stick.mount)
+            if password is None:
+                if stick_crypt.is_open(volume):
+                    shown.append(replace(locked, mount=stick_crypt.mount_dir(volume), fstype="ext4"))
+                else:
+                    unusable.append(replace(locked, problem="Encrypted - it opens when GamingCrypt is unlocked "
+                                                            "(lock and unlock it once)"))
+                continue
+            if self.refused.get(volume) == password:
+                unusable.append(replace(locked, problem=stick_crypt.EARLIER))
+                continue
+            opened = stick_crypt.open_stick(stick, password, self.crypt_factory)
+            if opened.problem:
+                if opened.problem == stick_crypt.EARLIER:
+                    self.refused[volume] = password
+                unusable.append(opened)
+                continue
+            self.refused.pop(volume, None)
+            self.opened.add(volume)
+            shown.append(opened)
+        for volume in sorted(self.opened - present):  # taken out while open
+            stick_crypt.close(volume, self.crypt_factory)
+            self.opened.discard(volume)
+        self.refused = {v: p for v, p in self.refused.items() if v in present}
+        return shown
+
+    def close_all(self) -> None:
+        """The panic lock: every stick's container closed (its games aren't there any more)."""
+        from gamingcrypt.system import stick_crypt
+
+        for volume in sorted(self.opened):
+            stick_crypt.close(volume, self.crypt_factory)
+        self.opened.clear()
 
     def _mount(self, device: str) -> str:
         """"" when it's mounted - otherwise why not."""
@@ -258,15 +316,21 @@ def _gdbus(run, device: str, method: str, *args: str) -> str:
 # what formatting does, one after the other (step(key) is called as each one starts)
 STEPS = (("check", "Checking the drive"), ("unmount", "Unmounting it"), ("table", "Writing a new partition table"),
          ("filesystem", "Creating the {fs} file system"), ("mount", "Mounting it again"),
-         ("folders", "Making the folders for games"))
+         ("encrypt", "Encrypting it (a VeraCrypt container, your code)"), ("folders", "Making the folders for games"))
 
 
-def format_drive(drive: Removable, fstype: str, label: str, run=None, layout=True, step=None) -> Removable:
+def steps(encrypted: bool) -> tuple:
+    """What formatting does - encrypting only when it's asked to."""
+    return tuple(s for s in STEPS if encrypted or s[0] != "encrypt")
+
+
+def format_drive(drive: Removable, fstype: str, label: str, run=None, layout=True, step=None,
+                 encrypt=None) -> Removable:
     """Everything on the stick is deleted (see _format) - and meanwhile the app doesn't mount it again
     (it looks every few seconds: a stick mounted between unmounting and formatting is busy)."""
     BUSY.add(drive.disk)
     try:
-        return _format(drive, fstype, label, run, layout, step)
+        return _format(drive, fstype, label, run, layout, step, encrypt)
     finally:
         BUSY.discard(drive.disk)
 
@@ -303,7 +367,10 @@ def _mount_new(run, device: str) -> Path:
     raise FormatError(f"It was formatted, but couldn't be mounted: {(out.stderr or '').strip()}")
 
 
-def _format(drive: Removable, fstype: str, label: str, run=None, layout=True, step=None) -> Removable:
+def _format(drive: Removable, fstype: str, label: str, run=None, layout=True, step=None,
+            encrypt=None) -> Removable:
+    """encrypt(stick) -> the stick opened (stick_crypt.create): a VeraCrypt container filling it, the
+    folders for games made inside."""
     """Everything on the stick is deleted: a new partition table with one partition, the whole
     stick, in fstype. Mounted again, with the folders for games made (layout) - the stick as it is now.
     step(key): each of STEPS as it starts (from this thread)."""
@@ -322,6 +389,11 @@ def _format(drive: Removable, fstype: str, label: str, run=None, layout=True, st
     if disk is None:
         raise FormatError(f"{drive.name} isn't there any more")
     step("unmount")
+    if drive.container:  # an encrypted stick: its container closed first (it keeps the stick busy)
+        from gamingcrypt.system import stick_crypt
+
+        if not stick_crypt.close(drive.container):
+            raise FormatError(f"{drive.name}'s encrypted container couldn't be closed - close what's open on it")
     _unmount(run, drive, disk)
     table = "dos" if int(disk.get("size") or 0) <= MBR_UP_TO else "gpt"
     kind = FORMATS[fstype][1 if table == "dos" else 2]
@@ -336,6 +408,9 @@ def _format(drive: Removable, fstype: str, label: str, run=None, layout=True, st
         raise FormatError("It was formatted, but the new partition wasn't found")
     step("mount")
     now = Removable(_mount_new(run, device), drive.kind, label, device, fstype, drive.disk, drive.size)
+    if encrypt is not None:
+        step("encrypt")
+        now = encrypt(now)
     if layout:
         step("folders")
         for system in SYSTEMS:

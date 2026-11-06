@@ -35,9 +35,14 @@ class FormatConfirm(QFrame):
     cancelled = Signal()
     finished = Signal()  # OK / Close after it ran: the box can go
 
-    def __init__(self, drive, formats: list[str] | None = None, run=None, parent=None, clock=time.monotonic):
+    def __init__(self, drive, formats: list[str] | None = None, run=None, parent=None, clock=time.monotonic,
+                 encrypt=None, no_encrypt_reason: str = ""):
+        """encrypt(stick, progress) -> the stick opened (stick_crypt.create with the drive's password) -
+        None: it can't be encrypted now (no_encrypt_reason says why)."""
         super().__init__(parent)
         self.drive, self.run, self.clock = drive, run, clock
+        self.encrypt = encrypt
+        self.percent = 0.0  # how far the container is (written in the worker thread)
         self.chosen = ""
         self.working = False
         self.over = False  # formatted or failed: only OK / Close is left
@@ -64,6 +69,20 @@ class FormatConfirm(QFrame):
             hint.setWordWrap(True)
             layout.addWidget(hint)
             self.hints.append(hint)
+        # encrypted: a VeraCrypt container with the drive's code (on unless it can't be)
+        self.encrypt_button = big_button("", checkable=True)
+        self.encrypt_button.setChecked(encrypt is not None)
+        self.encrypt_button.setEnabled(encrypt is not None)
+        self.encrypt_button.toggled.connect(self._encrypt_text)
+        layout.addWidget(self.encrypt_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.encrypt_note = QLabel("Its games are in a VeraCrypt container that opens with the same code as your "
+                                   "drive (PIN, password or pattern) - only while GamingCrypt is unlocked. Inside it's ext4: "
+                                   "Linux games start from it with either file system."
+                                   if encrypt is not None else no_encrypt_reason or "It can't be encrypted now.")
+        self.encrypt_note.setObjectName("cardMeta")
+        self.encrypt_note.setWordWrap(True)
+        layout.addWidget(self.encrypt_note)
+        self._encrypt_text()
         # while it runs: the steps, the bar, the time
         self.steps = QWidget()
         steps = QVBoxLayout(self.steps)
@@ -112,6 +131,13 @@ class FormatConfirm(QFrame):
             self.question.setText("This device can't format drives: install exfatprogs (for exFAT) or "
                                   "e2fsprogs (for ext4).")
 
+    @property
+    def encrypting(self) -> bool:
+        return self.encrypt is not None and self.encrypt_button.isChecked()
+
+    def _encrypt_text(self, _on: bool = False) -> None:
+        self.encrypt_button.setText("🔒 Encrypted: on" if self.encrypting else "🔓 Encrypted: off")
+
     def focus_first(self) -> None:
         first = next(iter(self.choices.values()), self.cancel_button)
         first.setFocus(Qt.FocusReason.TabFocusReason)
@@ -119,9 +145,10 @@ class FormatConfirm(QFrame):
     def choose(self, fstype: str) -> None:
         """The second question: everything on it is gone."""
         self.chosen = fstype
-        for widget in [*self.choices.values(), *self.hints]:
+        for widget in [*self.choices.values(), *self.hints, self.encrypt_button, self.encrypt_note]:
             widget.hide()
-        self.question.setText(f"Really delete everything on {self.drive.name}? It's formatted as {NAMES[fstype]} - "
+        how = f"{NAMES[fstype]}, encrypted" if self.encrypting else NAMES[fstype]
+        self.question.setText(f"Really delete everything on {self.drive.name}? It's formatted as {how} - "
                               "this can't be undone.")
         self.format_button.show()
         self.cancel_button.setFocus(Qt.FocusReason.TabFocusReason)  # the safe answer first
@@ -132,8 +159,13 @@ class FormatConfirm(QFrame):
         self.working = True
         self.format_button.hide()
         self.cancel_button.hide()  # (it can't be stopped half way)
-        self.title.setText(f"Formatting {self.drive.name} as {NAMES[self.chosen]}")
+        self.title.setText(f"Formatting {self.drive.name} as {NAMES[self.chosen]}"
+                           + (", encrypted" if self.encrypting else ""))
         self.question.setText("Keep it in until it's done.")
+        wanted = {key for key, _t in removable.steps(self.encrypting)}
+        for key, label in self.step_labels.items():
+            label.setVisible(key in wanted)
+        self.bar.setRange(0, len(wanted))
         self.steps.show()
         self.bar.show()
         self.state.show()
@@ -142,7 +174,14 @@ class FormatConfirm(QFrame):
         self.timer.start()
         drive, fstype, run, reached = self.drive, self.chosen, self.run, self.reached
         label = drive.label or "GAMES"
-        run_async(lambda: removable.format_drive(drive, fstype, label, run=run, step=reached.append),
+        encrypt = None
+        if self.encrypting:
+            make = self.encrypt
+
+            def encrypt(stick):
+                return make(stick, progress=lambda pct: setattr(self, "percent", pct))
+
+        run_async(lambda: removable.format_drive(drive, fstype, label, run=run, step=reached.append, encrypt=encrypt),
                   self._done, self._failed, owner=self)
 
     def step_text(self, key: str) -> str:
@@ -153,6 +192,8 @@ class FormatConfirm(QFrame):
         reached = list(self.reached)
         current = reached[-1] if reached else ""
         for key, label in self.step_labels.items():
+            if label.isHidden() and self.working:
+                continue
             if done and key in reached:
                 state = "done"
             elif key == current:
@@ -163,11 +204,15 @@ class FormatConfirm(QFrame):
                 state = "waiting"
             color = {"done": theme.SUCCESS, "now": theme.ACCENT, "failed": theme.DANGER}.get(state, theme.TEXT_DIM)
             weight = "600" if state in ("now", "failed") else "400"
-            label.setText(f"{MARKS[state]}  {self.step_text(key)}{'…' if state == 'now' else ''}")
+            percent = f" {round(self.percent)}%" if key == "encrypt" and state == "now" and self.percent else ""
+            label.setText(f"{MARKS[state]}  {self.step_text(key)}{'…' if state == 'now' else ''}{percent}")
             label.setStyleSheet(f"color: {color}; font-weight: {weight};")
             label.setProperty("state", state)
         finished = sum(1 for k in reached if k != current) + (1 if done else 0)
-        self.bar.setValue(len(self.step_labels) if done and not failed else finished)
+        if current == "encrypt" and not done:
+            finished += self.percent / 100  # (the long one: its own progress)
+        self.bar.setRange(0, len(removable.steps(self.encrypting)) * 100)
+        self.bar.setValue(self.bar.maximum() if done and not failed else round(finished * 100))
         if self.working:
             now = f"{self.step_text(current)}…" if current else "Starting…"
             set_status(self.state, f"{now}  ·  {elapsed(self.clock() - self.started_at)}")
@@ -182,9 +227,14 @@ class FormatConfirm(QFrame):
         except OSError:
             space = ""
         took = elapsed(self.clock() - self.started_at)
-        self.title.setText(f"✓ {now.name} is ready for games")
-        self.question.setText(f"{NAMES[self.chosen]}{space}. Took {took}. Put ROMs in Emulation/roms/<system>, "
-                              "Windows games in Windows Games, Linux games in Linux Games - or move games onto it.")
+        self.title.setText(f"✓ {now.name} is ready for games" + (" - encrypted" if self.encrypting else ""))
+        if self.encrypting:
+            self.question.setText(f"Encrypted with your code{space}. Took {took}. It opens by itself while GamingCrypt "
+                                  "is unlocked - move games onto it in Settings → Storage or on a game's page.")
+        else:
+            self.question.setText(f"{NAMES[self.chosen]}{space}. Took {took}. Put ROMs in Emulation/roms/<system>, "
+                                  "Windows games in Windows Games, Linux games in Linux Games - or move games onto "
+                                  "it.")
         set_status(self.state, "")
         self.state.hide()
         self.ok_button.setText("OK")

@@ -772,6 +772,15 @@ class GamesTab(QStackedWidget):
         run_async(self.service.installed_games, self._installed_loaded, owner=self)
         self.reload_roms()
 
+    def refresh_game_pages(self) -> None:
+        """An emulated, Windows or Linux game's page that's open (on screen, or under another page):
+        about the game as it's found now - on a stick put in again, moved - or, its stick taken out,
+        saying it isn't there (until it's back)."""
+        here = {g.appid: g for games in [*self.roms.values(), self.pc_games()] for g in games}
+        for page in self.pages_of(QWidget):
+            if hasattr(page, "game_found"):
+                page.game_found(here.get(page.game.appid))
+
     def set_drives(self, drives: list) -> None:
         """A USB stick, USB drive or SD card put in or taken out: its games come / go."""
         if list(drives) == self.drives:
@@ -848,6 +857,7 @@ class GamesTab(QStackedWidget):
         self.home.update_continue()
         self.home.update_favorites()
         self.home.refresh_results()  # emulated games are in "Installed games" too
+        self.refresh_game_pages()
         self.fill_facts()  # their genres and years
         self.fetch_missing_cores(found)
 
@@ -884,6 +894,7 @@ class GamesTab(QStackedWidget):
         self.home.update_continue()
         self.home.update_favorites()
         self.home.refresh_results()
+        self.refresh_game_pages()
         self.fill_facts()
 
     def windows_by_appid(self, appid: int):
@@ -958,6 +969,7 @@ class GamesTab(QStackedWidget):
         self.home.update_continue()
         self.home.update_favorites()
         self.home.refresh_results()
+        self.refresh_game_pages()
         self.fill_facts()
 
     def linux_runners(self) -> list:

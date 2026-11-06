@@ -229,7 +229,7 @@ def test_the_app_hands_new_codes_to_the_lock_after_sleep(qtbot, tmp_path):
     window.remember_code(ADMIN_CODE)
     window.show_shell()
     settings = window.shell.pages["Settings"]
-    assert settings.code_changed == window.remember_code
+    assert settings.code_changed == window.code_changed_to  # (remembers it - and re-keys encrypted sticks)
     settings.code_changed("5555")
     assert VerifyUnlocker(window.verifier).unlock("5555").success
     assert not VerifyUnlocker(window.verifier).unlock(ADMIN_CODE).success

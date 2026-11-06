@@ -284,6 +284,30 @@ class Movable:
         """A stick put in / taken out: Move is there when the game can go somewhere (the admin's)."""
         self.move_button.setVisible(getattr(self.tab, "can_delete", True) and bool(self.move_places()))
 
+    gone = False  # its stick was taken out (game_found)
+
+    def game_found(self, game) -> None:
+        """The libraries were looked at again (GamesTab.refresh_game_pages): the game as it is now -
+        None: not there (its stick taken out). Play waits until it's back."""
+        if self.move_box is not None and self.move_box.moving:
+            return  # (it's being moved: the page follows when it's done)
+        if game is None:
+            if not self.gone:
+                self.gone = True
+                self.main_button.setEnabled(False)
+                where = "USB stick" if not getattr(self.game, "removable", "") else {
+                    "usb": "USB stick", "drive": "USB drive", "sd": "SD card"}.get(self.game.removable, "USB stick")
+                set_status(self.status, f"Not here at the moment - put its {where} in again to play it", error=True)
+                self.status.setVisible(True)
+            return
+        if self.gone:
+            self.gone = False
+            self.main_button.setEnabled(True)
+            set_status(self.status, "")
+        self.game = game
+        self.cover.set_badge(getattr(game, "removable", ""))
+        self.drives_changed()
+
     def ask_move(self) -> None:
         if self.move_box is not None:
             return

@@ -114,6 +114,14 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
   pulling the stick out half way loses nothing. Its favorite, play time and saves stay. Settings → Storage
   also shows how full each stick is and **formats** it (exFAT for everywhere, ext4 for Linux games), with the
   folders for games made right away. Moving and formatting are the admin's.
+- 🔒 **Encrypted sticks**: formatting encrypts a stick by default - a VeraCrypt container filling it, with the
+  same code as your drive (the same password through the same key derivation, so every user's code opens it too).
+  Put in while GamingCrypt is unlocked, it opens by itself and its games are in the list; the panic lock closes it.
+  Its key derivation settings are next to it, so another device with GamingCrypt opens it with the same code, and
+  plain VeraCrypt with `gamingcrypt --volume-password`. Changing your code changes the sticks that are in too; one
+  that wasn't is unlocked once with the old code in Settings → Storage.
+- ⚡ **Ready right away**: a stick is noticed the moment it's put in (udev), mounted and opened; an open game page
+  follows its game - Play waits while its stick is out.
 - 💾 **Saves page** (Options → Saves, for Windows and emulated games): how big each user's saves are and when
   they last changed. Back them up, go back to a backup or delete them; the admin sees everyone's and can copy
   saves from one user to another. What gets replaced is backed up first. The 3 newest backups are kept, and a

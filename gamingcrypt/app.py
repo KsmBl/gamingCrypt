@@ -496,6 +496,7 @@ class MainWindow(QMainWindow):
         games = self.shell.pages.get("Games") if self.shell is not None else None
         service = getattr(games, "service", None)
         unlocker = self.unlocker_factory(self.config["unlock"])
+        drives = getattr(self, "drives", None)
         for overlay in (getattr(self, "quick_menu", None), getattr(self, "controls_overlay", None), self.sleep_lock,
                         self.battery_warning, getattr(self, "keyboard_overlay", None)):
             if overlay is not None:
@@ -522,6 +523,8 @@ class MainWindow(QMainWindow):
                 library_setup.close_steam(service.client, timeout=20)
             if drive_share_password():
                 DriveShare().stop(force=True)  # its connections would keep the drive busy
+            if drives is not None:
+                drives.close_all()  # the encrypted sticks too
             return unlocker.dismount()
 
         def done(result) -> None:
@@ -586,6 +589,55 @@ class MainWindow(QMainWindow):
             self.config["last_user"] = user.id  # chosen on the lock screen the next time
             self.save(self.config)
         self.remember_code(secret)
+        self.learn_drive_password(user.id, secret)
+
+    def learn_drive_password(self, user_id: str, secret: str, then=None) -> None:
+        """The drive's volume password from the code that was just entered (kept while it's
+        unlocked): encrypted sticks open with it (system/stick_crypt.py) - then they're looked for."""
+        from gamingcrypt import users
+
+        config = self.config
+
+        def work():
+            return users.volume_password(config, user_id, secret)
+
+        def done(password) -> None:
+            from gamingcrypt.system import stick_crypt
+
+            if self.screen_name == "lock":
+                return  # locked again meanwhile
+            if then is not None:
+                then(password)
+            else:
+                stick_crypt.keys.set(password)
+            self.look_for_drives()
+
+        run_async(work, done, lambda exc: log.warning("no password for the sticks: %s", exc), owner=self)
+
+    def code_changed_to(self, secret: str) -> None:
+        """Whoever is logged in unlocks with another code now. The admin's: the volume's password is
+        another one - the encrypted sticks that are in get it too (the others when they're opened with
+        their old code, Settings → Storage)."""
+        from gamingcrypt import users
+        from gamingcrypt.system import stick_crypt
+
+        self.remember_code(secret)
+        old = stick_crypt.keys.password
+        opened = sorted(getattr(getattr(self, "drives", None), "opened", set()))
+        config = self.config
+
+        def rekey(new) -> None:
+            stick_crypt.keys.set(new)
+            if not old or not new or old == new or not opened:
+                return
+
+            def work():
+                return [v for v in opened if not stick_crypt.rekey(v, old, new, config["unlock"], config.get("users"))]
+
+            run_async(work, lambda failed: [self.notify(f"An encrypted stick kept its old code: {v}", "⚠")
+                                            for v in failed], owner=self)
+
+        self.learn_drive_password(users.current(self.config).id, secret, then=rekey)
 
     def apply_own_settings(self, login: bool = False) -> None:
         """With more users, each has settings of their own (users.OWN): the look, the performance
@@ -2134,6 +2186,10 @@ class MainWindow(QMainWindow):
             current.abort()
         if self.input_service is not None:
             self.input_service.stop()  # give the real controller back
+        udev = getattr(self, "udev", None)
+        if udev is not None:  # (watch_udev)
+            udev.kill()
+            udev.waitForFinished(1000)
         super().closeEvent(event)
 
     def _replace(self, widget: QWidget) -> None:
@@ -2158,6 +2214,9 @@ class MainWindow(QMainWindow):
         from gamingcrypt import users
 
         users.leave(self.config)  # locked: nobody's logged in
+        from gamingcrypt.system import stick_crypt
+
+        stick_crypt.keys.clear()  # (the next code opens the sticks again)
         self.apply_own_settings()  # (the lock screen looks as the admin has it)
         everyone = users.all_users(self.config)
         lock = LockScreen(self.unlocker_factory(self.config["unlock"]), self.config["unlock"]["method"],
@@ -2169,6 +2228,7 @@ class MainWindow(QMainWindow):
         self.load_other_systems(lock)
         self._replace(lock)
         self.screen_name = "lock"
+        self.watch_drives()  # sticks put in meanwhile are mounted, ready when it's unlocked
 
     def show_shell(self) -> None:
         pages = self.page_factory(self.config) if self.page_factory else {}
@@ -2178,7 +2238,7 @@ class MainWindow(QMainWindow):
                                                  input_service=self.input_service,
                                                  restart_gaming=self.restart_gaming_mode,
                                                  admin_check=self.is_admin_code,
-                                                 code_changed=self.remember_code))
+                                                 code_changed=self.code_changed_to))
         service = getattr(games, "service", None)
         if service is not None:
             # Steam windows (store, Steam's own dialogs) would open *behind* the fullscreen launcher.
@@ -2223,7 +2283,8 @@ class MainWindow(QMainWindow):
         if storage_page is not None and hasattr(games, "reload_roms"):
             storage_page.roms_changed.connect(games.reload_roms)  # removed in Settings -> Storage
             storage_page.library_fn = lambda: games  # (its roots and the sticks that are in)
-            storage_page.drives_changed.connect(self.look_for_drives)  # formatted: mounted anew
+            storage_page.drives_changed.connect(self.drives_changed)  # formatted / unlocked: looked at anew
+            storage_page.config_fn = lambda: self.config  # (encrypting a stick: the drive's settings)
         if hasattr(settings, "libraries_changed") and hasattr(games, "home"):
             settings.libraries_changed.connect(games.home.apply_libraries)
         if hasattr(settings, "hotkeys_changed"):
@@ -2293,18 +2354,50 @@ class MainWindow(QMainWindow):
         if getattr(self, "drives_timer", None) is None:
             self.drives_timer = QTimer(self)
             self.drives_timer.timeout.connect(self.look_for_drives)
-        self._looking_for_drives = False
+            self._looking_for_drives = False
+            self._drives_again = False
+            self.watch_udev()
         self.drives_timer.start(self.DRIVES_MS)
         self.look_for_drives()
 
+    # udev tells when a stick is put in / taken out: looked at right then, not up to 4 s later
+    UDEV_MONITOR: list | None = ["udevadm", "monitor", "--udev", "--subsystem-match=block"]
+
+    def watch_udev(self) -> None:
+        import shutil
+
+        from PySide6.QtCore import QProcess
+
+        if not self.UDEV_MONITOR or shutil.which(self.UDEV_MONITOR[0]) is None:
+            return
+        self.udev_soon = QTimer(self)
+        self.udev_soon.setSingleShot(True)
+        self.udev_soon.setInterval(150)  # (one stick: a few events in a row - one look)
+        self.udev_soon.timeout.connect(self.look_for_drives)
+        self.udev = QProcess(self)
+        self.udev.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        self.udev.readyReadStandardOutput.connect(self._udev_event)
+        self.udev.start(self.UDEV_MONITOR[0], self.UDEV_MONITOR[1:])
+
+    def _udev_event(self) -> None:
+        self.udev.readAllStandardOutput()  # (what happened doesn't matter: lsblk says what's there)
+        self.udev_soon.start()
+
     def look_for_drives(self) -> None:
-        if (self.screen_name != "shell" or getattr(self, "_looking_for_drives", False)
-                or getattr(self, "drives", None) is None):
-            return  # locked: no games to show
+        if getattr(self, "drives", None) is None or self.screen_name not in ("shell", "lock"):
+            return
+        if getattr(self, "_looking_for_drives", False):
+            self._drives_again = True  # (put in while it looked: looked again right after)
+            return
         self._looking_for_drives = True
 
         def done(found) -> None:
             self._looking_for_drives = False
+            if getattr(self, "_drives_again", False):
+                self._drives_again = False
+                QTimer.singleShot(0, self.look_for_drives)
+            if self.screen_name != "shell":
+                return  # locked: mounted, shown when it's unlocked
             unusable = list(getattr(self.drives, "unusable", []))
             self.drives_arrived(found, unusable)
             games = self.shell.pages.get("Games") if self.shell is not None else None
@@ -2318,6 +2411,14 @@ class MainWindow(QMainWindow):
             self._looking_for_drives = False
 
         run_async(self.drives.look, done, failed, owner=self)
+
+    def drives_changed(self) -> None:
+        """Settings → Storage formatted or unlocked a stick: what's in looked at again - also a stick
+        that didn't open with today's code before."""
+        drives = getattr(self, "drives", None)
+        if drives is not None:
+            drives.refused.clear()
+        self.look_for_drives()
 
     def drives_arrived(self, found: list, unusable: list) -> None:
         """A stick that's new since the last look: a notice that it's ready (mounted, its games in the

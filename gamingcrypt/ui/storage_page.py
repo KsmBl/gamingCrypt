@@ -8,6 +8,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QProgressBar, QVBoxLayout, QWidget
 
 from gamingcrypt.steam import running, storage
+from gamingcrypt.system import stick_crypt
 from gamingcrypt.ui.game_widgets import format_size
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import big_button, set_status
@@ -27,6 +28,8 @@ class StoragePage(QWidget):
         self.games_running = games_running
         self.report: storage.Report | None = None
         self.library_fn: Callable[[], object] = lambda: None  # set by the app: the Games tab (roots, drives)
+        self.config_fn: Callable[[], dict | None] = lambda: None  # set by the app: its config (encrypted sticks)
+        self.unlocker = None  # the Unlock question that's open (a stick encrypted with another code)
         self.drives: list = []  # USB sticks, USB drives, SD cards that are in
         self.unusable: list = []  # ... in, but not usable (not formatted, couldn't be mounted): why
         self.mover = None  # the Move question that's open
@@ -331,7 +334,13 @@ class StoragePage(QWidget):
             self.drive_grid.addWidget(text, row, 0)
             self.drive_grid.addWidget(problem, row, 1)
             self.drive_grid.addWidget(button, row, 2)
-            self.drive_rows[("unusable", drive.disk, drive.device)] = [text, problem, button]
+            widgets = [text, problem, button]
+            if drive.problem == stick_crypt.EARLIER:  # opened once with that code: then with today's
+                unlock = big_button("🔓 Unlock…", "primary")
+                unlock.clicked.connect(lambda _c=False, d=drive: self.ask_unlock(d))
+                self.drive_grid.addWidget(unlock, row, 3)
+                widgets.append(unlock)
+            self.drive_rows[("unusable", drive.disk, drive.device)] = widgets
         for row, drive in enumerate(self.drives):
             try:
                 usage = shutil.disk_usage(drive.mount)
@@ -339,7 +348,8 @@ class StoragePage(QWidget):
                 used = round(1000 * (usage.total - usage.free) / usage.total) if usage.total else 0
             except OSError:
                 space, used = "", 0
-            what = "  ·  ".join(x for x in (LABELS[drive.kind], drive.fstype, space) if x)
+            what = "  ·  ".join(x for x in (LABELS[drive.kind], "🔒 encrypted" if drive.encrypted else drive.fstype,
+                                            space) if x)
             text = QLabel(f"{drive.name}\n{what}")
             bar = QProgressBar()
             bar.setRange(0, 1000)
@@ -359,13 +369,51 @@ class StoragePage(QWidget):
 
         if self.formatter is not None or not self.can_delete():
             return
-        self.formatter = FormatConfirm(drive)
+        encrypt, why_not = self.encrypter()
+        self.formatter = FormatConfirm(drive, encrypt=encrypt, no_encrypt_reason=why_not)
         self.formatter.cancelled.connect(self.close_format)
         self.formatter.finished.connect(self.close_format)
         self.formatter.formatted.connect(self._formatted)
         self.formatter.failed.connect(lambda message: set_status(self.status, message, error=True))
         self.formatter_modal = over_everything(self, self.formatter, self.close_format)
         self.formatter.focus_first()
+
+    def encrypter(self):
+        """(how a stick is encrypted when it's formatted, why it can't be) - with the drive's password
+        (only known while GamingCrypt is unlocked) and its sidecar's settings."""
+        password, config = stick_crypt.keys.password, self.config_fn()
+        if not password or config is None:
+            return None, ("It can't be encrypted right now: lock GamingCrypt and unlock it again (your code is "
+                          "needed once), then format it.")
+        unlock_cfg, users_list = config["unlock"], config.get("users")
+
+        def encrypt(stick, progress=None):
+            return stick_crypt.create(stick, password, unlock_cfg, users_list, progress=progress)
+
+        return encrypt, ""
+
+    def ask_unlock(self, drive) -> None:
+        from gamingcrypt.ui.move_game import over_everything
+        from gamingcrypt.ui.unlock_stick import UnlockStick
+
+        if self.unlocker is not None:
+            return
+        self.unlocker = UnlockStick(drive, self.config_fn())
+        self.unlocker.cancelled.connect(self.close_unlock)
+        self.unlocker.unlocked.connect(self._unlocked)
+        self.unlocker_modal = over_everything(self, self.unlocker, self.close_unlock)
+        self.unlocker.focus_first()
+
+    def close_unlock(self) -> None:
+        if self.unlocker is None or self.unlocker.working:
+            return
+        self.unlocker = None
+        self.unlocker_modal.close_modal()
+
+    def _unlocked(self, message: str) -> None:
+        self.close_unlock()
+        set_status(self.status, message)
+        self.drives_changed.emit()  # (looked at again: open now, its games in the list)
 
     def close_format(self) -> None:
         if self.formatter is None or self.formatter.working:

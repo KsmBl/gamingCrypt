@@ -379,7 +379,8 @@ def test_storage_formats_a_stick(qtbot, storage, stick, monkeypatch):
     done = []
     monkeypatch.setattr(removable, "formats", lambda: ["exfat", "ext4"])
     monkeypatch.setattr(removable, "format_drive",
-                        lambda drive, fstype, label, run=None, step=None: done.append((fstype, label)) or drive)
+                        lambda drive, fstype, label, run=None, step=None, encrypt=None:
+                        done.append((fstype, label, encrypt)) or drive)
     looked = []
     storage.drives_changed.connect(lambda: looked.append(1))
     storage.drive_rows[stick][2].click()
@@ -389,7 +390,7 @@ def test_storage_formats_a_stick(qtbot, storage, stick, monkeypatch):
     assert "Really delete everything on STICK" in box.question.text() and done == []
     box.format_button.click()
     qtbot.waitUntil(lambda: box.over)
-    assert done == [("exfat", "STICK")] and looked == [1]
+    assert done == [("exfat", "STICK", None)] and looked == [1]  # (locked since a restart: not encrypted)
     assert "STICK is formatted (exFAT)" in storage.status.text()
     assert box.title.text() == "✓ STICK is ready for games" and box.ok_button.isVisible()
     box.ok_button.click()
@@ -443,9 +444,9 @@ def test_format_shows_each_step_and_the_time(qtbot, tmp_path, stick):
     box.show_steps()
     states = {k: label.property("state") for k, label in box.step_labels.items()}
     assert states == {"check": "done", "unmount": "done", "table": "done", "filesystem": "now",
-                      "mount": "waiting", "folders": "waiting"}
+                      "mount": "waiting", "encrypt": "waiting", "folders": "waiting"}
     assert box.step_labels["filesystem"].text() == "◐  Creating the ext4 file system…"
-    assert box.state.text() == "Creating the ext4 file system…  ·  1:15" and box.bar.value() == 3
+    assert box.state.text() == "Creating the ext4 file system…  ·  1:15" and box.bar.value() == 300
     box.working = False
     box._failed(FormatError("mkfs failed"))
     assert box.step_labels["filesystem"].property("state") == "failed"
@@ -468,9 +469,10 @@ def test_format_runs_its_steps_for_real(qtbot, tmp_path, stick):
     box.gamepad_back()
     assert box.working
     qtbot.waitUntil(lambda: box.over)
-    assert box.reached == [key for key, _t in removable.STEPS]
-    assert all(label.property("state") == "done" for label in box.step_labels.values())
-    assert box.bar.value() == len(removable.STEPS) and "Took 0:0" in box.question.text()
+    assert box.reached == [key for key, _t in removable.steps(False)]
+    assert box.step_labels["encrypt"].isHidden()  # not encrypted: not a step
+    assert all(label.property("state") == "done" for key, label in box.step_labels.items() if key != "encrypt")
+    assert box.bar.value() == box.bar.maximum() and "Took 0:0" in box.question.text()
 
 
 def test_move_shows_how_far_how_fast_and_how_long(qtbot, emu, stick):

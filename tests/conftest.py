@@ -56,6 +56,11 @@ def no_real_drives(monkeypatch):
 
     monkeypatch.setattr(removable, "_run",
                         lambda args, **_k: subprocess.CompletedProcess(args, 1, stdout="", stderr="tests"))
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.system import stick_crypt
+
+    monkeypatch.setattr(MainWindow, "UDEV_MONITOR", None)  # (no udevadm running beside the tests)
+    stick_crypt.keys.clear()
 
 
 @pytest.fixture
