@@ -234,30 +234,27 @@ class StoragePage(QWidget):
 
     def ask_move(self, game) -> None:
         from gamingcrypt import moving
-        from gamingcrypt.ui.modal import show_modal
-        from gamingcrypt.ui.move_game import MoveGame
+        from gamingcrypt.ui.move_game import MoveGame, over_everything
 
         if self.mover is not None or not self.can_delete():
             return
         emulation = self.emulation_fn()
         self.mover = MoveGame(game, moving.places(game, self.drives, emulation), emulation)
-        self.mover.cancelled.connect(self.close_move)
+        self.mover.cancelled.connect(lambda: self.close_move() if self.mover is not None and not self.mover.over
+                                     else None)  # (stopped half way: it says so until Close)
         self.mover.moved.connect(self._moved)
-        self.mover.failed.connect(lambda message: (self.close_move(), set_status(self.status, message, error=True)))
-        self.mover_modal = show_modal(self, self.mover, self.close_move)
+        self.mover.failed.connect(lambda message: set_status(self.status, message, error=True))
+        self.mover.finished.connect(self.close_move)
+        self.mover_modal = over_everything(self, self.mover, self.close_move)
         self.mover.focus_first()
 
     def close_move(self) -> None:
-        if self.mover is None:
-            return
-        if self.mover.moving:
-            self.mover.cancel()
-            return
+        if self.mover is None or self.mover.moving:
+            return  # (a tap beside it doesn't stop a copy: Stop does)
         self.mover = None
         self.mover_modal.close_modal()
 
     def _moved(self, message: str) -> None:
-        self.close_move()
         set_status(self.status, message)
         self.roms_changed.emit()  # (the Games tab looks again: every library)
         self.refresh_roms()
@@ -337,16 +334,16 @@ class StoragePage(QWidget):
 
     def ask_format(self, drive) -> None:
         from gamingcrypt.ui.format_drive import FormatConfirm
-        from gamingcrypt.ui.modal import show_modal
+        from gamingcrypt.ui.move_game import over_everything
 
         if self.formatter is not None or not self.can_delete():
             return
         self.formatter = FormatConfirm(drive)
         self.formatter.cancelled.connect(self.close_format)
+        self.formatter.finished.connect(self.close_format)
         self.formatter.formatted.connect(self._formatted)
-        self.formatter.failed.connect(lambda message: (self.close_format(), set_status(self.status, message,
-                                                                                       error=True)))
-        self.formatter_modal = show_modal(self, self.formatter, self.close_format)
+        self.formatter.failed.connect(lambda message: set_status(self.status, message, error=True))
+        self.formatter_modal = over_everything(self, self.formatter, self.close_format)
         self.formatter.focus_first()
 
     def close_format(self) -> None:
@@ -356,7 +353,6 @@ class StoragePage(QWidget):
         self.formatter_modal.close_modal()
 
     def _formatted(self, message: str) -> None:
-        self.close_format()
         set_status(self.status, message)
         self.drives_changed.emit()
         self.roms_changed.emit()

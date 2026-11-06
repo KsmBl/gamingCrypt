@@ -295,9 +295,18 @@ def test_move_from_the_game_page(qtbot, tab, emu, stick):
     page.move_button.click()
     box = page.move_box
     assert [b.text().split(" · ")[0] for b in box.buttons] == ["🔌 To STICK"]
+    assert box.window() is not None and page.move_modal.parent() is page.window()  # over everything
     box.buttons[0].click()
-    qtbot.waitUntil(lambda: page.move_box is None and tab.currentWidget() is tab.home)
+    assert box.steps.isVisible() and box.bar.isVisible() and box.cancel_button.text() == "Stop"
+    qtbot.waitUntil(lambda: box.over)
+    # it stays: where it is now, every step done
+    assert box.title.text() == "✓ Super Mario World is on STICK now" and box.ok_button.isVisible()
+    assert all(label.property("state") == "done" for label in box.step_labels.values())
+    assert box.bar.value() == 1000 and box.numbers.text().startswith("Took ")
     assert "Super Mario World moved to STICK" in tab.home.notice.text()
+    assert tab.currentWidget() is page
+    box.ok_button.click()
+    assert page.move_box is None and tab.currentWidget() is tab.home
     assert (stick.mount / "Emulation" / "roms" / "snes" / "Super Mario World (USA).sfc").exists()
     qtbot.waitUntil(lambda: tab.roms["snes"][0].removable == "usb")
 
@@ -308,8 +317,15 @@ def test_a_failed_move_says_why_on_the_page(qtbot, tab, emu, stick):
     tab.open_windows_game(tab.windows_games[0])
     page = tab.currentWidget()
     page.move_button.click()
-    page.move_box.buttons[0].click()
-    qtbot.waitUntil(lambda: page.move_box is None)
+    box = page.move_box
+    box.buttons[0].click()
+    qtbot.waitUntil(lambda: box.over)
+    assert box.title.text() == "✗ Celeste wasn't moved" and "already has a folder" in box.state.text()
+    assert box.question.text() == "It went wrong while checking the room on STICK."
+    assert box.step_labels["check"].property("state") == "failed"
+    assert box.ok_button.text() == "Close"
+    box.ok_button.click()
+    assert page.move_box is None
     assert "already has a folder" in page.status.text() and page.status.isVisible()
     assert tab.currentWidget() is page
 
@@ -349,8 +365,11 @@ def test_storage_shows_the_sticks_and_moves_games(qtbot, storage, stick):
     celeste_row = next(iter(storage.pc_rows.values()))
     assert "Celeste\nWindows" in celeste_row[0].text()
     celeste_row[1].click()
-    storage.mover.buttons[0].click()
-    qtbot.waitUntil(lambda: storage.mover is None and bool(changed))
+    box = storage.mover
+    box.buttons[0].click()
+    qtbot.waitUntil(lambda: box.over and bool(changed))
+    storage.mover_modal.dismissed.emit()  # a tap beside it: closes it now it's over
+    assert storage.mover is None
     assert "Celeste moved to STICK" in storage.status.text()
     assert (stick.mount / "Windows Games" / "Celeste" / "Celeste.exe").exists()
     qtbot.waitUntil(lambda: "on STICK" in next(iter(storage.pc_rows.values()))[0].text())
@@ -360,7 +379,7 @@ def test_storage_formats_a_stick(qtbot, storage, stick, monkeypatch):
     done = []
     monkeypatch.setattr(removable, "formats", lambda: ["exfat", "ext4"])
     monkeypatch.setattr(removable, "format_drive",
-                        lambda drive, fstype, label, run=None: done.append((fstype, label)) or drive)
+                        lambda drive, fstype, label, run=None, step=None: done.append((fstype, label)) or drive)
     looked = []
     storage.drives_changed.connect(lambda: looked.append(1))
     storage.drive_rows[stick][2].click()
@@ -369,9 +388,12 @@ def test_storage_formats_a_stick(qtbot, storage, stick, monkeypatch):
     box.choices["exfat"].click()
     assert "Really delete everything on STICK" in box.question.text() and done == []
     box.format_button.click()
-    qtbot.waitUntil(lambda: storage.formatter is None)
+    qtbot.waitUntil(lambda: box.over)
     assert done == [("exfat", "STICK")] and looked == [1]
     assert "STICK is formatted (exFAT)" in storage.status.text()
+    assert box.title.text() == "✓ STICK is ready for games" and box.ok_button.isVisible()
+    box.ok_button.click()
+    assert storage.formatter is None
 
 
 def test_format_can_be_cancelled_and_isnt_for_users(qtbot, storage, stick, monkeypatch):
@@ -392,3 +414,163 @@ def test_no_formatting_tools(qtbot):
     box = FormatConfirm(Removable(Path("/x"), "sd"), formats=[])
     qtbot.addWidget(box)
     assert "install exfatprogs" in box.question.text() and not box.choices
+
+
+# --- what's shown while it runs -----------------------------------------------------------
+
+class Clock:
+    def __init__(self):
+        self.now = 100.0
+
+    def __call__(self):
+        return self.now
+
+
+def test_format_shows_each_step_and_the_time(qtbot, tmp_path, stick):
+    from gamingcrypt.ui.format_drive import FormatConfirm
+
+    clock = Clock()
+    box = FormatConfirm(stick, formats=["ext4"], run=Udisks(tmp_path / "NEW"), clock=clock)
+    qtbot.addWidget(box)
+    box.show()
+    box.choices["ext4"].click()
+    box.reached[:] = []
+    box.started_at = clock.now
+    box.working = True
+    box.chosen = "ext4"
+    box.reached += ["check", "unmount", "table", "filesystem"]
+    clock.now += 75
+    box.show_steps()
+    states = {k: label.property("state") for k, label in box.step_labels.items()}
+    assert states == {"check": "done", "unmount": "done", "table": "done", "filesystem": "now",
+                      "mount": "waiting", "folders": "waiting"}
+    assert box.step_labels["filesystem"].text() == "◐  Creating the ext4 file system…"
+    assert box.state.text() == "Creating the ext4 file system…  ·  1:15" and box.bar.value() == 3
+    box.working = False
+    box._failed(FormatError("mkfs failed"))
+    assert box.step_labels["filesystem"].property("state") == "failed"
+    assert box.question.text() == "It went wrong while creating the ext4 file system."
+    assert box.state.text() == "mkfs failed" and box.ok_button.text() == "Close"
+    finished = []
+    box.finished.connect(lambda: finished.append(1))
+    box.gamepad_back()  # B closes it now
+    assert finished == [1]
+
+
+def test_format_runs_its_steps_for_real(qtbot, tmp_path, stick):
+    from gamingcrypt.ui.format_drive import FormatConfirm
+
+    box = FormatConfirm(stick, formats=["exfat"], run=Udisks(tmp_path / "NEW"))
+    qtbot.addWidget(box)
+    box.choices["exfat"].click()
+    box.format_button.click()
+    assert box.working and box.cancel_button.isHidden()  # can't be stopped half way
+    box.gamepad_back()
+    assert box.working
+    qtbot.waitUntil(lambda: box.over)
+    assert box.reached == [key for key, _t in removable.STEPS]
+    assert all(label.property("state") == "done" for label in box.step_labels.values())
+    assert box.bar.value() == len(removable.STEPS) and "Took 0:0" in box.question.text()
+
+
+def test_move_shows_how_far_how_fast_and_how_long(qtbot, emu, stick):
+    from gamingcrypt.ui.move_game import MoveGame
+
+    clock = Clock()
+    box = MoveGame(rom(emu, "psx"), [Place(stick)], emu, clock=clock)
+    qtbot.addWidget(box)
+    box.show()
+    box.place, box.moving, box.started_at = Place(stick), True, clock.now
+    box.speed_from = (clock.now, 0)
+    p = box.progress
+    p.stage, p.total, p.done, p.files, p.copied, p.current = "copy", 400 * 1024 ** 2, 100 * 1024 ** 2, 4, 1, "Disc 2.bin"
+    clock.now += 2  # 100 MB in 2 s: 50 MB/s, 300 MB to go: 6 s
+    box.show_progress()
+    assert box.numbers.text() == "100.0 MB of 400.0 MB  ·  25%  ·  50.0 MB/s  ·  about 0:06 left  ·  0:02 so far"
+    assert box.step_labels["check"].property("state") == "done"
+    assert box.step_labels["copy"].text() == "◐  Copying the game - file 2 of 4…"
+    assert box.step_labels["delete"].text() == "○  Deleting it from the encrypted drive"
+    assert box.state.text() == "Copying Disc 2.bin" and box.bar.value() == 250
+
+
+def test_stopping_a_move_says_its_where_it_was(qtbot, emu, stick, monkeypatch):
+    from gamingcrypt.ui.move_game import MoveGame
+
+    real = moving._copy_file
+
+    def slow(source, dest, progress):
+        progress.cancelled.wait(5)
+        real(source, dest, progress)
+
+    monkeypatch.setattr(moving, "_copy_file", slow)
+    game = rom(emu, "psx")
+    box = MoveGame(game, [Place(stick)], emu)
+    qtbot.addWidget(box)
+    box.buttons[0].click()
+    box.cancel_button.click()
+    assert box.cancel_button.text() == "Stopping…"
+    qtbot.waitUntil(lambda: box.over)
+    assert box.title.text() == "Vagrant Story wasn't moved" and "it's on the encrypted drive as before" in \
+        box.question.text()
+    assert all(d.exists() for d in game.discs) and not list((stick.mount / "Emulation" / "roms" / "psx").iterdir())
+
+
+# --- permissions ----------------------------------------------------------------------------
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root may write anywhere")
+def test_a_stick_that_isnt_ours_is_said_before_copying(emu, stick):
+    roms = stick.mount / "Emulation"
+    roms.mkdir()
+    roms.chmod(0o555)  # (as a stick formatted elsewhere: its folders root's)
+    try:
+        with pytest.raises(MoveError, match=r"Can't write to STICK: .*Emulation is read-only or belongs to another"):
+            moving.move(rom(emu, "snes"), Place(stick), emu)
+    finally:
+        roms.chmod(0o755)
+    assert rom(emu, "snes").path.exists()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root may delete anywhere")
+def test_an_original_that_couldnt_be_deleted_isnt_copied(emu, stick):
+    folder = emu.roms_for(BY_ID["snes"])
+    folder.chmod(0o555)  # (e.g. made by the network share as another user)
+    try:
+        with pytest.raises(MoveError, match="couldn't be deleted from the encrypted drive afterwards.*Nothing"):
+            moving.move(rom(emu, "snes"), Place(stick), emu)
+    finally:
+        folder.chmod(0o755)
+    assert not (stick.mount / "Emulation" / "roms" / "snes").exists()
+
+
+def test_read_only_folders_in_a_game_are_moved_and_deleted(windows, stick):
+    data = windows / "Celeste" / "Content"
+    data.chmod(0o555)  # (copied off a disc)
+    celeste = wine.scan(windows)[0]
+    moving.move(celeste, Place(stick), None)
+    assert not celeste.path.exists()
+    assert (stick.mount / "Windows Games" / "Celeste" / "Content" / "level.bin").exists()
+    moved = wine.scan(windows, drives=[stick])[0]
+    moving.move(moved, Place(None), None)  # and back: its read-only folder on the stick too
+    assert (windows / "Celeste" / "Content" / "level.bin").exists() and not moved.path.exists()
+
+
+def test_a_shortcut_the_stick_cant_have_is_copied(windows, tmp_path, monkeypatch):
+    unknown = Removable(tmp_path / "ODD", "usb", "", fstype="")  # (lsblk didn't say)
+    unknown.mount.mkdir()
+
+    def refuse(*_a):
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(moving.os, "symlink", refuse)
+    moving.move(wine.scan(windows)[0], Place(unknown), None)
+    link = unknown.mount / "Windows Games" / "Celeste" / "link.exe"
+    assert link.exists() and not link.is_symlink()
+
+
+def test_errors_say_where(emu, stick, monkeypatch):
+    def denied(source, dest, progress):
+        raise PermissionError(13, "Permission denied", str(dest))
+
+    monkeypatch.setattr(moving, "_copy_file", denied)
+    with pytest.raises(MoveError, match=r"Permission denied: .*STICK/Emulation/roms/snes/\.moving-Super"):
+        moving.move(rom(emu, "snes"), Place(stick), emu)

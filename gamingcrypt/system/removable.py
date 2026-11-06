@@ -216,12 +216,21 @@ def _gdbus(run, device: str, method: str, *args: str) -> str:
     return out.stdout or ""
 
 
-def format_drive(drive: Removable, fstype: str, label: str, run=None, layout=True) -> Removable:
+# what formatting does, one after the other (step(key) is called as each one starts)
+STEPS = (("check", "Checking the drive"), ("unmount", "Unmounting it"), ("table", "Writing a new partition table"),
+         ("filesystem", "Creating the {fs} file system"), ("mount", "Mounting it again"),
+         ("folders", "Making the folders for games"))
+
+
+def format_drive(drive: Removable, fstype: str, label: str, run=None, layout=True, step=None) -> Removable:
     """Everything on the stick is deleted: a new partition table with one partition, the whole
-    stick, in fstype. Mounted again, with the folders for games made (layout) - the stick as it is now."""
+    stick, in fstype. Mounted again, with the folders for games made (layout) - the stick as it is now.
+    step(key): each of STEPS as it starts (from this thread)."""
     from gamingcrypt.emulation.systems import SYSTEMS
 
     run = run or (lambda *a, **k: _run(*a, **k))
+    step = step or (lambda _key: None)
+    step("check")
     if fstype not in FORMATS:
         raise FormatError(f"Can't format as {fstype}")
     if not drive.disk:
@@ -231,6 +240,7 @@ def format_drive(drive: Removable, fstype: str, label: str, run=None, layout=Tru
     disk = next((d for d in listing.get("blockdevices") or [] if d.get("path") == drive.disk), None)
     if disk is None:
         raise FormatError(f"{drive.name} isn't there any more")
+    step("unmount")
     for part in [disk, *_partitions(disk)]:
         if _mounts(part):
             out = run(["udisksctl", "unmount", "--no-user-interaction", "-b", part["path"]],
@@ -240,13 +250,16 @@ def format_drive(drive: Removable, fstype: str, label: str, run=None, layout=Tru
                                   f"({(out.stderr or '').strip() or 'busy'})")
     table = "dos" if int(disk.get("size") or 0) <= MBR_UP_TO else "gpt"
     kind = FORMATS[fstype][1 if table == "dos" else 2]
+    step("table")
     _gdbus(run, drive.disk, "Block.Format", table, "{}")
+    step("filesystem")
     out = _gdbus(run, drive.disk, "PartitionTable.CreatePartitionAndFormat", "0", "0", kind, "", "{}", fstype,
                  f"{{'label': <'{label}'>, 'take-ownership': <true>}}")
     found = re.search(r"block_devices/([A-Za-z0-9_]+)", out)
     device = f"/dev/{found.group(1)}" if found else ""
     if not device:
         raise FormatError("It was formatted, but the new partition wasn't found")
+    step("mount")
     out = run(["udisksctl", "mount", "--no-user-interaction", "-b", device], capture_output=True, text=True,
               timeout=60)
     mounted = re.search(r" at (.+?)\.?$", (out.stdout or "").strip())
@@ -254,6 +267,7 @@ def format_drive(drive: Removable, fstype: str, label: str, run=None, layout=Tru
         raise FormatError(f"It was formatted, but couldn't be mounted: {(out.stderr or '').strip()}")
     now = Removable(Path(mounted.group(1)), drive.kind, label, device, fstype, drive.disk, drive.size)
     if layout:
+        step("folders")
         for system in SYSTEMS:
             (now.mount / "Emulation" / "roms" / system.folder).mkdir(parents=True, exist_ok=True)
         now.windows.mkdir(exist_ok=True)
