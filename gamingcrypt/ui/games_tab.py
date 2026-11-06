@@ -781,6 +781,13 @@ class GamesTab(QStackedWidget):
             if hasattr(page, "game_found"):
                 page.game_found(here.get(page.game.appid))
 
+    def latest(self, kind: str, apply):
+        """apply(result) - only for the newest look at that library: two looks at once (a stick put in
+        while the first look still runs) may end the other way round, and the older one mustn't win."""
+        self._looks = getattr(self, "_looks", {})
+        self._looks[kind] = mine = self._looks.get(kind, 0) + 1
+        return lambda result: apply(result) if self._looks.get(kind) == mine else None
+
     def set_drives(self, drives: list) -> None:
         """A USB stick, USB drive or SD card put in or taken out: its games come / go."""
         if list(drives) == self.drives:
@@ -808,7 +815,7 @@ class GamesTab(QStackedWidget):
                 paths.ensure()  # first time on an unlocked drive: the folders to put things in
             return scan_all(paths, drives)
 
-        run_async(work, self._roms_loaded, lambda _e: None, owner=self)
+        run_async(work, self.latest("roms", self._roms_loaded), lambda _e: None, owner=self)
 
     def favorites(self) -> list[int]:
         """The starred games that are still here: a removed (or renamed) ROM, Windows or Linux game
@@ -876,7 +883,7 @@ class GamesTab(QStackedWidget):
                 root.mkdir(exist_ok=True)  # an unlocked drive: the folder to copy games into
             return scan(root, sizes=False, drives=drives)
 
-        run_async(work, self._windows_loaded, lambda _e: None, owner=self)
+        run_async(work, self.latest("windows", self._windows_loaded), lambda _e: None, owner=self)
 
     def _windows_loaded(self, games: list) -> None:
         for game in games:
@@ -951,7 +958,7 @@ class GamesTab(QStackedWidget):
                 root.mkdir(exist_ok=True)  # an unlocked drive: the folder to copy games into
             return scan(root, sizes=False, drives=drives)
 
-        run_async(work, self._linux_loaded, lambda _e: None, owner=self)
+        run_async(work, self.latest("linux", self._linux_loaded), lambda _e: None, owner=self)
 
     def _linux_loaded(self, games: list) -> None:
         for game in games:

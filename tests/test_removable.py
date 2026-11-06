@@ -414,3 +414,26 @@ def test_storage_lists_a_stick_that_cant_be_used(qtbot, monkeypatch):
     page.formatter.cancel_button.click()
     page.set_drives([], [])
     assert not page.drives_heading.isVisible()
+
+
+def test_an_older_look_finishing_last_doesnt_win(qtbot, tab, stick, monkeypatch):
+    import threading
+
+    from gamingcrypt.emulation import library
+
+    real = library.scan_all
+    first_may_end = threading.Event()
+
+    def scan_all(paths, drives=()):
+        found = real(paths, drives)
+        if not drives:
+            first_may_end.wait(5)  # the look without the stick ends last
+        return found
+
+    monkeypatch.setattr(library, "scan_all", scan_all)
+    tab.reload_roms()  # (without the stick: still running when it's put in)
+    tab.set_drives([stick])
+    qtbot.waitUntil(lambda: "gba" in tab.roms)
+    first_may_end.set()
+    qtbot.wait(300)
+    assert "gba" in tab.roms and set(tab.home.system_cards) == {"snes", "gba"}
