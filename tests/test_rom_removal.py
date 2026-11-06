@@ -135,7 +135,8 @@ def test_storage_lists_and_removes_emulated_games(qtbot, emu):
     qtbot.waitUntil(lambda: len(page.rom_rows) == 3)
     assert page.roms_heading.isVisible()
     mario = next(g for g in scan(emu, BY_ID["snes"]) if g.name == "Mario")
-    text, remove = page.rom_rows[mario.appid]
+    text, remove, move = page.rom_rows[mario.appid]
+    assert move.isHidden()  # no USB stick in: nowhere to move it
     assert "Mario\nSNES" in text.text() and "saves" in text.text()
     remove.click()
     assert page.confirm is not None and (emu.roms / "snes" / "Mario.sfc").exists()

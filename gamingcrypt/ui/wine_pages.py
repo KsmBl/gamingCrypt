@@ -23,6 +23,7 @@ from gamingcrypt.ui.game_widgets import (COVER_H, COVER_W, Cover, Tappable, card
                                         format_playtime, format_size, placeholder_cover)
 from gamingcrypt.ui.movies_tab import MovieUploadPage
 from gamingcrypt.ui.tasks import run_async
+from gamingcrypt.ui.move_game import Movable
 from gamingcrypt.ui.widgets import FlowLayout, big_button, enable_touch_scroll, set_status, settle_focus
 from gamingcrypt.linux import library as linux_library
 from gamingcrypt.wine import library
@@ -213,7 +214,7 @@ class RemoveWindowsConfirm(QFrame):
                   lambda exc: self.failed.emit(f"Could not remove it: {exc}"), owner=self)
 
 
-class WindowsGamePage(QWidget):
+class WindowsGamePage(Movable, QWidget):
     """A Windows game: Play; Options - start file, Proton / Wine, remove; favorite."""
 
     LIB = library  # what finds its start files
@@ -316,6 +317,9 @@ class WindowsGamePage(QWidget):
             self.saves_button = big_button("💾 Saves")
             self.saves_button.clicked.connect(lambda: tab.open_saves(self.game))
             options.addWidget(self.saves_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.move_button = big_button("⇄ Move to…")  # onto a USB stick / SD card, or back
+        self.move_button.clicked.connect(self.ask_move)
+        options.addWidget(self.move_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.remove_button = big_button("🗑 Remove", "danger")
         self.remove_button.clicked.connect(self.ask_remove)
         options.addWidget(self.remove_button, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -327,6 +331,7 @@ class WindowsGamePage(QWidget):
         self.status = QLabel("")
         self.status.setObjectName("status")
         self.status.setWordWrap(True)
+        self.drives_changed()
         self.status.hide()
         info.addWidget(self.status)
         info.addStretch()

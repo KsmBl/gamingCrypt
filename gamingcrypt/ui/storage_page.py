@@ -15,6 +15,7 @@ from gamingcrypt.ui.widgets import big_button, set_status
 
 class StoragePage(QWidget):
     roms_changed = Signal()  # an emulated game was removed: the Games tab rescans
+    drives_changed = Signal()  # a stick was formatted: looked for again
 
     def __init__(self, service_fn: Callable[[], object], games_running: Callable[[], set] = running.running_appids,
                  parent: QWidget | None = None, emulation_fn: Callable[[], object] | None = None,
@@ -25,8 +26,21 @@ class StoragePage(QWidget):
         self.emulation_fn = emulation_fn or (lambda: None)
         self.games_running = games_running
         self.report: storage.Report | None = None
+        self.library_fn: Callable[[], object] = lambda: None  # set by the app: the Games tab (roots, drives)
+        self.drives: list = []  # USB sticks, USB drives, SD cards that are in
+        self.mover = None  # the Move question that's open
+        self.formatter = None  # the Format question that's open
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        # USB sticks, USB drives, SD cards: how full, and formatting them
+        self.drives_heading = QLabel("External drives")
+        self.drives_heading.setObjectName("section")
+        self.drives_heading.hide()
+        layout.addWidget(self.drives_heading)
+        self.drive_grid = QGridLayout()
+        self.drive_grid.setColumnStretch(0, 1)
+        layout.addLayout(self.drive_grid)
+        self.drive_rows: dict = {}
         self.libraries = QVBoxLayout()
         layout.addLayout(self.libraries)
         row = QHBoxLayout()
@@ -64,6 +78,15 @@ class StoragePage(QWidget):
         self.rom_grid.setColumnStretch(0, 1)
         layout.addLayout(self.rom_grid)
         self.rom_rows: dict[int, list[QWidget]] = {}
+        # Windows and Linux games (outside Steam): moved onto a stick and back
+        self.pc_heading = QLabel("Windows and Linux games")
+        self.pc_heading.setObjectName("section")
+        self.pc_heading.hide()
+        layout.addWidget(self.pc_heading)
+        self.pc_grid = QGridLayout()
+        self.pc_grid.setColumnStretch(0, 1)
+        layout.addLayout(self.pc_grid)
+        self.pc_rows: dict[int, list[QWidget]] = {}
         self.confirm = None
         self.busy = False
         self.message = ""  # result of the last action, shown after the rescan
@@ -72,7 +95,9 @@ class StoragePage(QWidget):
     def refresh(self) -> None:
         if self.busy:
             return
+        self.show_drives()
         self.refresh_roms()
+        self.refresh_pc()
         service = self.service_fn()
         if service is None:
             set_status(self.status, "Steam wasn't found", error=True)
@@ -128,12 +153,13 @@ class StoragePage(QWidget):
         paths = self.emulation_fn()
         if paths is None:
             return
+        drives = tuple(self.drives)
 
         def work():
             from gamingcrypt.emulation import removal
             from gamingcrypt.emulation.library import scan_all
 
-            games = [g for found in scan_all(paths).values() for g in found]
+            games = [g for found in scan_all(paths, drives).values() for g in found]
             return [(g, removal.plan(paths, g)) for g in sorted(games, key=lambda g: -g.size)]
 
         run_async(work, self.show_roms, lambda _e: None, owner=self)
@@ -150,14 +176,17 @@ class StoragePage(QWidget):
         self.roms_heading.setVisible(bool(games))
         for row, (game, plan) in enumerate(games):
             saves = f"  ·  saves {format_size(plan.saves_size)}" if plan.saves else ""
-            text = QLabel(f"{game.name}\n{short_name(game.system.id)}  ·  {format_size(plan.files_size)}{saves}")
+            text = QLabel(f"{game.name}\n{short_name(game.system.id)}  ·  {format_size(plan.files_size)}{saves}"
+                          f"{self.where(game)}")
+            move = self.move_button(game)
             remove = big_button("🗑 Remove", "danger")
             remove.clicked.connect(lambda _c=False, g=game, r=row: self.ask_remove(g, r))
             self.rom_grid.addWidget(text, row * 2, 0)
+            self.rom_grid.addWidget(move, row * 2, 1)
             self.rom_grid.addWidget(remove, row * 2, 2)
             if not self.can_delete():
                 remove.hide()
-            self.rom_rows[game.appid] = [text, remove]
+            self.rom_rows[game.appid] = [text, remove, move]
 
     def ask_remove(self, game, row: int) -> None:
         """The same question as on the game's page: really? and the saves too?"""
@@ -186,6 +215,151 @@ class StoragePage(QWidget):
         self.close_confirm()
         self.roms_changed.emit()
         self.refresh_roms()
+
+    # where a game is ---------------------------------------------------------------------------
+    def where(self, game) -> str:
+        """"  ·  on GAMES" for a game on a stick."""
+        from gamingcrypt import moving
+
+        drive = next((d for d in self.drives if moving.is_on(game, d)), None) if game.removable else None
+        return f"  ·  on {drive.name}" if drive is not None else ""
+
+    def move_button(self, game) -> QWidget:
+        from gamingcrypt import moving
+
+        button = big_button("⇄ Move to…")
+        button.clicked.connect(lambda _c=False, g=game: self.ask_move(g))
+        button.setVisible(self.can_delete() and bool(moving.places(game, self.drives, self.emulation_fn())))
+        return button
+
+    def ask_move(self, game) -> None:
+        from gamingcrypt import moving
+        from gamingcrypt.ui.modal import show_modal
+        from gamingcrypt.ui.move_game import MoveGame
+
+        if self.mover is not None or not self.can_delete():
+            return
+        emulation = self.emulation_fn()
+        self.mover = MoveGame(game, moving.places(game, self.drives, emulation), emulation)
+        self.mover.cancelled.connect(self.close_move)
+        self.mover.moved.connect(self._moved)
+        self.mover.failed.connect(lambda message: (self.close_move(), set_status(self.status, message, error=True)))
+        self.mover_modal = show_modal(self, self.mover, self.close_move)
+        self.mover.focus_first()
+
+    def close_move(self) -> None:
+        if self.mover is None:
+            return
+        if self.mover.moving:
+            self.mover.cancel()
+            return
+        self.mover = None
+        self.mover_modal.close_modal()
+
+    def _moved(self, message: str) -> None:
+        self.close_move()
+        set_status(self.status, message)
+        self.roms_changed.emit()  # (the Games tab looks again: every library)
+        self.refresh_roms()
+        self.refresh_pc()
+        self.show_drives()
+
+    # Windows and Linux games ------------------------------------------------------------------
+    def refresh_pc(self) -> None:
+        tab = self.library_fn()
+        roots = [(getattr(tab, "windows_root", None), "windows"), (getattr(tab, "linux_root", None), "linux")]
+        if not any(root for root, _kind in roots):
+            return
+        drives = tuple(self.drives)
+
+        def work():
+            from gamingcrypt.linux import library as linux
+            from gamingcrypt.wine import library as wine
+
+            games = []
+            for root, kind in roots:
+                if root is not None:
+                    games += (linux.scan(root, drives=drives) if kind == "linux" else wine.scan(root, drives=drives))
+            return sorted(games, key=lambda g: -g.size)
+
+        run_async(work, self.show_pc, lambda _e: None, owner=self)
+
+    def show_pc(self, games: list) -> None:
+        _clear(self.pc_grid)
+        self.pc_rows = {}
+        self.pc_heading.setVisible(bool(games))
+        for row, game in enumerate(games):
+            text = QLabel(f"{game.name}\n{game.LABEL}  ·  {format_size(game.size)}{self.where(game)}")
+            move = self.move_button(game)
+            self.pc_grid.addWidget(text, row, 0)
+            self.pc_grid.addWidget(move, row, 1)
+            self.pc_rows[game.appid] = [text, move]
+
+    # USB sticks, USB drives, SD cards ----------------------------------------------------------
+    def set_drives(self, drives: list) -> None:
+        """Put in / taken out (the app looks every few seconds): shown, and the games on them."""
+        if list(drives) == self.drives:
+            return
+        self.drives = list(drives)
+        self.show_drives()
+        if self.isVisible():
+            self.refresh_roms()
+            self.refresh_pc()
+
+    def show_drives(self) -> None:
+        import shutil
+
+        from gamingcrypt.system.removable import LABELS
+
+        _clear(self.drive_grid)
+        self.drive_rows = {}
+        self.drives_heading.setVisible(bool(self.drives))
+        for row, drive in enumerate(self.drives):
+            try:
+                usage = shutil.disk_usage(drive.mount)
+                space = f"{format_size(usage.free)} free of {format_size(usage.total)}"
+                used = round(1000 * (usage.total - usage.free) / usage.total) if usage.total else 0
+            except OSError:
+                space, used = "", 0
+            what = "  ·  ".join(x for x in (LABELS[drive.kind], drive.fstype, space) if x)
+            text = QLabel(f"{drive.name}\n{what}")
+            bar = QProgressBar()
+            bar.setRange(0, 1000)
+            bar.setValue(used)
+            bar.setTextVisible(False)
+            button = big_button("⚠ Format…", "danger")
+            button.clicked.connect(lambda _c=False, d=drive: self.ask_format(d))
+            button.setVisible(self.can_delete())  # deleting everything on it: the admin's
+            self.drive_grid.addWidget(text, row, 0)
+            self.drive_grid.addWidget(bar, row, 1)
+            self.drive_grid.addWidget(button, row, 2)
+            self.drive_rows[drive] = [text, bar, button]
+
+    def ask_format(self, drive) -> None:
+        from gamingcrypt.ui.format_drive import FormatConfirm
+        from gamingcrypt.ui.modal import show_modal
+
+        if self.formatter is not None or not self.can_delete():
+            return
+        self.formatter = FormatConfirm(drive)
+        self.formatter.cancelled.connect(self.close_format)
+        self.formatter.formatted.connect(self._formatted)
+        self.formatter.failed.connect(lambda message: (self.close_format(), set_status(self.status, message,
+                                                                                       error=True)))
+        self.formatter_modal = show_modal(self, self.formatter, self.close_format)
+        self.formatter.focus_first()
+
+    def close_format(self) -> None:
+        if self.formatter is None or self.formatter.working:
+            return  # (formatting can't be stopped half way)
+        self.formatter = None
+        self.formatter_modal.close_modal()
+
+    def _formatted(self, message: str) -> None:
+        self.close_format()
+        set_status(self.status, message)
+        self.drives_changed.emit()
+        self.roms_changed.emit()
 
     # freeing space --------------------------------------------------------------------------
     def _game_running(self) -> bool:

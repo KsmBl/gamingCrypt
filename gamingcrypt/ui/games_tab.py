@@ -778,6 +778,9 @@ class GamesTab(QStackedWidget):
             return
         self.drives = list(drives)
         self.reload_roms()
+        for page in self.pages_of(QWidget):
+            if hasattr(page, "drives_changed"):  # a game's page: Move offers what's in now
+                page.drives_changed()
 
     def reload_roms(self) -> None:
         self.reload_windows()

@@ -122,7 +122,8 @@ def scan(paths: EmulationPaths, system: System, roms: Path | None = None, remova
     roms = Path(roms) if roms is not None else paths.root / "roms"
     for folder in [roms / name for name in (system.folder, *system.also_in)]:
         try:
-            files += [f for f in folder.iterdir() if f.is_file() and f.suffix.lower() in system.extensions]
+            files += [f for f in folder.iterdir() if f.is_file() and f.suffix.lower() in system.extensions
+                      and not f.name.startswith(".")]  # (not one still being copied: moving.py)
         except OSError:
             pass  # (not there)
     if not files:

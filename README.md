@@ -109,6 +109,11 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
   it like on the drive: ROMs in `Emulation/roms/<system>` (or `roms/<system>`), Windows games in
   `Windows Games`, Linux games in `Linux Games`. It's mounted for you, also in gaming mode. Saves, save
   states, covers and settings stay on the encrypted drive; a game that's on both is the one on the drive.
+- ⇄ **Move games onto a stick and back**: ⚙ Options → Move to… on an emulated, Windows or Linux game's
+  page, or in Settings → Storage - copied first, the original deleted only when the copy is complete, so
+  pulling the stick out half way loses nothing. Its favorite, play time and saves stay. Settings → Storage
+  also shows how full each stick is and **formats** it (exFAT for everywhere, ext4 for Linux games), with the
+  folders for games made right away. Moving and formatting are the admin's.
 - 💾 **Saves page** (Options → Saves, for Windows and emulated games): how big each user's saves are and when
   they last changed. Back them up, go back to a backup or delete them; the admin sees everyone's and can copy
   saves from one user to another. What gets replaced is backed up first. The 3 newest backups are kept, and a

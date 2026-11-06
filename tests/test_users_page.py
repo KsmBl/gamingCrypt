@@ -361,8 +361,8 @@ def test_storage_offers_no_deleting_to_a_user(qtbot, emu):
     qtbot.waitUntil(lambda: len(page.rom_rows) == 1)
     qtbot.wait(300)  # (the list is filled when the page shows and when it's refreshed)
     mario = scan(emu, BY_ID["snes"])[0]
-    text, remove = page.rom_rows[mario.appid]
-    assert not text.isHidden() and remove.isHidden()
+    text, remove, move = page.rom_rows[mario.appid]
+    assert not text.isHidden() and remove.isHidden() and move.isHidden()
     page.ask_remove(mario, 0)
     assert page.confirm is None and mario.path.exists()
 

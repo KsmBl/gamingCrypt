@@ -14,6 +14,7 @@ from gamingcrypt.ui.game_widgets import (COVER_H, COVER_W, Cover, card_margins, 
                                         placeholder_cover)
 from gamingcrypt.ui.game_look import Backdrop, FactChips
 from gamingcrypt.ui.tasks import run_async
+from gamingcrypt.ui.move_game import Movable
 from gamingcrypt.ui.widgets import FlowLayout, big_button, enable_touch_scroll, set_status
 
 STATES_SHOWN = 3  # on a game's page: the newest save states
@@ -360,7 +361,7 @@ class SystemPage(QWidget):
                     self.shown.append(game.appid)
 
 
-class RomGamePage(QWidget):
+class RomGamePage(Movable, QWidget):
     """An emulated game: Play (RetroArch), favorite."""
 
     def __init__(self, tab, game: RomGame, parent: QWidget | None = None):
@@ -439,6 +440,9 @@ class RomGamePage(QWidget):
             self.saves_button = big_button("💾 Saves")
             self.saves_button.clicked.connect(lambda: tab.open_saves(self.game))
             options.addWidget(self.saves_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.move_button = big_button("⇄ Move to…")  # onto a USB stick / SD card, or back
+        self.move_button.clicked.connect(self.ask_move)
+        options.addWidget(self.move_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.remove_button = big_button("🗑 Remove", "danger")
         self.remove_button.clicked.connect(self.ask_remove)
         options.addWidget(self.remove_button, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -452,6 +456,7 @@ class RomGamePage(QWidget):
         self.status = QLabel("")
         self.status.setObjectName("status")
         self.status.setWordWrap(True)
+        self.drives_changed()
         info.addWidget(self.status)
         self.states_title = QLabel("Continue from a save state")
         self.states_title.setObjectName("cardTitle")

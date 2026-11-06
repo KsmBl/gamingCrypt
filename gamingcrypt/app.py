@@ -2222,6 +2222,8 @@ class MainWindow(QMainWindow):
         storage_page = getattr(settings, "storage_page", None)
         if storage_page is not None and hasattr(games, "reload_roms"):
             storage_page.roms_changed.connect(games.reload_roms)  # removed in Settings -> Storage
+            storage_page.library_fn = lambda: games  # (its roots and the sticks that are in)
+            storage_page.drives_changed.connect(self.look_for_drives)  # formatted: mounted anew
         if hasattr(settings, "libraries_changed") and hasattr(games, "home"):
             settings.libraries_changed.connect(games.home.apply_libraries)
         if hasattr(settings, "hotkeys_changed"):
@@ -2296,7 +2298,8 @@ class MainWindow(QMainWindow):
         self.look_for_drives()
 
     def look_for_drives(self) -> None:
-        if self.screen_name != "shell" or getattr(self, "_looking_for_drives", False):
+        if (self.screen_name != "shell" or getattr(self, "_looking_for_drives", False)
+                or getattr(self, "drives", None) is None):
             return  # locked: no games to show
         self._looking_for_drives = True
 
@@ -2305,6 +2308,9 @@ class MainWindow(QMainWindow):
             games = self.shell.pages.get("Games") if self.shell is not None else None
             if hasattr(games, "set_drives"):
                 games.set_drives(found)
+            storage = getattr(self.shell.pages.get("Settings"), "storage_page", None) if self.shell else None
+            if hasattr(storage, "set_drives"):
+                storage.set_drives(found)
 
         def failed(_exc) -> None:
             self._looking_for_drives = False
