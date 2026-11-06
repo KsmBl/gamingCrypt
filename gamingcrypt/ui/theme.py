@@ -385,6 +385,8 @@ QFrame#card {{ background: transparent; {box('card', c['SURFACE'], c['CARD_EDGE'
                padding: {3 - SLICE['card']}px; }}
 QFrame#card:hover {{ {box('card', c['SURFACE_HI'], c['CARD_EDGE'], 3)} }}
 QFrame#card:focus {{ {box('card', c['SURFACE_HI'], c['ACCENT'], RING, glow=True)} }}
+QFrame#dialog {{ background: transparent; {box('card', c['SURFACE'], c['CARD_EDGE'], 3)}
+                 padding: {3 - SLICE['card']}px; }}
 
 QFrame#topBar {{ background: {c['SURFACE']}; border-bottom: 1px solid {c['BORDER']}; }}
 QWidget#menuRow {{ background: transparent; }}

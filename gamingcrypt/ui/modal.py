@@ -30,6 +30,12 @@ class Modal(QWidget):
         outer.addStretch()
         row = QHBoxLayout()
         row.addStretch()
+        if content.objectName() == "card":
+            # a card lights up under a finger (QFrame#card:hover - for game cards): a whole box over
+            # the screen did, in the colour of the pattern's dots, and they couldn't be seen any more
+            content.setObjectName("dialog")
+            content.style().unpolish(content)
+            content.style().polish(content)
         content.setFixedWidth(min(WIDTH, max(320, host.width() - 60)))
         content.setMaximumHeight(max(200, host.height() - 2 * EDGE))  # never taller than the screen
         row.addWidget(content)

@@ -205,3 +205,80 @@ def theme_color(name: str):
     from PySide6.QtGui import QColor
 
     return QColor(getattr(theme, name))
+
+
+# --- with a finger (a touch is "hover" too: a card lit up under it, the box with it) -----------------
+
+def touch(host, widget, pos, release: bool = True) -> None:
+    device = touch.device = getattr(touch, "device", None) or QTest.createTouchDevice()
+    where = widget.mapTo(host, pos)
+    QTest.touchEvent(host, device).press(0, where, host)
+    if release:
+        QTest.touchEvent(host, device).release(0, where, host)
+
+
+def box_colour(host, box):
+    """The box's own colour: inside it, away from everything in it."""
+    return host.grab().toImage().pixelColor(box.mapTo(host, QPoint(box.width() - 30, box.height() // 2)))
+
+
+@pytest.mark.parametrize("look", ["dark", "light"])
+@pytest.mark.parametrize("w,h", [(1280, 800), (1024, 600), (1920, 1080)])
+@pytest.mark.parametrize("kind", list(DIALOGS))
+def test_a_finger_on_the_dots_doesnt_grey_them_out(qtbot, monkeypatch, kind, w, h, look):
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    before_look, before_sheet = theme.current, app.styleSheet()  # (put back after: the others' look)
+    theme.apply(look, app)
+    try:
+        host = screen(qtbot, w, h)
+        box, pad = open_dialog(qtbot, host, kind, "grid5", monkeypatch)
+        colour = box_colour(host, box)
+        dots, background = dot_pixels(host, pad.canvas, 25)
+        touch(host, pad.canvas, pad.canvas.node_center(0).toPoint(), release=False)  # (the finger still on it)
+        qtbot.wait(30)
+        assert box_colour(host, box) == colour, "the box lit up under the finger"
+        held, held_background = dot_pixels(host, pad.canvas, 25)
+        assert held_background == background and all(c != held_background for c in held[1:])
+        QTest.touchEvent(host, touch.device).release(0, pad.canvas.mapTo(host, pad.canvas.node_center(0).toPoint()),
+                                                   host)
+        qtbot.wait(30)
+        after, after_background = dot_pixels(host, pad.canvas, 25)
+        assert pad.nodes == [0] and box_colour(host, box) == colour
+        assert after_background == background and all(c != after_background for c in after)
+        for _ in range(3):  # more dots, more fingers
+            touch(host, pad.canvas, pad.canvas.node_center(12).toPoint())
+            qtbot.wait(20)
+        assert pad.nodes == [0, 12, 12, 12] and all(c != background for c in dot_pixels(host, pad.canvas, 25)[0])
+    finally:
+        theme.apply(before_look)
+        app.setStyleSheet(before_sheet)
+
+
+@pytest.mark.parametrize("kind", list(DIALOGS))
+def test_a_finger_on_the_pin_keys(qtbot, monkeypatch, kind):
+    host = screen(qtbot, 1280, 800)
+    box, pad = open_dialog(qtbot, host, kind, "pin", monkeypatch)
+    colour = box_colour(host, box)
+    for key in "1234":
+        touch(host, pad.buttons[key], pad.buttons[key].rect().center())
+        qtbot.wait(20)
+    assert pad.display.text() == "1234" and box_colour(host, box) == colour
+
+
+def test_every_box_over_the_screen_stays_as_it_is_under_a_finger(qtbot):
+    """Not only the code: Remove, Move, Format - any card shown as a box."""
+    from PySide6.QtWidgets import QFrame, QVBoxLayout
+
+    host = screen(qtbot, 1280, 800)
+    content = QFrame()
+    content.setObjectName("card")
+    QVBoxLayout(content).addWidget(QLabel("Really?"))
+    show_modal(host, content, lambda: None)
+    settle(qtbot)
+    assert content.objectName() == "dialog"
+    colour = box_colour(host, content)
+    touch(host, content, QPoint(content.width() - 30, content.height() // 2), release=False)
+    qtbot.wait(30)
+    assert box_colour(host, content) == colour
