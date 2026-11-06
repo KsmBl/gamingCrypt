@@ -64,6 +64,7 @@ class RomCard(QFrame):
         self.cover.setFixedSize(COVER_W, COVER_H)
         self.cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
         load_rom_cover(self.cover, game, covers, COVER_W, COVER_H)
+        self.cover.set_badge(game.removable)  # on a USB stick / drive / SD card
         layout.addWidget(self.cover)
         title = QLabel(game.name)
         title.setObjectName("cardTitle")
@@ -376,6 +377,7 @@ class RomGamePage(QWidget):
         self.cover = Cover()
         self.cover.setFixedSize(300, 400)
         self.cover.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+        self.cover.set_badge(game.removable)
         self.backdrop = Backdrop(self, self.cover)
         load_rom_cover(self.cover, game, getattr(tab, "covers", None), 300, 400,
                        done=lambda _path: self.show_recognised())

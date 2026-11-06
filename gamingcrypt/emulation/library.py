@@ -56,6 +56,7 @@ class RomGame:
     last_played: int | None = None  # from the play log (emulation/playtime)
     minutes: int = 0
     discs: tuple[Path, ...] = ()  # a game on several discs: path is the playlist (.m3u) GamingCrypt wrote
+    removable: str = ""  # on a USB stick, USB drive or SD card (system.removable.KINDS) - "" on the drive
 
     @property
     def appid(self) -> int:
@@ -114,9 +115,12 @@ def write_playlist(paths: EmulationPaths, system: System, title: str, discs: lis
     return playlist
 
 
-def scan(paths: EmulationPaths, system: System) -> list[RomGame]:
+def scan(paths: EmulationPaths, system: System, roms: Path | None = None, removable: str = "") -> list[RomGame]:
+    """roms: another roms folder (on a USB stick: removable says which kind) - the playlists of its
+    games on several discs are written onto the encrypted drive all the same."""
     files = []
-    for folder in [paths.roms_for(system)] + [paths.root / "roms" / name for name in system.also_in]:
+    roms = Path(roms) if roms is not None else paths.root / "roms"
+    for folder in [roms / name for name in (system.folder, *system.also_in)]:
         try:
             files += [f for f in folder.iterdir() if f.is_file() and f.suffix.lower() in system.extensions]
         except OSError:
@@ -138,21 +142,32 @@ def scan(paths: EmulationPaths, system: System) -> list[RomGame]:
         number = disc_number(f.name)
         group = groups.get(DISC.sub("", f.stem).strip()) if number is not None else None
         if group is None or len(group) < 2:
-            games.append(RomGame(system, f, clean_name(f.name), _size(f)))
+            games.append(RomGame(system, f, clean_name(f.name), _size(f), removable=removable))
         elif f is group[0]:
             discs = sorted(group, key=lambda d: disc_number(d.name))
             title = DISC.sub("", f.stem).strip()
             playlist = write_playlist(paths, system, title, discs)
             games.append(RomGame(system, playlist, clean_name(title + ".m3u"), sum(_size(d) for d in discs),
-                                 discs=tuple(discs)))
+                                 discs=tuple(discs), removable=removable))
     return sorted(games, key=lambda g: g.name.lower())
 
 
-def scan_all(paths: EmulationPaths) -> dict[str, list[RomGame]]:
-    """Systems that have games."""
+def scan_all(paths: EmulationPaths, drives: list | tuple = ()) -> dict[str, list[RomGame]]:
+    """Systems that have games - on the drive and on the USB sticks, drives, SD cards that are in
+    (system.removable.Removable). A game on both is the one on the drive."""
     found = {}
     for system in SYSTEMS:
         games = scan(paths, system)
+        seen = {g.appid for g in games}
+        extra = []
+        for drive in drives:
+            for roms in drive.roms():
+                for game in scan(paths, system, roms, drive.kind):
+                    if game.appid not in seen:
+                        seen.add(game.appid)
+                        extra.append(game)
+        if extra:
+            games = sorted([*games, *extra], key=lambda g: g.name.lower())
         if games:
             found[system.id] = games
     return found

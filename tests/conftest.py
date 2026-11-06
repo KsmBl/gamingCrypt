@@ -47,6 +47,17 @@ def no_real_controllers(monkeypatch):
     monkeypatch.setattr(evdev, "find_gamepads", lambda *a, **k: [])
 
 
+@pytest.fixture(autouse=True)
+def no_real_drives(monkeypatch):
+    """Never list (or mount!) the USB sticks and SD cards of the dev machine."""
+    import subprocess
+
+    from gamingcrypt.system import removable
+
+    monkeypatch.setattr(removable, "_run",
+                        lambda args, **_k: subprocess.CompletedProcess(args, 1, stdout="", stderr="tests"))
+
+
 @pytest.fixture
 def steam_root(tmp_path) -> Path:
     """A fake Steam install with a second library folder (the 'encrypted drive')."""

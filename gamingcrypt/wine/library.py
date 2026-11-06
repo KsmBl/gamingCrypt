@@ -36,6 +36,8 @@ class WindowsGame:
     size: int = 0
     last_played: int | None = None
     minutes: int = 0
+    removable: str = ""  # on a USB stick, USB drive or SD card (system.removable.KINDS) - "" on the drive
+    home: Path | None = None  # on one: the drive's library folder, where its prefixes are
 
     KIND = "windows"  # a Linux game (linux.library.LinuxGame) is the same, without Proton / Wine
     LABEL = "Windows"
@@ -66,15 +68,28 @@ def folder_size(path: Path) -> int:
     return total
 
 
-def scan(root: Path, sizes: bool = True, kind: type = WindowsGame) -> list[WindowsGame]:
-    """Every folder in the Windows Games folder (not hidden ones, not the prefixes)."""
+def scan(root: Path, sizes: bool = True, kind: type = WindowsGame, drives: list | tuple = ()) -> list[WindowsGame]:
+    """Every folder in the Windows Games folder (not hidden ones, not the prefixes) - and in the one
+    on every USB stick, drive or SD card in (system.removable.Removable). A game on both is the one
+    on the drive."""
     root = Path(root)
+    games = [kind(p, p.name, folder_size(p) if sizes else 0) for p in _folders(root)]
+    seen = {g.appid for g in games}
+    for drive in drives:
+        for p in _folders(getattr(drive, kind.KIND)):
+            game = kind(p, p.name, folder_size(p) if sizes else 0, removable=drive.kind, home=root)
+            if game.appid not in seen:
+                seen.add(game.appid)
+                games.append(game)
+    return sorted(games, key=lambda g: g.name.casefold()) if drives else games
+
+
+def _folders(root: Path) -> list[Path]:
     try:
-        folders = sorted((p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")),
-                         key=lambda p: p.name.casefold())
+        return sorted((p for p in Path(root).iterdir() if p.is_dir() and not p.name.startswith(".")),
+                      key=lambda p: p.name.casefold())
     except OSError:
         return []
-    return [kind(p, p.name, folder_size(p) if sizes else 0) for p in folders]
 
 
 def _words(text: str) -> set[str]:
@@ -109,16 +124,22 @@ def executables(game: WindowsGame) -> list[str]:
     return [rel for rel, _d, _s in sorted(found, key=rank)]
 
 
+def library_root(game: WindowsGame) -> Path:
+    """The library folder on the drive with the game's prefixes and backups - also for a game on a
+    USB stick: its saves stay encrypted, and are there again when the stick is."""
+    return Path(game.home) if game.home is not None else game.path.parent
+
+
 def prefix_dir(game: WindowsGame, user: str = "") -> Path:
     """The game's prefix for that user's id ("" = the admin)."""
-    root = game.path.parent
+    root = library_root(game)
     return (root / USERS / user if user else root) / PREFIXES / game.path.name
 
 
 def all_prefixes(game: WindowsGame) -> list[Path]:
     """The game's prefixes that exist: the admin's and every user's - also a deleted user's."""
     try:
-        users = sorted(p.name for p in (game.path.parent / USERS).iterdir() if p.is_dir())
+        users = sorted(p.name for p in (library_root(game) / USERS).iterdir() if p.is_dir())
     except OSError:
         users = []
     return [p for p in (prefix_dir(game, user) for user in ("", *users)) if p.exists()]
@@ -138,7 +159,7 @@ def remove(game: WindowsGame, with_saves: bool) -> int:
 
 def _all_backups(game: WindowsGame) -> list[Path]:
     try:
-        owners = [p for p in (game.path.parent / BACKUPS).iterdir() if p.is_dir()]
+        owners = [p for p in (library_root(game) / BACKUPS).iterdir() if p.is_dir()]
     except OSError:
         return []
     return [owner / game.path.name for owner in owners if (owner / game.path.name).is_dir()]

@@ -629,6 +629,7 @@ class GamesTab(QStackedWidget):
 
         self.play_log = PlayLog(self.emulation) if self.emulation is not None else None
         self.roms: dict = {}  # system id -> games
+        self.drives: list = []  # USB sticks, USB drives, SD cards that are in (system.removable): their games too
         # Windows games (Proton / Wine): a folder each in <drive>/Windows Games
         from pathlib import Path as _Path
 
@@ -771,13 +772,20 @@ class GamesTab(QStackedWidget):
         run_async(self.service.installed_games, self._installed_loaded, owner=self)
         self.reload_roms()
 
+    def set_drives(self, drives: list) -> None:
+        """A USB stick, USB drive or SD card put in or taken out: its games come / go."""
+        if list(drives) == self.drives:
+            return
+        self.drives = list(drives)
+        self.reload_roms()
+
     def reload_roms(self) -> None:
         self.reload_windows()
         self.reload_linux()
         self.reload_minecraft()
         if self.emulation is None:
             return
-        paths = self.emulation
+        paths, drives = self.emulation, tuple(self.drives)
 
         def work():
             import os
@@ -786,7 +794,7 @@ class GamesTab(QStackedWidget):
 
             if os.path.ismount(paths.root.parent) and not paths.roms.exists():
                 paths.ensure()  # first time on an unlocked drive: the folders to put things in
-            return scan_all(paths)
+            return scan_all(paths, drives)
 
         run_async(work, self._roms_loaded, lambda _e: None, owner=self)
 
@@ -842,7 +850,7 @@ class GamesTab(QStackedWidget):
 
     # Windows games -------------------------------------------------------------------------
     def reload_windows(self) -> None:
-        root = self.windows_root
+        root, drives = self.windows_root, tuple(self.drives)
         if root is None:
             return
 
@@ -853,7 +861,7 @@ class GamesTab(QStackedWidget):
 
             if not root.exists() and os.path.ismount(root.parent):
                 root.mkdir(exist_ok=True)  # an unlocked drive: the folder to copy games into
-            return scan(root, sizes=False)
+            return scan(root, sizes=False, drives=drives)
 
         run_async(work, self._windows_loaded, lambda _e: None, owner=self)
 
@@ -916,7 +924,7 @@ class GamesTab(QStackedWidget):
 
     # Linux games: as the Windows ones ---------------------------------------------------------------
     def reload_linux(self) -> None:
-        root = self.linux_root
+        root, drives = self.linux_root, tuple(self.drives)
         if root is None:
             return
 
@@ -927,7 +935,7 @@ class GamesTab(QStackedWidget):
 
             if not root.exists() and os.path.ismount(root.parent):
                 root.mkdir(exist_ok=True)  # an unlocked drive: the folder to copy games into
-            return scan(root, sizes=False)
+            return scan(root, sizes=False, drives=drives)
 
         run_async(work, self._linux_loaded, lambda _e: None, owner=self)
 

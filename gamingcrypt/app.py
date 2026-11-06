@@ -2236,6 +2236,7 @@ class MainWindow(QMainWindow):
         if self.welcome_enabled:
             QTimer.singleShot(0, self.show_welcome)
         self.watch_arrivals()
+        self.watch_drives()
         if self.update_check_enabled and not getattr(self, "_update_checked", False):
             self._update_checked = True
             QTimer.singleShot(60_000, self.check_for_update)  # once per start, after things settled
@@ -2274,6 +2275,41 @@ class MainWindow(QMainWindow):
             self._looking_for_arrivals = False
 
         run_async(watcher.poll, done, failed, owner=self)
+
+    DRIVES_MS = 4_000  # how often USB sticks, USB drives, SD cards are looked for
+
+    def watch_drives(self) -> None:
+        """A USB stick, USB drive or SD card put in: its games are in the Games tab too (with a
+        badge on their covers) - until it's taken out. Only while the drive is unlocked."""
+        from gamingcrypt.system.removable import Drives
+
+        mount_point = os.path.expanduser(self.config["unlock"].get("mount_point", "") or "")
+        if not mount_point:
+            return
+        if getattr(self, "drives", None) is None or self.drives.exclude != (mount_point,):
+            self.drives = Drives(exclude=(mount_point,))
+        if getattr(self, "drives_timer", None) is None:
+            self.drives_timer = QTimer(self)
+            self.drives_timer.timeout.connect(self.look_for_drives)
+        self._looking_for_drives = False
+        self.drives_timer.start(self.DRIVES_MS)
+        self.look_for_drives()
+
+    def look_for_drives(self) -> None:
+        if self.screen_name != "shell" or getattr(self, "_looking_for_drives", False):
+            return  # locked: no games to show
+        self._looking_for_drives = True
+
+        def done(found) -> None:
+            self._looking_for_drives = False
+            games = self.shell.pages.get("Games") if self.shell is not None else None
+            if hasattr(games, "set_drives"):
+                games.set_drives(found)
+
+        def failed(_exc) -> None:
+            self._looking_for_drives = False
+
+        run_async(self.drives.look, done, failed, owner=self)
 
     def arrived(self, found: list) -> None:
         from gamingcrypt.arrivals import describe

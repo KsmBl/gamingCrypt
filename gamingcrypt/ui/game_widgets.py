@@ -61,11 +61,22 @@ def meta_text(game: SteamGame, sort_key: str = "name") -> str:
     return "Not installed"
 
 
+_BADGES: dict[tuple[str, int], QPixmap] = {}  # (kind, size) -> the drawing: drawn once, not every paint
+
+
 class Cover(QLabel):
     """A picture (cover, poster, still) with two corners cut off - everywhere the same (theme.py)."""
 
     CUT = theme.CUT["cover"]
     pixmap_changed = Signal()  # (what's made of the picture follows: the page's backdrop)
+    badge = ""  # a game on a USB stick / USB drive / SD card: "usb", "drive", "sd" (system.removable)
+
+    def set_badge(self, kind: str) -> None:
+        """A small picture of the stick, drive or SD card the game is on, in the cover's top right
+        corner (one that isn't cut) - "": none."""
+        if kind != self.badge:
+            self.badge = kind
+            self.update()
 
     def setPixmap(self, pixmap) -> None:  # noqa: N802 - Qt API
         super().setPixmap(pixmap)
@@ -86,7 +97,25 @@ class Cover(QLabel):
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         painter.setClipPath(theme.cut_path(QRectF(x, y, w, h), self.CUT))
         painter.drawPixmap(x, y, pixmap)
+        if self.badge:
+            self.paint_badge(painter, QRectF(x, y, w, h))
         painter.end()
+
+    def paint_badge(self, painter: QPainter, rect: QRectF) -> None:
+        from gamingcrypt.ui import library_icons
+
+        size = max(22, min(44, round(min(rect.width(), rect.height()) * 0.17)))
+        margin = max(4, size // 5)
+        box = QRectF(rect.right() - size - margin, rect.top() + margin, size, size)
+        painter.setClipping(False)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 165))  # dark on every cover, in both themes
+        painter.drawPath(theme.cut_path(box, max(3, size // 5)))
+        inner = round(size * 0.78)
+        icon = _BADGES.get((self.badge, inner))
+        if icon is None:
+            icon = _BADGES[(self.badge, inner)] = library_icons.removable(self.badge, inner)
+        painter.drawPixmap(round(box.x() + (size - inner) / 2), round(box.y() + (size - inner) / 2), icon)
 
 
 def placeholder_cover(name: str, w: int = COVER_W, h: int = COVER_H) -> QPixmap:

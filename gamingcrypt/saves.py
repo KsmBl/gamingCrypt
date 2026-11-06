@@ -77,7 +77,7 @@ class PrefixSaves:
 
     def __init__(self, game: WindowsGame):
         self.game = game
-        self.root = game.path.parent
+        self.root = wine.library_root(game)
         self.key = game.path.name
 
     def owners(self) -> list[str]:

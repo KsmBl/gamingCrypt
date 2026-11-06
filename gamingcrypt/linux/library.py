@@ -30,8 +30,8 @@ def is_linux_appid(appid: int | None) -> bool:
     return appid is not None and LINUX_APPID_BASE <= appid < LINUX_APPID_BASE + 0x10000000
 
 
-def scan(root: Path, sizes: bool = True) -> list[LinuxGame]:
-    return _scan(root, sizes, LinuxGame)
+def scan(root: Path, sizes: bool = True, drives: list | tuple = ()) -> list[LinuxGame]:
+    return _scan(root, sizes, LinuxGame, drives)
 
 
 def startable(path: Path) -> bool:

@@ -70,6 +70,7 @@ class WindowsCard(Tappable):
         self.cover = Cover()
         self.cover.setFixedSize(COVER_W, COVER_H)
         load_windows_cover(self.cover, game, covers, COVER_W, COVER_H)
+        self.cover.set_badge(game.removable)  # on a USB stick / drive / SD card
         layout.addWidget(self.cover)
         title = QLabel(game.name)
         title.setObjectName("cardTitle")
@@ -230,7 +231,7 @@ class WindowsGamePage(QWidget):
     def saves_note(self) -> str:
         user = self.tab.user
         own = "" if user is None or user.admin else user.id
-        folder = library.prefix_dir(self.game, own).relative_to(self.game.path.parent).as_posix()
+        folder = library.prefix_dir(self.game, own).relative_to(library.library_root(self.game)).as_posix()
         return f"Saves and settings: {'your' if own else 'its'} own Wine prefix on the drive (Windows Games/{folder})"
 
     def __init__(self, tab, game: WindowsGame, parent: QWidget | None = None):
@@ -249,6 +250,7 @@ class WindowsGamePage(QWidget):
         self.cover.setFixedSize(300, 450)
         self.backdrop = Backdrop(self, self.cover)
         load_windows_cover(self.cover, game, getattr(tab, f"{game.KIND}_covers", None), 300, 450)
+        self.cover.set_badge(game.removable)
         body.addWidget(self.cover, alignment=Qt.AlignmentFlag.AlignTop)
         info = QVBoxLayout()
         info.setSpacing(14)

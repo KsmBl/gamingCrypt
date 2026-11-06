@@ -104,6 +104,11 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
   file, and play it with Proton, Wine or natively. Every user has their own saves and settings in a
   Windows game (their own Wine prefix) - except in a game that saves into its own folder. The saves
   from before stay with the admin.
+- 🔌 **Games on a USB stick, USB drive or SD card**: put it in and its games are in the game list too,
+  with a small stick, drive or SD card in the corner of their covers - until you take it out. Put them on
+  it like on the drive: ROMs in `Emulation/roms/<system>` (or `roms/<system>`), Windows games in
+  `Windows Games`, Linux games in `Linux Games`. It's mounted for you, also in gaming mode. Saves, save
+  states, covers and settings stay on the encrypted drive; a game that's on both is the one on the drive.
 - 💾 **Saves page** (Options → Saves, for Windows and emulated games): how big each user's saves are and when
   they last changed. Back them up, go back to a backup or delete them; the admin sees everyone's and can copy
   saves from one user to another. What gets replaced is backed up first. The 3 newest backups are kept, and a

@@ -155,3 +155,40 @@ def block(w: int, h: int) -> QPixmap:
     painter.drawLine(QPointF(cx, top + 2 * rise), QPointF(cx, bottom))
     painter.end()
     return pixmap
+
+
+def removable(kind: str, size: int, color: str = "#f4f4f4") -> QPixmap:
+    """Where a game is that isn't on the drive: a USB stick ("usb"), a USB drive ("drive") or an SD
+    card ("sd") - drawn, generic, in outline (for the badge on its cover)."""
+    from PySide6.QtGui import QPolygonF
+
+    pixmap, painter = _pixmap(size, size)
+    s = size / 24
+    pen = QPen(QColor(color), max(1.4, s * 1.9))
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    if kind == "sd":
+        # the card with its corner cut off, and the contacts along the top
+        painter.drawPolygon(QPolygonF([QPointF(s * 5, s * 3), QPointF(s * 15, s * 3), QPointF(s * 19, s * 7),
+                                       QPointF(s * 19, s * 21), QPointF(s * 5, s * 21)]))
+        for x in (8.5, 11.5, 14.5):
+            painter.drawLine(QPointF(s * x, s * 6.5), QPointF(s * x, s * 9.5))
+    elif kind == "drive":
+        # a disk lying down: its case, a light and a slot
+        painter.drawRoundedRect(QRectF(s * 2.5, s * 6.5, s * 19, s * 11), s * 2.5, s * 2.5)
+        painter.drawLine(QPointF(s * 6.5, s * 14), QPointF(s * 12, s * 14))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(color))
+        painter.drawEllipse(QPointF(s * 17, s * 13.5), s * 1.6, s * 1.6)
+    else:
+        # a stick: its body below, the plug above with its two holes
+        painter.drawRoundedRect(QRectF(s * 6.5, s * 10, s * 11, s * 12), s * 2, s * 2)
+        painter.drawRect(QRectF(s * 8.5, s * 2.5, s * 7, s * 7.5))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(color))
+        painter.drawRect(QRectF(s * 10, s * 5, s * 1.5, s * 1.8))
+        painter.drawRect(QRectF(s * 12.5, s * 5, s * 1.5, s * 1.8))
+    painter.end()
+    return pixmap
