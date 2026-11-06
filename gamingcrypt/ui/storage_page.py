@@ -29,6 +29,10 @@ class StoragePage(QWidget):
         self.report: storage.Report | None = None
         self.library_fn: Callable[[], object] = lambda: None  # set by the app: the Games tab (roots, drives)
         self.config_fn: Callable[[], dict | None] = lambda: None  # set by the app: its config (encrypted sticks)
+        # set by the app: the code of whoever is logged in -> the drive's password (None: wrong), and its kind
+        self.code_check_fn: Callable[[str], str | None] | None = None
+        self.code_method_fn: Callable[[], str] = lambda: "password"
+        self.code_prompt = None  # the code asked for to open an encrypted stick
         self.unlocker = None  # the Unlock question that's open (a stick encrypted with another code)
         self.drives: list = []  # USB sticks, USB drives, SD cards that are in
         self.unusable: list = []  # ... in, but not usable (not formatted, couldn't be mounted): why
@@ -335,9 +339,11 @@ class StoragePage(QWidget):
             self.drive_grid.addWidget(problem, row, 1)
             self.drive_grid.addWidget(button, row, 2)
             widgets = [text, problem, button]
-            if drive.problem == stick_crypt.EARLIER:  # opened once with that code: then with today's
+            if drive.problem in (stick_crypt.EARLIER, stick_crypt.NEEDS_CODE):
+                # earlier code: opened once with that one, then with today's - today's not known: asked for
                 unlock = big_button("🔓 Unlock…", "primary")
-                unlock.clicked.connect(lambda _c=False, d=drive: self.ask_unlock(d))
+                unlock.clicked.connect(lambda _c=False, d=drive: self.ask_unlock(d) if d.problem == stick_crypt.EARLIER
+                                       else self.ask_code(d))
                 self.drive_grid.addWidget(unlock, row, 3)
                 widgets.append(unlock)
             self.drive_rows[("unusable", drive.disk, drive.device)] = widgets
@@ -370,7 +376,8 @@ class StoragePage(QWidget):
         if self.formatter is not None or not self.can_delete():
             return
         encrypt, why_not = self.encrypter()
-        self.formatter = FormatConfirm(drive, encrypt=encrypt, no_encrypt_reason=why_not)
+        self.formatter = FormatConfirm(drive, encrypt=encrypt, no_encrypt_reason=why_not,
+                                       check_code=self.code_check_fn, method=self.code_method_fn())
         self.formatter.cancelled.connect(self.close_format)
         self.formatter.finished.connect(self.close_format)
         self.formatter.formatted.connect(self._formatted)
@@ -380,17 +387,43 @@ class StoragePage(QWidget):
 
     def encrypter(self):
         """(how a stick is encrypted when it's formatted, why it can't be) - with the drive's password
-        (only known while GamingCrypt is unlocked) and its sidecar's settings."""
-        password, config = stick_crypt.keys.password, self.config_fn()
-        if not password or config is None:
-            return None, ("It can't be encrypted right now: lock GamingCrypt and unlock it again (your code is "
-                          "needed once), then format it.")
+        (from the code, asked for in the format dialog) and its sidecar's settings."""
+        config = self.config_fn()
+        if config is None or self.code_check_fn is None:
+            return None, "It can't be encrypted here: the encrypted drive isn't set up."
         unlock_cfg, users_list = config["unlock"], config.get("users")
 
-        def encrypt(stick, progress=None):
+        def encrypt(stick, password, progress=None):
             return stick_crypt.create(stick, password, unlock_cfg, users_list, progress=progress)
 
         return encrypt, ""
+
+    def ask_code(self, drive) -> None:
+        """An encrypted stick GamingCrypt can't open by itself (started again while unlocked: it doesn't
+        know the code): the code asked for - the sticks open with it from then on."""
+        from gamingcrypt.ui.code_prompt import CodePrompt
+        from gamingcrypt.ui.move_game import over_everything
+
+        if self.code_prompt is not None or self.code_check_fn is None:
+            return
+        self.code_prompt = CodePrompt(f"🔓 Unlock {drive.name}", "It's encrypted with your code.",
+                                      self.code_method_fn(), self.code_check_fn)
+        self.code_prompt.cancelled.connect(self.close_code)
+        self.code_prompt.accepted.connect(self._code_entered)
+        self.code_prompt_modal = over_everything(self, self.code_prompt, self.close_code)
+        self.code_prompt.focus_first()
+
+    def close_code(self) -> None:
+        if self.code_prompt is None or self.code_prompt.working:
+            return
+        self.code_prompt = None
+        self.code_prompt_modal.close_modal()
+
+    def _code_entered(self, password: str) -> None:
+        stick_crypt.keys.set(password)  # (every encrypted stick opens with it now)
+        self.close_code()
+        set_status(self.status, "Opening it…")
+        self.drives_changed.emit()
 
     def ask_unlock(self, drive) -> None:
         from gamingcrypt.ui.move_game import over_everything
@@ -422,6 +455,9 @@ class StoragePage(QWidget):
         self.formatter_modal.close_modal()
 
     def _formatted(self, message: str) -> None:
+        password = getattr(self.formatter, "password", None)
+        if password and not stick_crypt.keys.password:
+            stick_crypt.keys.set(password)  # (the code was entered: the encrypted sticks open with it)
         set_status(self.status, message)
         self.drives_changed.emit()
         self.roms_changed.emit()

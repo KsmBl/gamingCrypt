@@ -614,6 +614,30 @@ class MainWindow(QMainWindow):
 
         run_async(work, done, lambda exc: log.warning("no password for the sticks: %s", exc), owner=self)
 
+    def password_for_code(self, secret: str) -> str | None:
+        """The drive's volume password from the code of whoever is logged in - None: not their code.
+        (Checked against the code that unlocked: the keyed hash kept for the lock after sleep, else the
+        password already known, else their key slot.) Slow: scrypt."""
+        from gamingcrypt import users
+        from gamingcrypt.system import stick_crypt
+        from gamingcrypt.unlock import verifier as verifier_mod
+
+        user = users.current(self.config)
+        if self.verifier is not None and not verifier_mod.check(self.verifier, secret):
+            return None
+        password = users.volume_password(self.config, user.id, secret)
+        known = stick_crypt.keys.password
+        if password is None or (known and password != known):
+            return None
+        if self.verifier is None and not known and user.admin:
+            keyring = self.config["unlock"].get("keyring")
+            slot = keyring.get("admin") if isinstance(keyring, dict) else None
+            from gamingcrypt.unlock import keyslots
+
+            if slot is None or keyslots.open_slot(secret, slot) is None:
+                return None  # (nothing to check the admin's code with: not taken on trust)
+        return password
+
     def code_changed_to(self, secret: str) -> None:
         """Whoever is logged in unlocks with another code now. The admin's: the volume's password is
         another one - the encrypted sticks that are in get it too (the others when they're opened with
@@ -2285,6 +2309,8 @@ class MainWindow(QMainWindow):
             storage_page.library_fn = lambda: games  # (its roots and the sticks that are in)
             storage_page.drives_changed.connect(self.drives_changed)  # formatted / unlocked: looked at anew
             storage_page.config_fn = lambda: self.config  # (encrypting a stick: the drive's settings)
+            storage_page.code_check_fn = self.password_for_code  # (encrypting / opening one: the code again)
+            storage_page.code_method_fn = lambda: users.current(self.config).method
         if hasattr(settings, "libraries_changed") and hasattr(games, "home"):
             settings.libraries_changed.connect(games.home.apply_libraries)
         if hasattr(settings, "hotkeys_changed"):

@@ -36,12 +36,16 @@ class FormatConfirm(QFrame):
     finished = Signal()  # OK / Close after it ran: the box can go
 
     def __init__(self, drive, formats: list[str] | None = None, run=None, parent=None, clock=time.monotonic,
-                 encrypt=None, no_encrypt_reason: str = ""):
-        """encrypt(stick, progress) -> the stick opened (stick_crypt.create with the drive's password) -
-        None: it can't be encrypted now (no_encrypt_reason says why)."""
+                 encrypt=None, no_encrypt_reason: str = "", check_code=None, method: str = "password"):
+        """encrypt(stick, password, progress) -> the stick opened (stick_crypt.create) - None: it can't be
+        encrypted (no_encrypt_reason says why). check_code(code) -> the drive's password, None when it's
+        the wrong code: encrypting asks for the code of whoever is logged in first (method: its kind)."""
         super().__init__(parent)
         self.drive, self.run, self.clock = drive, run, clock
-        self.encrypt = encrypt
+        self.encrypt = encrypt if check_code is not None else None
+        self.check_code, self.method = check_code, method
+        self.password: str | None = None  # (encrypting: from the code, once it's entered)
+        self.code = None  # the code's input, while it's asked for
         self.percent = 0.0  # how far the container is (written in the worker thread)
         self.chosen = ""
         self.working = False
@@ -71,14 +75,14 @@ class FormatConfirm(QFrame):
             self.hints.append(hint)
         # encrypted: a VeraCrypt container with the drive's code (on unless it can't be)
         self.encrypt_button = big_button("", checkable=True)
-        self.encrypt_button.setChecked(encrypt is not None)
-        self.encrypt_button.setEnabled(encrypt is not None)
+        self.encrypt_button.setChecked(self.encrypt is not None)
+        self.encrypt_button.setEnabled(self.encrypt is not None)
         self.encrypt_button.toggled.connect(self._encrypt_text)
         layout.addWidget(self.encrypt_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.encrypt_note = QLabel("Its games are in a VeraCrypt container that opens with the same code as your "
                                    "drive (PIN, password or pattern) - only while GamingCrypt is unlocked. Inside it's ext4: "
-                                   "Linux games start from it with either file system."
-                                   if encrypt is not None else no_encrypt_reason or "It can't be encrypted now.")
+                                   "Linux games start from it with either file system. You're asked for your code."
+                                   if self.encrypt is not None else no_encrypt_reason or "It can't be encrypted now.")
         self.encrypt_note.setObjectName("cardMeta")
         self.encrypt_note.setWordWrap(True)
         layout.addWidget(self.encrypt_note)
@@ -143,10 +147,39 @@ class FormatConfirm(QFrame):
         first.setFocus(Qt.FocusReason.TabFocusReason)
 
     def choose(self, fstype: str) -> None:
-        """The second question: everything on it is gone."""
+        """Encrypted: the code first (ask_code) - then the last question: everything on it is gone."""
         self.chosen = fstype
         for widget in [*self.choices.values(), *self.hints, self.encrypt_button, self.encrypt_note]:
             widget.hide()
+        if self.encrypting and self.password is None:
+            self.ask_code()
+            return
+        self.confirm()
+
+    def ask_code(self) -> None:
+        """Encrypting it with your code: entered again, checked - the container gets the drive's password."""
+        from gamingcrypt.ui.code_prompt import CodeEntry
+        from gamingcrypt.ui.secret_input import METHOD_LABELS
+
+        self.title.setText(f"Encrypt {self.drive.name}")
+        self.question.setText(f"It's encrypted with your code - enter your {METHOD_LABELS.get(self.method, 'code')}.")
+        self.code = CodeEntry(self.method, self.check_code)
+        self.code.accepted.connect(self._code_entered)
+        self.layout().insertWidget(self.layout().indexOf(self.question) + 1, self.code)
+        self.code.focus_first()
+
+    def _code_entered(self, password: str) -> None:
+        self.password = password
+        if self.code is not None:
+            self.code.hide()
+            self.code.deleteLater()
+            self.code = None
+        self.title.setText(f"Format {self.drive.name}")
+        self.confirm()
+
+    def confirm(self) -> None:
+        """The last question: everything on it is gone."""
+        fstype = self.chosen
         how = f"{NAMES[fstype]}, encrypted" if self.encrypting else NAMES[fstype]
         self.question.setText(f"Really delete everything on {self.drive.name}? It's formatted as {how} - "
                               "this can't be undone.")
@@ -154,7 +187,7 @@ class FormatConfirm(QFrame):
         self.cancel_button.setFocus(Qt.FocusReason.TabFocusReason)  # the safe answer first
 
     def start(self) -> None:
-        if self.working or not self.chosen or self.over:
+        if self.working or not self.chosen or self.over or (self.encrypting and not self.password):
             return
         self.working = True
         self.format_button.hide()
@@ -176,10 +209,10 @@ class FormatConfirm(QFrame):
         label = drive.label or "GAMES"
         encrypt = None
         if self.encrypting:
-            make = self.encrypt
+            make, password = self.encrypt, self.password
 
             def encrypt(stick):
-                return make(stick, progress=lambda pct: setattr(self, "percent", pct))
+                return make(stick, password, progress=lambda pct: setattr(self, "percent", pct))
 
         run_async(lambda: removable.format_drive(drive, fstype, label, run=run, step=reached.append, encrypt=encrypt),
                   self._done, self._failed, owner=self)
@@ -260,7 +293,7 @@ class FormatConfirm(QFrame):
     def cancel(self) -> None:
         if self.over:
             self.finished.emit()
-        elif not self.working:
+        elif not self.working and not (self.code is not None and self.code.working):
             self.cancelled.emit()
 
     def gamepad_back(self) -> bool:

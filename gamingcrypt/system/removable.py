@@ -221,8 +221,7 @@ class Drives:
                 if stick_crypt.is_open(volume):
                     shown.append(replace(locked, mount=stick_crypt.mount_dir(volume), fstype="ext4"))
                 else:
-                    unusable.append(replace(locked, problem="Encrypted - it opens when GamingCrypt is unlocked "
-                                                            "(lock and unlock it once)"))
+                    unusable.append(replace(locked, problem=stick_crypt.NEEDS_CODE))
                 continue
             if self.refused.get(volume) == password:
                 unusable.append(replace(locked, problem=stick_crypt.EARLIER))

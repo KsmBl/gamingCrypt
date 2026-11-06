@@ -33,6 +33,7 @@ CONTAINER = "GamingCrypt.vc"
 MIN_SIZE_GB = 1
 SPARE = 256 * 1024 ** 2  # left free next to the container (its sidecar, the file system's own)
 EARLIER = "Encrypted with an earlier code (or another device's) - unlock it once with that code"
+NEEDS_CODE = "Encrypted - unlock it with your code"
 
 
 class Keys:

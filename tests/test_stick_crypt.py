@@ -164,7 +164,7 @@ def test_locked_it_waits(tmp_path, vc, config):
     stick = encrypted_stick(tmp_path, vc, drive_password(config), config)
     drives = Drives(run=Lsblk(stick.mount))
     assert drives.look() == []
-    assert drives.unusable[0].problem.startswith("Encrypted - it opens when GamingCrypt is unlocked")
+    assert drives.unusable[0].problem == stick_crypt.NEEDS_CODE
     assert vc.calls == []
 
 
@@ -249,35 +249,92 @@ def test_unlock_with_an_earlier_code_gives_it_todays(qtbot, tmp_path, vc, config
 
 # --- the Storage page and the format dialog -------------------------------------------------------
 
-def test_format_dialog_encrypts_when_the_code_is_known(qtbot, monkeypatch, tmp_path, config):
+def check_code(config):
+    """As the app checks it (MainWindow.password_for_code): the admin's 1234 -> the drive's password."""
+    return lambda secret: drive_password(config) if secret == "1234" else None
+
+
+def test_encrypting_asks_for_your_code(qtbot, monkeypatch, tmp_path, config):
     from gamingcrypt.ui.storage_page import StoragePage
 
     monkeypatch.setattr(removable, "formats", lambda: ["exfat"])
+    made = []
+    monkeypatch.setattr(removable, "format_drive", lambda drive, fstype, label, run=None, step=None, encrypt=None:
+                        made.append(encrypt) or drive)
+    monkeypatch.setattr(stick_crypt, "create", lambda stick, password, *_a, **_k: made.append(password) or stick)
     page = StoragePage(lambda: None, emulation_fn=lambda: None)
-    page.config_fn = lambda: config
+    page.config_fn, page.code_check_fn, page.code_method_fn = lambda: config, check_code(config), lambda: "pin"
     qtbot.addWidget(page)
     stick = Removable(tmp_path, "usb", "STICK", "/dev/sdb1", "exfat", "/dev/sdb")
-    page.ask_format(stick)
-    assert not page.formatter.encrypt_button.isEnabled()  # no code known (a restart)
-    assert "lock GamingCrypt and unlock it again" in page.formatter.encrypt_note.text()
-    page.formatter.cancel_button.click()
-    stick_crypt.keys.set(drive_password(config))
-    page.ask_format(stick)
+    page.ask_format(stick)  # (no code known: a restart - it's asked for)
     box = page.formatter
-    assert box.encrypt_button.isChecked() and box.encrypting and box.encrypt_button.text() == "🔒 Encrypted: on"
+    assert box.encrypt_button.isEnabled() and box.encrypting and box.encrypt_button.text() == "🔒 Encrypted: on"
     box.encrypt_button.click()
     assert not box.encrypting and box.encrypt_button.text() == "🔓 Encrypted: off"
     box.encrypt_button.click()
     box.choices["exfat"].click()
-    assert "exFAT, encrypted" in box.question.text()
+    assert box.code is not None and box.code.input.method == "pin" and box.format_button.isHidden()
+    assert box.question.text() == "It's encrypted with your code - enter your PIN."
+    box.start()
+    assert not box.working  # (not without the code)
+    box.code.try_code("0000")
+    qtbot.waitUntil(lambda: not box.code.working)
+    assert box.code.status.text() == "Wrong code - try again" and box.format_button.isHidden()
+    box.code.try_code("1234")
+    qtbot.waitUntil(lambda: box.code is None)
+    assert box.password == drive_password(config) and "exFAT, encrypted" in box.question.text()
+    assert not box.format_button.isHidden()  # the last question now
+    box.format_button.click()
+    qtbot.waitUntil(lambda: box.over)
+    encrypt = made[0]
+    encrypt(stick)
+    assert made[1] == drive_password(config)  # the container: the drive's password, from the code
+    assert stick_crypt.keys.password == drive_password(config)  # (and the sticks open with it now)
+
+
+def test_without_encryption_no_code_is_asked(qtbot, tmp_path, config):
+    from gamingcrypt.ui.format_drive import FormatConfirm
+
+    box = FormatConfirm(Removable(tmp_path, "usb", "STICK", disk="/dev/sdb"), formats=["exfat"],
+                        encrypt=lambda *a, **k: None, check_code=check_code(config), method="pin")
+    qtbot.addWidget(box)
+    box.encrypt_button.click()
+    box.choose("exfat")
+    assert box.code is None and not box.format_button.isHidden()
+
+
+def test_a_locked_stick_is_unlocked_with_your_code(qtbot, tmp_path, vc, config):
+    from gamingcrypt.ui.storage_page import StoragePage
+
+    stick = encrypted_stick(tmp_path, vc, drive_password(config), config)
+    drives = Drives(run=Lsblk(stick.mount))
+    drives.look()  # (GamingCrypt started again while unlocked: the code isn't known)
+    locked = drives.unusable[0]
+    page = StoragePage(lambda: None, emulation_fn=lambda: None)
+    page.config_fn, page.code_check_fn, page.code_method_fn = lambda: config, check_code(config), lambda: "pin"
+    qtbot.addWidget(page)
+    page.show()
+    looked = []
+    page.drives_changed.connect(lambda: looked.append(1))
+    page.set_drives([], [locked])
+    unlock = page.drive_rows[("unusable", "/dev/sdb", "/dev/sdb1")][3]
+    assert unlock.text() == "🔓 Unlock…"
+    unlock.click()
+    prompt = page.code_prompt
+    assert prompt.question.text() == "It's encrypted with your code. Enter your PIN."
+    prompt.entry.try_code("1234")
+    qtbot.waitUntil(lambda: page.code_prompt is None)
+    assert stick_crypt.keys.password == drive_password(config) and looked == [1]
+    assert drives.look()[0].encrypted  # open now
 
 
 def test_format_dialog_shows_the_container_being_made(qtbot, tmp_path, config, monkeypatch):
     from gamingcrypt.ui.format_drive import FormatConfirm
 
     box = FormatConfirm(Removable(tmp_path, "usb", "STICK", disk="/dev/sdb"), formats=["exfat"],
-                        encrypt=lambda stick, progress=None: stick)
+                        encrypt=lambda stick, password, progress=None: stick, check_code=check_code(config))
     qtbot.addWidget(box)
+    box.password = "pw"
     box.choose("exfat")
     box.working, box.started_at = True, box.clock()
     box.reached += ["check", "unmount", "table", "filesystem", "mount", "encrypt"]
@@ -435,3 +492,33 @@ def test_a_game_page_says_when_its_stick_is_out_and_comes_back(qtbot, tmp_path):
     qtbot.waitUntil(lambda: not page.gone)
     assert page.main_button.isEnabled() and page.game.path == moved.mount / "roms" / "snes" / "Earthbound (USA).sfc"
     assert page.status.text() == ""
+
+
+# --- the app checks the code -----------------------------------------------------------------------
+
+def test_the_code_is_checked_before_its_used(qtbot, config, monkeypatch):
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.unlock import verifier
+
+    app = SimpleNamespace(config=config, verifier=verifier.make("1234"))
+    monkeypatch.setattr(users, "current", lambda _cfg: SimpleNamespace(id=users.ADMIN, admin=True))
+    assert MainWindow.password_for_code(app, "1234") == drive_password(config)
+    assert MainWindow.password_for_code(app, "4321") is None  # not the code that unlocked
+    app.verifier = None  # (its check is gone: the admin's key slot says)
+    assert MainWindow.password_for_code(app, "1234") == drive_password(config)
+    assert MainWindow.password_for_code(app, "4321") is None
+    config["unlock"].pop("keyring")  # nothing to check it with at all: not taken on trust
+    assert MainWindow.password_for_code(app, "1234") is None
+    stick_crypt.keys.set(drive_password(config))  # ... unless the password is known: it has to match
+    assert MainWindow.password_for_code(app, "1234") == drive_password(config)
+    assert MainWindow.password_for_code(app, "4321") is None
+
+
+def test_a_users_code_gives_the_drives_password(config, monkeypatch):
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.unlock import verifier
+
+    monkeypatch.setattr(users, "current", lambda _cfg: SimpleNamespace(id="mia", admin=False))
+    app = SimpleNamespace(config=config, verifier=verifier.make("9876"))
+    assert MainWindow.password_for_code(app, "9876") == drive_password(config)
+    assert MainWindow.password_for_code(app, "1234") is None  # the admin's isn't Mia's
