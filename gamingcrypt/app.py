@@ -2187,6 +2187,10 @@ class MainWindow(QMainWindow):
         return self
 
     def switch_tab(self, delta: int) -> None:
+        """LB / RB: the next tab - not while a box is over the screen (a question, how far formatting
+        or moving is, the code): it's answered or closed first, and it stays where it was."""
+        if self.nav_root() is not self:
+            return
         if self.shell is not None and self.stack.currentWidget() is self.shell:
             self.shell.cycle_tab(delta)
 

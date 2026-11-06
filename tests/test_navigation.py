@@ -782,3 +782,38 @@ def test_a_button_that_goes_away_when_pressed_leaves_the_highlight_close_by(qtbo
     qtbot.wait(300)
     assert window.focusWidget() in (buttons[11], buttons[13])
     assert abs(bar.value() - before) < 120  # (it's taken out of the list: the rest moves up a little)
+
+
+def test_no_tab_switching_while_a_box_is_over_the_screen(qtbot):
+    """Formatting a stick, moving a game, a question: LB / RB don't change the tab under it."""
+    import copy
+    from pathlib import Path
+
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.config import DEFAULTS
+    from gamingcrypt.system.removable import Removable
+    from gamingcrypt.ui.format_drive import FormatConfirm
+    from gamingcrypt.ui.games_tab import GamesTab
+    from gamingcrypt.ui.move_game import over_everything
+    from tests.fakes import FakeService
+
+    window = MainWindow(copy.deepcopy(DEFAULTS), lambda c: None,
+                        page_factory=lambda cfg: {"Games": GamesTab(FakeService())})
+    qtbot.addWidget(window)
+    window.resize(1280, 800)
+    window.show()
+    window.show_shell()
+    qtbot.waitExposed(window)
+    nav = GamepadNavigator(window, tab_switch=window.switch_tab)
+    start = window.shell.current_tab
+    box = FormatConfirm(Removable(Path("/x"), "usb", "STICK", disk="/dev/sdb"), formats=["exfat"])
+    modal = over_everything(window.shell, box, lambda: None)
+    box.working = True  # (how far formatting is: on screen)
+    for button in (e.BTN_TR, e.BTN_TL, e.BTN_TR):
+        press(nav, button)
+    window.switch_tab(1)  # (also not by the keyboard's / app's own way)
+    assert window.shell.current_tab == start and modal.isVisible()
+    modal.close_modal()
+    qtbot.waitUntil(lambda: modal.isHidden() or not modal.isVisible())
+    press(nav, e.BTN_TR)
+    assert window.shell.current_tab != start  # closed: LB / RB as ever

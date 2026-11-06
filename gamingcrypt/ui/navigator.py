@@ -752,6 +752,10 @@ class GamepadNavigator(QObject):
         return False
 
     def switch_tab(self, delta: int) -> None:
-        if self.tab_switch is not None:
-            feedback.play("tab")
-            self.tab_switch(delta)
+        if self.tab_switch is None:
+            return
+        root = getattr(self.window, "nav_root", None)
+        if callable(root) and root() is not self.window:
+            return  # (a box over the screen: the tabs wait - no sound either, nothing happens)
+        feedback.play("tab")
+        self.tab_switch(delta)
