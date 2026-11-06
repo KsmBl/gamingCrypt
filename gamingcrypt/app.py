@@ -2305,17 +2305,36 @@ class MainWindow(QMainWindow):
 
         def done(found) -> None:
             self._looking_for_drives = False
+            unusable = list(getattr(self.drives, "unusable", []))
+            self.drives_arrived(found, unusable)
             games = self.shell.pages.get("Games") if self.shell is not None else None
             if hasattr(games, "set_drives"):
                 games.set_drives(found)
             storage = getattr(self.shell.pages.get("Settings"), "storage_page", None) if self.shell else None
             if hasattr(storage, "set_drives"):
-                storage.set_drives(found)
+                storage.set_drives(found, unusable)
 
         def failed(_exc) -> None:
             self._looking_for_drives = False
 
         run_async(self.drives.look, done, failed, owner=self)
+
+    def drives_arrived(self, found: list, unusable: list) -> None:
+        """A stick that's new since the last look: a notice that it's ready (mounted, its games in the
+        list) - or why it can't be used. Not for the ones already in when the drive was unlocked."""
+        from gamingcrypt.system.removable import LABELS
+
+        seen = {(d.disk or d.device or str(d.mount), d.usable) for d in [*found, *unusable]}
+        known = getattr(self, "_drives_seen", None)
+        self._drives_seen = seen
+        if known is None:
+            return  # the first look: what's in already
+        for drive in found:
+            if (drive.disk or drive.device or str(drive.mount), True) not in known:
+                self.notify(f"{drive.name} ({LABELS[drive.kind]}) is ready - its games are in the list", "🔌")
+        for drive in unusable:
+            if (drive.disk or drive.device or str(drive.mount), False) not in known:
+                self.notify(f"{drive.name} can't be used: {drive.problem}. Settings → Storage formats it", "⚠")
 
     def arrived(self, found: list) -> None:
         from gamingcrypt.arrivals import describe

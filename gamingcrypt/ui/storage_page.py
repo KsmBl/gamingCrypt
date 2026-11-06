@@ -28,6 +28,7 @@ class StoragePage(QWidget):
         self.report: storage.Report | None = None
         self.library_fn: Callable[[], object] = lambda: None  # set by the app: the Games tab (roots, drives)
         self.drives: list = []  # USB sticks, USB drives, SD cards that are in
+        self.unusable: list = []  # ... in, but not usable (not formatted, couldn't be mounted): why
         self.mover = None  # the Move question that's open
         self.formatter = None  # the Format question that's open
         layout = QVBoxLayout(self)
@@ -293,9 +294,15 @@ class StoragePage(QWidget):
             self.pc_rows[game.appid] = [text, move]
 
     # USB sticks, USB drives, SD cards ----------------------------------------------------------
-    def set_drives(self, drives: list) -> None:
-        """Put in / taken out (the app looks every few seconds): shown, and the games on them."""
+    def set_drives(self, drives: list, unusable: list | tuple = ()) -> None:
+        """Put in / taken out (the app looks every few seconds): shown, and the games on them.
+        unusable: sticks that are in but can't be used (not formatted, not mountable) - to be formatted."""
+        unusable_key = [(d.disk, d.device, d.problem) for d in unusable]
+        if list(drives) == self.drives and unusable_key == [(d.disk, d.device, d.problem) for d in self.unusable]:
+            return
+        self.unusable = list(unusable)
         if list(drives) == self.drives:
+            self.show_drives()
             return
         self.drives = list(drives)
         self.show_drives()
@@ -310,7 +317,21 @@ class StoragePage(QWidget):
 
         _clear(self.drive_grid)
         self.drive_rows = {}
-        self.drives_heading.setVisible(bool(self.drives))
+        self.drives_heading.setVisible(bool(self.drives or self.unusable))
+        for row, drive in enumerate(self.unusable, start=len(self.drives)):
+            size = f"  ·  {format_size(drive.size)}" if drive.size else ""
+            text = QLabel(f"{drive.name}\n{LABELS[drive.kind]}{size}")
+            problem = QLabel(f"⚠ {drive.problem}")
+            problem.setObjectName("status")
+            problem.setWordWrap(True)
+            set_status(problem, f"⚠ {drive.problem}", error=True)
+            button = big_button("⚠ Format…", "danger")
+            button.clicked.connect(lambda _c=False, d=drive: self.ask_format(d))
+            button.setVisible(self.can_delete())
+            self.drive_grid.addWidget(text, row, 0)
+            self.drive_grid.addWidget(problem, row, 1)
+            self.drive_grid.addWidget(button, row, 2)
+            self.drive_rows[("unusable", drive.disk, drive.device)] = [text, problem, button]
         for row, drive in enumerate(self.drives):
             try:
                 usage = shutil.disk_usage(drive.mount)

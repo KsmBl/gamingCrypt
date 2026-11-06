@@ -15,6 +15,7 @@ import logging
 import os
 import re
 import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -38,6 +39,11 @@ class Removable:
     fstype: str = field(default="", compare=False)  # "exfat", "vfat", "ext4" ...
     disk: str = field(default="", compare=False)  # the whole stick: /dev/sdb
     size: int = field(default=0, compare=False)  # the whole stick's, in bytes
+    problem: str = field(default="", compare=False)  # not usable (not mounted): why - "" when it is
+
+    @property
+    def usable(self) -> bool:
+        return not self.problem
 
     @property
     def name(self) -> str:
@@ -94,10 +100,18 @@ def _partitions(disk: dict) -> list[dict]:
     return [c for c in disk.get("children") or [] if c.get("type") == "part"]
 
 
-def parse(listing: dict, exclude: tuple[str, ...] = ()) -> tuple[list[Removable], list[dict]]:
-    """lsblk's JSON: the mounted removable drives and the partitions that could be mounted.
+def _unusable(disk: dict, kind: str, problem: str, part: dict | None = None) -> Removable:
+    """A stick that's in but has nothing to mount (yet): shown in Settings → Storage to be formatted."""
+    part = part or disk
+    return Removable(Path(), kind, (part.get("label") or "").strip(), part.get("path") or "", part.get("fstype") or "",
+                     disk.get("path") or "", int(disk.get("size") or 0), problem)
+
+
+def parse(listing: dict, exclude: tuple[str, ...] = ()) -> tuple[list[Removable], list[dict], list[Removable]]:
+    """lsblk's JSON: the mounted removable drives, the partitions that could be mounted, and the
+    sticks with nothing to mount (no file system, or one that can't be used: problem says).
     exclude: mount points that are never one of them (the encrypted drive)."""
-    found, unmounted = [], []
+    found, unmounted, blank = [], [], []
     excluded = [os.path.realpath(p) for p in exclude if p]
     for disk in listing.get("blockdevices") or []:
         if disk.get("type") != "disk":
@@ -109,6 +123,17 @@ def parse(listing: dict, exclude: tuple[str, ...] = ()) -> tuple[list[Removable]
         everything = [disk, *partitions, *(c for p in partitions for c in p.get("children") or [])]
         if any(point in SYSTEM_MOUNTS for node in everything for point in _mounts(node)):
             continue  # the device's own system is on it
+        if not any(_mounts(n) for n in everything) and not any((p.get("fstype") or "") in MOUNTABLE
+                                                               for p in partitions):
+            if not int(disk.get("size") or 0):
+                continue  # a card reader without a card
+            if any(p.get("fstype") == "crypto_LUKS" or n.get("type") == "crypt" for n in everything
+                   for p in [n]):
+                continue  # encrypted: not ours to touch (maybe even the games drive itself)
+            known = [p.get("fstype") for p in partitions if p.get("fstype")]
+            blank.append(_unusable(disk, kind, f"Its file system ({known[0]}) can't be used - format it" if known
+                                   else "Not formatted - format it to use it"))
+            continue
         for part in partitions:
             points = _mounts(part)
             if not points:
@@ -121,7 +146,7 @@ def parse(listing: dict, exclude: tuple[str, ...] = ()) -> tuple[list[Removable]
                 continue
             found.append(Removable(Path(point), kind, (part.get("label") or "").strip(), part.get("path") or "",
                                    part.get("fstype") or "", disk.get("path") or "", int(disk.get("size") or 0)))
-    return found, unmounted
+    return found, unmounted, blank
 
 
 def _run(*args, **kwargs):
@@ -135,39 +160,52 @@ class Drives:
         self.exclude = exclude
         self.mount = mount
         self.run = run or (lambda *a, **k: _run(*a, **k))
-        self.tried: set[str] = set()  # partitions that wouldn't mount: not tried again until they're out
+        self.tried: dict[str, str] = {}  # partitions that wouldn't mount -> why: not tried again until they're out
+        self.unusable: list[Removable] = []  # (after look()) sticks that are in but can't be used: why
 
     def look(self) -> list[Removable]:
+        """The sticks that are mounted - a new one is mounted first, ready for games. The ones that
+        are in but couldn't be mounted (or have no file system) are in self.unusable."""
         try:
             out = self.run(LSBLK, capture_output=True, text=True, timeout=10)
             listing = json.loads(out.stdout or "{}")
         except (OSError, ValueError, subprocess.SubprocessError):
             return []
-        found, unmounted = parse(listing, self.exclude)
+        found, unmounted, blanks = parse(listing, self.exclude)
+        disks = {d.get("path"): d for d in listing.get("blockdevices") or []}
         present = {p.get("path") for p in unmounted}
-        self.tried &= present  # taken out: tried again when it's back
-        if self.mount:
-            for part in unmounted:
-                path = part.get("path") or ""
-                if not path or path in self.tried:
-                    continue
-                self.tried.add(path)
-                if self._mount(path):
+        self.tried = {path: why for path, why in self.tried.items() if path in present}  # out: tried again when back
+        unusable = []
+        for part in unmounted:
+            path = part.get("path") or ""
+            disk = next((d for d in disks.values() if part is d or part in (d.get("children") or [])), {})
+            if not path or disk.get("path") in BUSY:
+                continue  # (being formatted: not mounted in between)
+            if self.mount and path not in self.tried:
+                why = self._mount(path)
+                if not why:
                     return self.look()  # mounted: found with its mount point
+                self.tried[path] = why
+            if path in self.tried:
+                unusable.append(_unusable(disk, kind_of(disk) or "usb", f"Couldn't be mounted: {self.tried[path]}",
+                                          part))
+        self.unusable = [d for d in [*blanks, *unusable] if d.disk not in BUSY]
         return sorted(found, key=lambda d: str(d.mount))
 
-    def _mount(self, device: str) -> bool:
+    def _mount(self, device: str) -> str:
+        """"" when it's mounted - otherwise why not."""
         try:
             out = self.run(["udisksctl", "mount", "--no-user-interaction", "-b", device],
                            capture_output=True, text=True, timeout=30)
         except (OSError, subprocess.SubprocessError) as exc:
             log.info("couldn't mount %s: %s", device, exc)
-            return False
+            return str(exc)
         if out.returncode != 0:
-            log.info("couldn't mount %s: %s", device, (out.stderr or "").strip())
-            return False
+            why = (out.stderr or "").strip().splitlines()
+            log.info("couldn't mount %s: %s", device, why)
+            return re.sub(r"^Error mounting [^:]+: (GDBus\.Error:[\w.]+: )?", "", why[-1]) if why else "it failed"
         log.info("mounted %s: %s", device, (out.stdout or "").strip())
-        return True
+        return ""
 
 
 # formatting ----------------------------------------------------------------------------------
@@ -177,6 +215,7 @@ FORMATS = {  # file system -> (what it's good for, its partition type in an MBR 
               "0x07", "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7"),
     "ext4": ("Linux only - Linux games start from it", "0x83", "0fc63daf-8483-4772-8e79-3d69d8477de4"),
 }
+BUSY: set[str] = set()  # disks being formatted (/dev/sdb): nothing mounts them meanwhile
 MBR_UP_TO = 2 * 1024 ** 4  # bigger: a GPT table (an MBR can't reach past 2 TiB)
 TOOL_FOLDERS = ("/usr/bin", "/usr/sbin", "/sbin", "/bin")
 
@@ -223,6 +262,48 @@ STEPS = (("check", "Checking the drive"), ("unmount", "Unmounting it"), ("table"
 
 
 def format_drive(drive: Removable, fstype: str, label: str, run=None, layout=True, step=None) -> Removable:
+    """Everything on the stick is deleted (see _format) - and meanwhile the app doesn't mount it again
+    (it looks every few seconds: a stick mounted between unmounting and formatting is busy)."""
+    BUSY.add(drive.disk)
+    try:
+        return _format(drive, fstype, label, run, layout, step)
+    finally:
+        BUSY.discard(drive.disk)
+
+
+def _unmount(run, drive: Removable, disk: dict) -> None:
+    """Every mounted file system on the stick, once each (a stick without a partition table has its file
+    system on the disk itself: it's the disk and its "partition" at once)."""
+    nodes = {}
+    for node in [disk, *(disk.get("children") or []), *(c for p in disk.get("children") or []
+                                                         for c in p.get("children") or [])]:
+        if node.get("path") and _mounts(node):
+            nodes.setdefault(node["path"], node)
+    for path in nodes:
+        out = run(["udisksctl", "unmount", "--no-user-interaction", "-b", path], capture_output=True, text=True,
+                  timeout=60)
+        why = (out.stderr or "").strip()
+        if out.returncode != 0 and "not mounted" not in why.lower():  # (gone already: fine)
+            raise FormatError(f"{drive.name} is in use - close what's open on it ({why or 'busy'})")
+
+
+def _mount_new(run, device: str) -> Path:
+    """The new partition mounted - or where the desktop's automounter was quicker to mount it."""
+    for _try in range(5):
+        out = run(["udisksctl", "mount", "--no-user-interaction", "-b", device], capture_output=True, text=True,
+                  timeout=60)
+        text = f"{out.stdout or ''}\n{out.stderr or ''}"
+        mounted = re.search(r"Mounted \S+ at (.+?)\.?$", (out.stdout or "").strip(), re.MULTILINE)
+        if out.returncode == 0 and mounted:
+            return Path(mounted.group(1))
+        already = re.search(r"already mounted at [`'\"](.+?)[`'\"]", text)
+        if already:
+            return Path(already.group(1))
+        time.sleep(1)  # (the kernel may still be reading the new partition table)
+    raise FormatError(f"It was formatted, but couldn't be mounted: {(out.stderr or '').strip()}")
+
+
+def _format(drive: Removable, fstype: str, label: str, run=None, layout=True, step=None) -> Removable:
     """Everything on the stick is deleted: a new partition table with one partition, the whole
     stick, in fstype. Mounted again, with the folders for games made (layout) - the stick as it is now.
     step(key): each of STEPS as it starts (from this thread)."""
@@ -241,13 +322,7 @@ def format_drive(drive: Removable, fstype: str, label: str, run=None, layout=Tru
     if disk is None:
         raise FormatError(f"{drive.name} isn't there any more")
     step("unmount")
-    for part in [disk, *_partitions(disk)]:
-        if _mounts(part):
-            out = run(["udisksctl", "unmount", "--no-user-interaction", "-b", part["path"]],
-                      capture_output=True, text=True, timeout=60)
-            if out.returncode != 0:
-                raise FormatError(f"{drive.name} is in use - close what's open on it "
-                                  f"({(out.stderr or '').strip() or 'busy'})")
+    _unmount(run, drive, disk)
     table = "dos" if int(disk.get("size") or 0) <= MBR_UP_TO else "gpt"
     kind = FORMATS[fstype][1 if table == "dos" else 2]
     step("table")
@@ -260,12 +335,7 @@ def format_drive(drive: Removable, fstype: str, label: str, run=None, layout=Tru
     if not device:
         raise FormatError("It was formatted, but the new partition wasn't found")
     step("mount")
-    out = run(["udisksctl", "mount", "--no-user-interaction", "-b", device], capture_output=True, text=True,
-              timeout=60)
-    mounted = re.search(r" at (.+?)\.?$", (out.stdout or "").strip())
-    if out.returncode != 0 or not mounted:
-        raise FormatError(f"It was formatted, but couldn't be mounted: {(out.stderr or '').strip()}")
-    now = Removable(Path(mounted.group(1)), drive.kind, label, device, fstype, drive.disk, drive.size)
+    now = Removable(_mount_new(run, device), drive.kind, label, device, fstype, drive.disk, drive.size)
     if layout:
         step("folders")
         for system in SYSTEMS:

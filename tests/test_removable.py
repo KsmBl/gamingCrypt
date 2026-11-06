@@ -60,7 +60,7 @@ def test_parse_mounted_unmounted_and_left_out():
                                                        "mountpoints": ["/home/me/GamingCrypt"]}]},
         {**disk("sdf"), "fstype": "vfat", "mountpoints": ["/run/media/me/STICK"]},  # no partition table
     ]}
-    found, unmounted = parse(listing, exclude=("/home/me/GamingCrypt",))
+    found, unmounted, blank = parse(listing, exclude=("/home/me/GamingCrypt",))
     assert found == [Removable(Path("/run/media/me/GAMES"), "usb", "GAMES"),
                      Removable(Path("/run/media/me/STICK"), "usb", "")]
     assert found[0].name == "GAMES" and found[1].name == "USB stick"
@@ -272,3 +272,145 @@ def test_badge_is_drawn(qtbot, kind):
     badged = cover.grab().toImage()
     assert badged.pixelColor(200 - 12, 12) != plain.pixelColor(200 - 12, 12)  # the top right corner
     assert badged.pixelColor(100, 150) == plain.pixelColor(100, 150)  # the picture itself as it was
+
+
+# --- sticks that can't be used, mounting them, and the notice ---------------------------------
+
+def test_sticks_with_nothing_to_mount():
+    listing = {"blockdevices": [
+        disk("sdb"),  # brand new: no file system at all
+        disk("sdc", children=[part("sdc1", fstype="hfsplus")]),  # a Mac's
+        disk("sdd", children=[part("sdd1", fstype="crypto_LUKS")]),  # encrypted: not ours to touch
+        disk("sde", size=0, model="SD/MMC Card Reader"),  # a card reader with no card in it
+    ]}
+    found, unmounted, blank = parse(listing)
+    assert found == [] and unmounted == []
+    assert [(d.disk, d.problem) for d in blank] == [
+        ("/dev/sdb", "Not formatted - format it to use it"),
+        ("/dev/sdc", "Its file system (hfsplus) can't be used - format it")]
+    assert not blank[0].usable and blank[0].name == "USB stick"
+
+
+class Mounter:
+    """A stick udisks won't mount (as when polkit says no)."""
+
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, args, **_kwargs):
+        self.calls.append(args[0])
+        if args[0] == "udisksctl":
+            return subprocess.CompletedProcess(args, 1, "", "Error mounting /dev/sdb1: GDBus.Error:org.freedesktop."
+                                                            "UDisks2.Error.NotAuthorizedCanObtain: Not authorized")
+        listing = {"blockdevices": [disk("sdb", children=[part("sdb1", label="STICK")])]}
+        return subprocess.CompletedProcess(args, 0, json.dumps(listing), "")
+
+
+def test_one_that_wont_mount_says_why():
+    system = Mounter()
+    drives = Drives(run=system)
+    assert drives.look() == []
+    assert [d.problem for d in drives.unusable] == ["Couldn't be mounted: Not authorized"]
+    assert drives.unusable[0].device == "/dev/sdb1" and drives.unusable[0].disk == "/dev/sdb"
+    drives.look()
+    assert system.calls.count("udisksctl") == 1 and len(drives.unusable) == 1  # not tried again, still said
+
+
+def test_a_stick_being_formatted_isnt_mounted_in_between():
+    system = FakeSystem()
+    removable.BUSY.add("/dev/sdb")
+    try:
+        assert Drives(run=system).look() == []
+        assert "udisksctl" not in system.calls
+    finally:
+        removable.BUSY.discard("/dev/sdb")
+
+
+class StickWithoutTable:
+    """A stick with its file system right on the disk (/dev/sda, no partition table), mounted."""
+
+    def __init__(self, mount, already=False, unmount_says=""):
+        self.mount, self.already, self.unmount_says = mount, already, unmount_says
+        self.calls = []
+
+    def __call__(self, args, **_kwargs):
+        self.calls.append(args)
+        if args[0] == "lsblk":
+            listing = {"blockdevices": [{**disk("sda"), "fstype": "vfat", "children": [],
+                                         "mountpoints": ["/run/media/me/OLD"]}]}
+            return subprocess.CompletedProcess(args, 0, json.dumps(listing), "")
+        if args[:2] == ["udisksctl", "unmount"]:
+            return subprocess.CompletedProcess(args, 1 if self.unmount_says else 0, "", self.unmount_says)
+        if args[0] == "gdbus":
+            assert removable.BUSY == {"/dev/sda"}  # (the app doesn't mount it meanwhile)
+            return subprocess.CompletedProcess(args, 0, "(objectpath '/org/freedesktop/UDisks2/block_devices/sda1',)", "")
+        if args[:2] == ["udisksctl", "mount"]:
+            if self.already:  # the desktop's automounter was quicker
+                return subprocess.CompletedProcess(args, 1, "", "Error mounting /dev/sda1: GDBus.Error:org.freedesktop."
+                                                   f"UDisks2.Error.AlreadyMounted: Device /dev/sda1 is already "
+                                                   f"mounted at `{self.mount}'.")
+            return subprocess.CompletedProcess(args, 0, f"Mounted /dev/sda1 at {self.mount}", "")
+        raise AssertionError(args)
+
+
+def test_format_a_stick_without_a_partition_table(tmp_path):
+    stick = Removable(Path("/run/media/me/OLD"), "usb", "", "/dev/sda", "vfat", "/dev/sda", 16 * 1024 ** 3)
+    system = StickWithoutTable(tmp_path / "NEW")
+    now = removable.format_drive(stick, "exfat", "", run=system)
+    unmounts = [c for c in system.calls if c[:2] == ["udisksctl", "unmount"]]
+    assert [c[-1] for c in unmounts] == ["/dev/sda"]  # once - not again as its own "partition"
+    assert now.mount == tmp_path / "NEW" and now.device == "/dev/sda1" and removable.BUSY == set()
+
+
+def test_not_mounted_any_more_is_fine_and_the_automounter_may_be_quicker(tmp_path):
+    stick = Removable(Path("/x"), "usb", "", "/dev/sda", "vfat", "/dev/sda")
+    system = StickWithoutTable(tmp_path / "AUTO", already=True,
+                               unmount_says="Error unmounting /dev/sda: GDBus.Error:org.freedesktop.UDisks2.Error."
+                                            "NotMounted: Device `/dev/sda' is not mounted")
+    assert removable.format_drive(stick, "ext4", "", run=system, layout=False).mount == tmp_path / "AUTO"
+
+
+def test_a_failed_format_lets_it_be_mounted_again(tmp_path):
+    stick = Removable(Path("/x"), "usb", "", "/dev/sda", "vfat", "/dev/sda")
+    with pytest.raises(removable.FormatError):
+        removable.format_drive(stick, "ext4", "", run=StickWithoutTable(tmp_path, unmount_says="target is busy"))
+    assert removable.BUSY == set()
+
+
+def test_a_new_stick_is_announced(tmp_path):
+    from types import SimpleNamespace
+
+    from gamingcrypt.app import MainWindow as App
+
+    said = []
+    app = SimpleNamespace(notify=lambda text, icon: said.append((icon, text)))
+    old = Removable(tmp_path / "OLD", "usb", "OLD", "/dev/sdb1", disk="/dev/sdb")
+    App.drives_arrived(app, [old], [])
+    assert said == []  # in already when the drive was unlocked
+    new = Removable(tmp_path / "GAMES", "sd", "GAMES", "/dev/mmcblk1p1", disk="/dev/mmcblk1")
+    blank = Removable(Path(), "usb", "", "/dev/sdc", disk="/dev/sdc", problem="Not formatted - format it to use it")
+    App.drives_arrived(app, [old, new], [blank])
+    assert said == [("🔌", "GAMES (SD card) is ready - its games are in the list"),
+                    ("⚠", "USB stick can't be used: Not formatted - format it to use it. Settings → Storage formats it")]
+    App.drives_arrived(app, [old, new], [blank])
+    assert len(said) == 2  # once
+
+
+def test_storage_lists_a_stick_that_cant_be_used(qtbot, monkeypatch):
+    from gamingcrypt.ui.storage_page import StoragePage
+
+    page = StoragePage(lambda: None, emulation_fn=lambda: None)
+    qtbot.addWidget(page)
+    page.show()
+    blank = Removable(Path(), "usb", "", "/dev/sdc", disk="/dev/sdc", size=8 * 1024 ** 3,
+                      problem="Not formatted - format it to use it")
+    page.set_drives([], [blank])
+    assert page.drives_heading.isVisible()
+    text, problem, button = page.drive_rows[("unusable", "/dev/sdc", "/dev/sdc")]
+    assert text.text() == "USB stick\nUSB stick  ·  8.0 GB" and "Not formatted" in problem.text()
+    monkeypatch.setattr(removable, "formats", lambda: ["exfat"])
+    button.click()
+    assert page.formatter is not None and page.formatter.drive is blank
+    page.formatter.cancel_button.click()
+    page.set_drives([], [])
+    assert not page.drives_heading.isVisible()
