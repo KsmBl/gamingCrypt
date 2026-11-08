@@ -111,7 +111,7 @@ def target(game, place: Place, emulation=None) -> Path:
 def places(game, drives: list, emulation=None) -> list[Place]:
     """Where the game can go from where it is: every other drive that's in, and back onto the
     encrypted one when it's on a stick."""
-    found = [Place(d) for d in drives if not is_on(game, d)]
+    found = [Place(d) for d in drives if not is_on(game, d) and not getattr(d, "read_only", "")]  # (nothing goes on)
     if getattr(game, "removable", ""):
         if isinstance(game, RomGame) and emulation is None:
             return found

@@ -41,6 +41,9 @@ class Removable:
     size: int = field(default=0, compare=False)  # the whole stick's, in bytes
     problem: str = field(default="", compare=False)  # not usable (not mounted): why - "" when it is
     uuid: str = field(default="", compare=False)  # its file system's id: which stick it is (not its name)
+    # nothing can be written to it: "locked" (an SD card's write protection switch) or "damaged" (mounted
+    # read-only: it wasn't ejected safely, its file system needs a repair) - "" when it can be
+    read_only: str = field(default="", compare=False)
     container: str = field(default="", compare=False)  # encrypted: its VeraCrypt container (stick_crypt.py)
     host: Path | None = field(default=None, compare=False)  # ... and where the stick itself is mounted
 
@@ -114,10 +117,20 @@ def _unusable(disk: dict, kind: str, problem: str, part: dict | None = None) -> 
                      disk.get("path") or "", int(disk.get("size") or 0), problem)
 
 
-def parse(listing: dict, exclude: tuple[str, ...] = ()) -> tuple[list[Removable], list[dict], list[Removable]]:
+READ_ONLY = {"locked": "Write-protected - move the switch on its side to unlock it, then put it in again",
+             "damaged": "Read-only - it was taken out without ejecting it: repair it"}
+
+
+def _yes(value) -> bool:
+    return value in (True, 1, "1", "true")
+
+
+def parse(listing: dict, exclude: tuple[str, ...] = (), ro_mounts: set | frozenset = frozenset()
+          ) -> tuple[list[Removable], list[dict], list[Removable]]:
     """lsblk's JSON: the mounted removable drives, the partitions that could be mounted, and the
     sticks with nothing to mount (no file system, or one that can't be used: problem says).
-    exclude: mount points that are never one of them (the encrypted drive)."""
+    exclude: mount points that are never one of them (the encrypted drive). ro_mounts: the mount
+    points mounted read-only (read_only_mounts())."""
     found, unmounted, blank = [], [], []
     excluded = [os.path.realpath(p) for p in exclude if p]
     for disk in listing.get("blockdevices") or []:
@@ -151,10 +164,29 @@ def parse(listing: dict, exclude: tuple[str, ...] = ()) -> tuple[list[Removable]
             real = os.path.realpath(point)
             if any(real == e or real.startswith(e + os.sep) or e.startswith(real + os.sep) for e in excluded):
                 continue
+            locked = _yes(disk.get("ro")) or _yes(part.get("ro"))
+            read_only = "locked" if locked else "damaged" if point in ro_mounts else ""
             found.append(Removable(Path(point), kind, (part.get("label") or "").strip(), part.get("path") or "",
                                    part.get("fstype") or "", disk.get("path") or "", int(disk.get("size") or 0),
-                                   uuid=(part.get("uuid") or "").lower()))
+                                   uuid=(part.get("uuid") or "").lower(), read_only=read_only))
     return found, unmounted, blank
+
+
+MOUNTS = Path("/proc/self/mounts")
+
+
+def read_only_mounts(mounts: Path | None = None) -> set[str]:
+    """The mount points mounted read-only (ro among their options)."""
+    found = set()
+    try:
+        lines = (mounts or MOUNTS).read_text().splitlines()
+    except OSError:
+        return found
+    for line in lines:
+        parts = line.split()
+        if len(parts) >= 4 and "ro" in parts[3].split(","):
+            found.add(parts[1].replace("\\040", " ").replace("\\011", "\t"))
+    return found
 
 
 def _run(*args, **kwargs):
@@ -183,7 +215,7 @@ class Drives:
             listing = json.loads(out.stdout or "{}")
         except (OSError, ValueError, subprocess.SubprocessError):
             return []
-        found, unmounted, blanks = parse(listing, self.exclude)
+        found, unmounted, blanks = parse(listing, self.exclude, read_only_mounts())
         disks = {d.get("path"): d for d in listing.get("blockdevices") or []}
         present = {p.get("path") for p in unmounted}
         self.tried = {path: why for path, why in self.tried.items() if path in present}  # out: tried again when back
@@ -221,6 +253,9 @@ class Drives:
             ident = stick_crypt.container_id(volume)
             present.add(ident)
             locked = replace(stick, container=volume, host=stick.mount)
+            if stick.read_only:  # (VeraCrypt can't open it so: it would want to write)
+                unusable.append(replace(locked, problem=READ_ONLY[stick.read_only]))
+                continue
             if password is None:
                 if stick_crypt.is_open(volume):
                     shown.append(replace(locked, mount=stick_crypt.mount_dir(volume), fstype="ext4"))
@@ -420,3 +455,41 @@ def _format(drive: Removable, fstype: str, label: str, run=None, layout=True, st
         now.windows.mkdir(exist_ok=True)
         now.linux.mkdir(exist_ok=True)
     return now
+
+
+# repairing ----------------------------------------------------------------------------------
+REPAIR_STEPS = (("unmount", "Unmounting it"), ("repair", "Checking and repairing its file system"),
+                ("mount", "Mounting it again"))
+
+
+def repair(drive: Removable, run=None, step=None) -> Removable:
+    """A stick mounted read-only because it wasn't ejected safely: its file system checked and
+    repaired (udisks - fsck), mounted again. The stick as it is now (RepairError: why not)."""
+    run = run or (lambda *a, **k: _run(*a, **k))
+    step = step or (lambda _key: None)
+    if drive.read_only == "locked":
+        raise FormatError(f"{drive.name} is write-protected: move the switch on its side, then put it in again")
+    device = drive.device
+    if not device:
+        raise FormatError("It isn't known which stick that is")
+    BUSY.add(drive.disk)
+    try:
+        step("unmount")
+        if drive.container:
+            from gamingcrypt.system import stick_crypt
+
+            if not stick_crypt.close(drive.container):
+                raise FormatError(f"{drive.name}'s encrypted container couldn't be closed - close what's open on it")
+        out = run(["udisksctl", "unmount", "--no-user-interaction", "-b", device], capture_output=True, text=True,
+                  timeout=60)
+        why = (out.stderr or "").strip()
+        if out.returncode != 0 and "not mounted" not in why.lower():
+            raise FormatError(f"{drive.name} is in use - close what's open on it ({why or 'busy'})")
+        step("repair")
+        answer = _gdbus(run, device, "Filesystem.Repair", "{}")
+        if "true" not in answer.lower():
+            raise FormatError("Its file system couldn't be repaired - format it to use it again")
+        step("mount")
+        return replace(drive, mount=_mount_new(run, device), read_only="", container="", host=None)
+    finally:
+        BUSY.discard(drive.disk)

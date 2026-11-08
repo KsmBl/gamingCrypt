@@ -33,6 +33,7 @@ class StoragePage(QWidget):
         self.code_check_fn: Callable[[str], str | None] | None = None
         self.code_method_fn: Callable[[], str] = lambda: "password"
         self.code_prompt = None  # the code asked for to open an encrypted stick
+        self.repairer = None  # the Repair box that's open
         self.unlocker = None  # the Unlock question that's open (a stick encrypted with another code)
         self.drives: list = []  # USB sticks, USB drives, SD cards that are in
         self.unusable: list = []  # ... in, but not usable (not formatted, couldn't be mounted): why
@@ -334,11 +335,13 @@ class StoragePage(QWidget):
             set_status(problem, f"⚠ {drive.problem}", error=True)
             button = big_button("⚠ Format…", "danger")
             button.clicked.connect(lambda _c=False, d=drive: self.ask_format(d))
-            button.setVisible(self.can_delete())
+            button.setVisible(self.can_delete() and drive.read_only != "locked")  # (write-protected: can't)
             self.drive_grid.addWidget(text, row, 0)
             self.drive_grid.addWidget(problem, row, 1)
             self.drive_grid.addWidget(button, row, 2)
             widgets = [text, problem, button]
+            if drive.read_only == "damaged":
+                widgets.append(self._repair_button(drive, row))
             if drive.problem in (stick_crypt.EARLIER, stick_crypt.NEEDS_CODE):
                 # earlier code: opened once with that one, then with today's - today's not known: asked for
                 unlock = big_button("🔓 Unlock…", "primary")
@@ -356,6 +359,9 @@ class StoragePage(QWidget):
                 space, used = "", 0
             what = "  ·  ".join(x for x in (LABELS[drive.kind], "🔒 encrypted" if drive.encrypted else drive.fstype,
                                             space) if x)
+            if drive.read_only:  # (games on it play, nothing goes onto it)
+                what += "\n" + {"locked": "🔒 Write-protected (the switch on its side)",
+                                 "damaged": "⚠ Read-only - taken out without ejecting it"}[drive.read_only]
             text = QLabel(f"{drive.name}\n{what}")
             bar = QProgressBar()
             bar.setRange(0, 1000)
@@ -363,11 +369,40 @@ class StoragePage(QWidget):
             bar.setTextVisible(False)
             button = big_button("⚠ Format…", "danger")
             button.clicked.connect(lambda _c=False, d=drive: self.ask_format(d))
-            button.setVisible(self.can_delete())  # deleting everything on it: the admin's
+            button.setVisible(self.can_delete() and drive.read_only != "locked")  # deleting everything: the admin's
             self.drive_grid.addWidget(text, row, 0)
             self.drive_grid.addWidget(bar, row, 1)
             self.drive_grid.addWidget(button, row, 2)
             self.drive_rows[drive] = [text, bar, button]
+            if drive.read_only == "damaged":
+                self.drive_rows[drive].append(self._repair_button(drive, row))
+
+    def _repair_button(self, drive, row: int):
+        button = big_button("🛠 Repair…", "primary")
+        button.clicked.connect(lambda _c=False, d=drive: self.ask_repair(d))
+        self.drive_grid.addWidget(button, row, 3)
+        return button
+
+    def ask_repair(self, drive) -> None:
+        """Nothing on it is deleted: anyone may (not only the admin)."""
+        from gamingcrypt.ui.move_game import over_everything
+        from gamingcrypt.ui.repair_drive import RepairBox
+
+        if self.repairer is not None:
+            return
+        self.repairer = RepairBox(drive)
+        self.repairer.cancelled.connect(self.close_repair)
+        self.repairer.finished.connect(self.close_repair)
+        self.repairer.repaired.connect(lambda message: (set_status(self.status, message), self.drives_changed.emit()))
+        self.repairer.failed.connect(lambda message: set_status(self.status, message, error=True))
+        self.repairer_modal = over_everything(self, self.repairer, self.close_repair)
+        self.repairer.focus_first()
+
+    def close_repair(self) -> None:
+        if self.repairer is None or self.repairer.working:
+            return
+        self.repairer = None
+        self.repairer_modal.close_modal()
 
     def ask_format(self, drive) -> None:
         from gamingcrypt.ui.format_drive import FormatConfirm

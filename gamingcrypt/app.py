@@ -2462,7 +2462,13 @@ class MainWindow(QMainWindow):
             return  # the first look: what's in already
         for drive in found:
             if (drive.disk or drive.device or str(drive.mount), True) not in known:
-                self.notify(f"{drive.name} ({LABELS[drive.kind]}) is ready - its games are in the list", "🔌")
+                if drive.read_only == "damaged":
+                    self.notify(f"{drive.name} can only be read: it was taken out without ejecting it. "
+                                "Settings → Storage repairs it", "⚠")
+                elif drive.read_only == "locked":
+                    self.notify(f"{drive.name} is write-protected - its games play, nothing can be moved onto it", "🔒")
+                else:
+                    self.notify(f"{drive.name} ({LABELS[drive.kind]}) is ready - its games are in the list", "🔌")
         for drive in unusable:
             if (drive.disk or drive.device or str(drive.mount), False) not in known:
                 self.notify(f"{drive.name} can't be used: {drive.problem}. Settings → Storage formats it", "⚠")
