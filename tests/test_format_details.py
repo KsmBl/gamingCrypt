@@ -38,7 +38,9 @@ def fits(box, host, w, h) -> None:
 
 @pytest.mark.parametrize("w,h", SCREENS)
 @pytest.mark.parametrize("encrypt", [True, False])
-def test_the_step_fits_also_with_the_keyboard(qtbot, w, h, encrypt):
+def test_the_step_fits_and_the_keyboard_is_the_apps(qtbot, w, h, encrypt):
+    from gamingcrypt.ui.keyboard_overlay import KeyboardOverlay
+
     host = screen(qtbot, w, h)
     box = dialog(qtbot, host, encrypt)
     box.choose("exfat")
@@ -46,14 +48,27 @@ def test_the_step_fits_also_with_the_keyboard(qtbot, w, h, encrypt):
     assert box.name_field.text() == "OLD_NAME"  # (its name as a file system takes it)
     assert bool(box.share_buttons) == encrypt
     fits(box, host, w, h)
-    box.keyboard_button.click()
+    box.keyboard_button.click()  # ⌨: the app's own on-screen keyboard (as for every text field)
     qtbot.wait(20)
-    assert box.keyboard.isVisible() and box.next_button.isHidden()  # (only the name and the keyboard)
-    fits(box, host, w, h)
-    box.keyboard.submitted.emit()  # ↵: the rest is back
+    overlay = host.keyboard_overlay
+    assert isinstance(overlay, KeyboardOverlay) and overlay.isVisible() and overlay.target() is box.name_field
+    assert host.rect().contains(rect_in(overlay, host)), f"the keyboard is off the {w}x{h} screen"
+    field = rect_in(box.name_field, host)
+    assert not rect_in(overlay, host).intersects(field)  # (out of the field's way)
+    overlay.close_keyboard()
+    assert not overlay.isVisible()
+
+
+def test_a_tap_on_the_name_opens_the_keyboard(qtbot):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    host = screen(qtbot, 1280, 800)
+    box = dialog(qtbot, host, encrypt=False)
+    box.choose("exfat")
+    QTest.mouseClick(box.name_field, Qt.MouseButton.LeftButton)
     qtbot.wait(20)
-    assert box.keyboard.isHidden() and box.next_button.isVisible() and box.cancel_button.isVisible()
-    fits(box, host, w, h)
+    assert host.keyboard_overlay.isVisible() and host.keyboard_overlay.target() is box.name_field
 
 
 def test_its_name_typed_on_the_keyboard(qtbot):
@@ -64,10 +79,12 @@ def test_its_name_typed_on_the_keyboard(qtbot):
     box.choose("exfat")
     box.name_field.clear()
     box.keyboard_button.click()
-    keys = {b.text(): b for b in box.keyboard.findChildren(QPushButton)}
+    keys = {b.text(): b for b in host.keyboard_overlay.keys.findChildren(QPushButton)}
     for letter in "ssd":
         keys[letter].click()
     assert box.name_field.text().lower() == "ssd"
+    host.keyboard_overlay.enter()  # ↵: the keyboard closes
+    assert not host.keyboard_overlay.isVisible()
     box.next_button.click()
     assert box.name == box.name_field.text() and f"called {box.name}" in box.question.text()
 

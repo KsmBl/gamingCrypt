@@ -33,9 +33,10 @@ def test_on_its_page(qtbot, drive, config, stick, name, w, h):  # noqa: F811
     qtbot.waitUntil(lambda: name in names(tab))
     page = open_game(tab, name)
     qtbot.wait(20)
+    # (a Windows game's facts are written anew once its start files are looked for: the chip stays)
+    qtbot.waitUntil(lambda: any(c.text() == "🔌 On STICK" and c.isVisible() for c in page.facts.chips()))
     assert chips(page)[1] == "🔌 On STICK"  # right after what it is
     chip = next(c for c in page.facts.chips() if c.text() == "🔌 On STICK")
-    assert chip.isVisible()
     where = rect_in(chip, tab)
     assert tab.rect().contains(where), f"the chip is off the {w}x{h} page"
 

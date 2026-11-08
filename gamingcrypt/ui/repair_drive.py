@@ -6,13 +6,13 @@ from __future__ import annotations
 import time
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QFrame, QLabel, QProgressBar, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QFrame, QLabel, QProgressBar, QVBoxLayout, QWidget
 
 from gamingcrypt.system import removable
 from gamingcrypt.ui import theme
 from gamingcrypt.ui.format_drive import MARKS, elapsed
 from gamingcrypt.ui.tasks import run_async
-from gamingcrypt.ui.widgets import FlowLayout, big_button, set_status
+from gamingcrypt.ui.widgets import big_button, set_status
 
 
 class RepairBox(QFrame):
@@ -33,7 +33,7 @@ class RepairBox(QFrame):
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(12)
         self.title = QLabel(f"🛠 Repair {drive.name}")
-        self.title.setObjectName("section")
+        self.title.setObjectName("cardTitle")  # (as a card's, not a page's heading)
         layout.addWidget(self.title)
         self.question = QLabel("It can only be read: it was taken out without ejecting it, and its file system "
                                "needs a check. Nothing on it is deleted.")
@@ -60,7 +60,9 @@ class RepairBox(QFrame):
         self.state.setWordWrap(True)
         self.state.hide()
         layout.addWidget(self.state)
-        row = FlowLayout(spacing=12)
+        row = QHBoxLayout()  # (as every question: the buttons on the right, Cancel first)
+        row.setSpacing(12)
+        row.addStretch()
         self.repair_button = big_button("🛠 Repair", "primary")
         self.repair_button.clicked.connect(self.start)
         row.addWidget(self.repair_button)
@@ -70,7 +72,7 @@ class RepairBox(QFrame):
         row.addWidget(self.ok_button)
         self.cancel_button = big_button("Cancel")
         self.cancel_button.clicked.connect(self.cancel)
-        row.addWidget(self.cancel_button)
+        row.insertWidget(1, self.cancel_button)
         layout.addLayout(row)
         self.timer = QTimer(self)
         self.timer.setInterval(200)

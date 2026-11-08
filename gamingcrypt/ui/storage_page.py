@@ -530,32 +530,22 @@ class StoragePage(QWidget):
     def ask_code(self, drive) -> None:
         """An encrypted stick GamingCrypt can't open by itself (started again while unlocked: it doesn't
         know the code): the code asked for - the sticks open with it from then on."""
-        from gamingcrypt.ui.code_prompt import CodePrompt
-        from gamingcrypt.ui.move_game import over_everything
+        from gamingcrypt.ui.code_prompt import ask_code
 
         if self.code_prompt is not None or self.code_check_fn is None:
             return
-        self.code_prompt = CodePrompt(f"🔓 Unlock {drive.name}", "It's encrypted with your code.",
-                                      self.code_method_fn(), self.code_check_fn)
-        self.code_prompt.cancelled.connect(self.close_code)
-        self.code_prompt.accepted.connect(self._code_entered)
-        self.code_prompt_modal = over_everything(self, self.code_prompt, self.close_code)
-        self.code_prompt.focus_first()
-
-    def close_code(self) -> None:
-        if self.code_prompt is None or self.code_prompt.working:
-            return
-        self.code_prompt = None
-        self.code_prompt_modal.close_modal()
+        self.code_prompt = ask_code(self, f"🔓 Unlock {drive.name}", "It's encrypted with your code.",
+                                    self.code_method_fn(), self.code_check_fn, self._code_entered,
+                                    lambda: setattr(self, "code_prompt", None))
 
     def _code_entered(self, password: str) -> None:
         stick_crypt.keys.set(password)  # (every encrypted stick opens with it now)
-        self.close_code()
+        self.code_prompt = None
         set_status(self.status, "Opening it…")
         self.drives_changed.emit()
 
     def ask_unlock(self, drive) -> None:
-        from gamingcrypt.ui.move_game import over_everything
+        from gamingcrypt.ui.code_prompt import FullScreen
         from gamingcrypt.ui.unlock_stick import UnlockStick
 
         if self.unlocker is not None:
@@ -563,7 +553,7 @@ class StoragePage(QWidget):
         self.unlocker = UnlockStick(drive, self.config_fn())
         self.unlocker.cancelled.connect(self.close_unlock)
         self.unlocker.unlocked.connect(self._unlocked)
-        self.unlocker_modal = over_everything(self, self.unlocker, self.close_unlock)
+        self.unlocker_modal = FullScreen(self.window() or self, self.unlocker)  # (as the lock screen)
         self.unlocker.focus_first()
 
     def close_unlock(self) -> None:

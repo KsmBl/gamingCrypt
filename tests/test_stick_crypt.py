@@ -277,7 +277,8 @@ def test_encrypting_asks_for_your_code(qtbot, monkeypatch, tmp_path, config):
     box.choices["exfat"].click()
     box.next_button.click()  # (its name, how much is encrypted: as they are)
     assert box.code is not None and box.code.input.method == "pin" and box.format_button.isHidden()
-    assert box.question.text() == "It's encrypted with your code - enter your PIN."
+    screen = box.code.parentWidget()  # (the whole screen, as the lock screen)
+    assert screen.subtitle.text() == "Enter your PIN" and screen.title.text() == "🔒 Encrypt STICK"
     box.start()
     assert not box.working  # (not without the code)
     box.code.try_code("0000")
@@ -325,7 +326,7 @@ def test_a_locked_stick_is_unlocked_with_your_code(qtbot, tmp_path, vc, config):
     assert unlock.text() == "🔓 Unlock…"
     unlock.click()
     prompt = page.code_prompt
-    assert prompt.question.text() == "It's encrypted with your code. Enter your PIN."
+    assert prompt.question.text() == "It's encrypted with your code." and prompt.subtitle.text() == "Enter your PIN"
     prompt.entry.try_code("1234")
     qtbot.waitUntil(lambda: page.code_prompt is None)
     assert stick_crypt.keys.password == drive_password(config) and looked == [1]

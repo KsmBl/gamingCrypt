@@ -119,5 +119,5 @@ def ask(host: QWidget, question: str, action: str, on_yes: Callable[[], None], d
 def open_modal(window: QWidget, on_screen: bool = True) -> Modal | None:
     """The question shown in this window, if any (the controller stays inside it).
     on_screen=False: also one on a page that isn't on screen right now."""
-    return next((m for m in window.findChildren(Modal)
-                 if (m.isVisible() if on_screen else not m.isHidden())), None)
+    shown = [m for m in window.findChildren(Modal) if (m.isVisible() if on_screen else not m.isHidden())]
+    return shown[-1] if shown else None  # (one over another - the code over formatting: the top one)

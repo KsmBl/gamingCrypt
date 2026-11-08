@@ -20,44 +20,28 @@ def _dot(center: QPointF, r: float) -> QPainterPath:
     return theme.cut_path(QRectF(center.x() - r, center.y() - r, 2 * r, 2 * r), r * 0.7)
 
 
-# compact (in a box over the screen, not the lock screen): smaller keys that fit a 1024x600 screen too
-# (the theme's buttons have a 24 px cut-corner border all round: negative padding, as the theme does)
-COMPACT_KEY = "padding: -18px -10px; font-size: 22px;"
-COMPACT_KEY_SIZE = (96, 54)
-COMPACT_DISPLAY = 50  # the field the dots / digits show in  # (set on the keys: the theme's own minimum is taller)
-
-
 class PinPad(QWidget):
     submitted = Signal(str)
 
-    def __init__(self, parent: QWidget | None = None, compact: bool = False):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        if compact:
-            layout.setContentsMargins(0, 0, 0, 0)
         self.display = QLineEdit()
         self.display.setReadOnly(True)
         self.display.setEchoMode(QLineEdit.EchoMode.Password)
         self.display.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.display.setFixedWidth(280 if compact else 340)
-        if compact:
-            self.display.setFixedHeight(COMPACT_DISPLAY)
+        self.display.setFixedWidth(340)
         layout.addWidget(self.display, alignment=Qt.AlignmentFlag.AlignCenter)
         grid = QGridLayout()
-        grid.setSpacing(10 if compact else 14)
+        grid.setSpacing(14)
         keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "✓"]
         self.buttons: dict[str, object] = {}
         for i, key in enumerate(keys):
-            # (compact: a plain button - the lock screen's keys are 72 px and more by the theme)
-            button = big_button(key, "" if compact else "pinKey")
+            button = big_button(key, "pinKey")
             if key == "✓":
                 button.setObjectName("primary")
-                button.setStyleSheet(COMPACT_KEY if compact else "min-height: 72px; min-width: 96px; font-size: 32px;")
-            elif compact:
-                button.setStyleSheet(COMPACT_KEY)
-            if compact:
-                button.setFixedSize(*COMPACT_KEY_SIZE)
+                button.setStyleSheet("min-height: 72px; min-width: 96px; font-size: 32px;")
             button.clicked.connect(lambda _=False, k=key: self.press(k))
             self.buttons[key] = button
             grid.addWidget(button, i // 3, i % 3)
@@ -92,10 +76,9 @@ class PatternWidget(QWidget):
 
     SIZE = 3
 
-    def __init__(self, parent: QWidget | None = None, compact: bool = False):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.compact = compact
-        self.setMinimumSize(*((240, 240) if compact else (360, 360)))
+        self.setMinimumSize(360, 360)
         self.nodes: list[int] = []
         self._cursor: QPointF | None = None
         self._error = False
@@ -139,7 +122,7 @@ class PatternWidget(QWidget):
 
     # geometry ---------------------------------------------------------------
     def sizeHint(self) -> QSize:  # noqa: N802 - square, not as wide as the screen
-        return QSize(340, 340) if self.compact else QSize(440, 440)
+        return QSize(440, 440)
 
     def _cell(self) -> float:
         return min(self.width(), self.height()) / self.SIZE
@@ -228,12 +211,10 @@ class DotCanvas(QWidget):
 
     dot_tapped = Signal(int)
 
-    def __init__(self, size: int = 5, parent: QWidget | None = None, smallest: int = 400, preferred: int = 0):
-        """smallest / preferred: its side - preferred, unless there's less room (0: no preference)."""
+    def __init__(self, size: int = 5, parent: QWidget | None = None):
         super().__init__(parent)
         self.side = size  # dots per row (not .size: that's Qt's size())
-        self.preferred = preferred
-        self.setMinimumSize(smallest, smallest)
+        self.setMinimumSize(400, 400)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self.flash: int | None = None
         self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
@@ -241,9 +222,6 @@ class DotCanvas(QWidget):
         self._flash_timer = QTimer(self)
         self._flash_timer.setSingleShot(True)
         self._flash_timer.timeout.connect(self._end_flash)
-
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
-        return QSize(self.preferred, self.preferred) if self.preferred else super().sizeHint()
 
     def _cell(self) -> float:
         return min(self.width(), self.height()) / self.side
@@ -310,8 +288,6 @@ class DotCanvas(QWidget):
 
 SIDE_GAP = 56
 SIDE_BUTTON = QSize(120, 96)
-COMPACT_BUTTON = QSize(110, 52)
-COMPACT_GAP = 12
 
 
 class DotGridPad(QWidget):
@@ -321,15 +297,9 @@ class DotGridPad(QWidget):
     # (as the hint bar writes them; the same buttons as on the swipe pattern)
     HINT = "Ⓐ  Set a dot     Ⓧ  Take the last one back     Ⓑ  Clear     Start  Enter"
 
-    def __init__(self, size: int = secrets.DOT_GRID_SIZE, parent: QWidget | None = None, hint: bool = False,
-                 compact: bool = False):
-        """compact: in a box over the screen - ⌫ and ✓ below the dots (a gap between: beside them they
-        need ~750 px, more than the box has, and lay over the dots), the dots as big as there's room for."""
+    def __init__(self, size: int = secrets.DOT_GRID_SIZE, parent: QWidget | None = None, hint: bool = False):
         super().__init__(parent)
         self.nodes: list[int] = []
-        if compact:
-            self._compact(size)
-            return
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)  # (1280x800: the lock screen's hint has to fit too)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -361,38 +331,6 @@ class DotGridPad(QWidget):
         row.addStretch()
         layout.addLayout(row, 1)
         layout.addWidget(self.hint)
-
-    def _compact(self, size: int) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
-        self.hint = QLabel(self.HINT)
-        self.hint.hide()
-        self.display = QLineEdit()
-        self.display.setReadOnly(True)
-        self.display.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.display.setFixedWidth(280)
-        self.display.setFixedHeight(COMPACT_DISPLAY)
-        layout.addWidget(self.display, alignment=Qt.AlignmentFlag.AlignCenter)
-        self.canvas = DotCanvas(size, smallest=200, preferred=340)
-        self.canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.canvas.setMaximumSize(380, 380)
-        self.canvas.dot_tapped.connect(self.press)
-        layout.addWidget(self.canvas, 1, alignment=Qt.AlignmentFlag.AlignHCenter)
-        layout.addSpacing(COMPACT_GAP)  # (away from the last row of dots)
-        row = QHBoxLayout()
-        row.setSpacing(SIDE_GAP)
-        row.addStretch()
-        self.back_button = big_button("⌫")
-        self.back_button.setFixedSize(COMPACT_BUTTON)
-        self.back_button.clicked.connect(self.backspace)
-        row.addWidget(self.back_button)
-        self.ok_button = big_button("✓", "primary")
-        self.ok_button.setFixedSize(COMPACT_BUTTON)
-        self.ok_button.clicked.connect(lambda: self.submitted.emit(list(self.nodes)))
-        row.addWidget(self.ok_button)
-        row.addStretch()
-        layout.addLayout(row)
 
     # controller, as on the swipe pattern: X takes the last dot back, B clears (with nothing
     # entered yet, B is back as everywhere), Start enters - B entered here, so a B meant as
@@ -433,11 +371,9 @@ class DotGridPad(QWidget):
 class PasswordEntry(QWidget):
     submitted = Signal(str)
 
-    def __init__(self, parent: QWidget | None = None, compact: bool = False):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
-        if compact:
-            layout.setContentsMargins(0, 0, 0, 0)
         row = QHBoxLayout()
         self.edit = QLineEdit()
         self.edit.setEchoMode(QLineEdit.EchoMode.Password)
@@ -450,7 +386,7 @@ class PasswordEntry(QWidget):
         )
         row.addWidget(self.reveal)
         layout.addLayout(row)
-        self.keyboard = OnScreenKeyboard(self.edit, compact=compact)
+        self.keyboard = OnScreenKeyboard(self.edit)
         self.keyboard.submitted.connect(self._submit)
         layout.addWidget(self.keyboard)
 
@@ -474,9 +410,8 @@ class SecretInput(QWidget):
         "grid5": secrets.dot_grid_to_secret,
     }
 
-    def __init__(self, method: str, parent: QWidget | None = None, hint: bool = False, compact: bool = False):
-        """hint: the controller's buttons below the 5x5 dots. compact: in a box over the screen (a
-        dialog) - it fits a small screen, and the box (see modal.py)."""
+    def __init__(self, method: str, parent: QWidget | None = None, hint: bool = False):
+        """hint: the controller's buttons below the 5x5 dots."""
         super().__init__(parent)
         if method not in self.CONVERTERS:
             method = "password"
@@ -484,16 +419,16 @@ class SecretInput(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         if method == "pin":
-            self.widget = PinPad(compact=compact)
+            self.widget = PinPad()
             self.widget.submitted.connect(self.submit)
         elif method == "pattern":
-            self.widget = PatternWidget(compact=compact)
+            self.widget = PatternWidget()
             self.widget.pattern_entered.connect(self.submit)
         elif method == "grid5":
-            self.widget = DotGridPad(hint=hint, compact=compact)
+            self.widget = DotGridPad(hint=hint)
             self.widget.submitted.connect(self.submit)
         else:
-            self.widget = PasswordEntry(compact=compact)
+            self.widget = PasswordEntry()
             self.widget.submitted.connect(self.submit)
         layout.addWidget(self.widget)
 

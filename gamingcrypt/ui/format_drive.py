@@ -12,7 +12,7 @@ import shutil
 import time
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QFrame, QLabel, QProgressBar, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QFrame, QLabel, QProgressBar, QVBoxLayout, QWidget
 
 from gamingcrypt.system import removable
 from gamingcrypt.ui import theme
@@ -61,7 +61,7 @@ class FormatConfirm(QFrame):
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(12)
         self.title = QLabel(f"Format {drive.name}")
-        self.title.setObjectName("section")
+        self.title.setObjectName("cardTitle")  # (as a card's, not a page's heading)
         layout.addWidget(self.title)
         size = f", {format_size(drive.size)}" if drive.size else ""
         now = f" · now {drive.fstype}" if drive.fstype else ""
@@ -113,7 +113,9 @@ class FormatConfirm(QFrame):
         self.state.setWordWrap(True)
         self.state.hide()
         layout.addWidget(self.state)
-        row = FlowLayout(spacing=12)
+        row = QHBoxLayout()  # (as every question: the buttons on the right, Cancel first)
+        row.setSpacing(12)
+        row.addStretch()
         self.choices = {}
         for fstype in formats:
             button = big_button(NAMES[fstype])
@@ -130,7 +132,7 @@ class FormatConfirm(QFrame):
         row.addWidget(self.ok_button)
         self.cancel_button = big_button("Cancel")
         self.cancel_button.clicked.connect(self.cancel)
-        row.addWidget(self.cancel_button)
+        row.insertWidget(1, self.cancel_button)
         layout.addLayout(row)
         self.timer = QTimer(self)
         self.timer.setInterval(200)
@@ -162,8 +164,6 @@ class FormatConfirm(QFrame):
         """A step of its own (a 600 px high screen hasn't room for it all on the first one)."""
         from PySide6.QtWidgets import QHBoxLayout, QLineEdit
 
-        from gamingcrypt.ui.widgets import OnScreenKeyboard
-
         self.title.setText(f"Format {self.drive.name}")
         self.question.setText("What should it be called?" + (" And how much of it should be encrypted?"
                                                               if self.encrypting else ""))
@@ -176,19 +176,14 @@ class FormatConfirm(QFrame):
         self.name_field.setMaxLength(11)  # (what every file system takes)
         self.name_field.setPlaceholderText("GAMES")
         line.addWidget(self.name_field, 1)
-        self.keyboard_button = big_button("⌨", checkable=True)
-        self.keyboard_button.toggled.connect(self.typing)
+        self.keyboard_button = big_button("⌨")
+        self.keyboard_button.clicked.connect(self.open_keyboard)
         line.addWidget(self.keyboard_button)
         box.addLayout(line)
-        self.keyboard = OnScreenKeyboard(self.name_field, compact=True)
-        self.keyboard.submitted.connect(lambda: self.keyboard_button.setChecked(False))
-        self.keyboard.hide()
-        box.addWidget(self.keyboard)
+        self.name_field.installEventFilter(self)  # (a tap on it: the keyboard, as on any text field)
         self.share_buttons = {}
-        self.not_while_typing = [self.question]  # (the keyboard needs the room: a 600 px high screen)
         if self.encrypting:
             note = QLabel("Encrypted - the rest stays a normal drive, for anything else:")
-            self.not_while_typing.append(note)
             note.setObjectName("cardMeta")
             note.setWordWrap(True)
             box.addWidget(note)
@@ -199,24 +194,30 @@ class FormatConfirm(QFrame):
                 button.clicked.connect(lambda _c=False, v=share: self.choose_share(v))
                 shares.addWidget(button)
                 self.share_buttons[share] = button
-                self.not_while_typing.append(button)
             box.addLayout(shares)
         self.next_button = big_button("Continue ›", "primary")
         self.next_button.clicked.connect(self.details_done)
-        box.addWidget(self.next_button, alignment=Qt.AlignmentFlag.AlignLeft)
-        self.not_while_typing += [self.next_button, self.cancel_button]
+        box.addWidget(self.next_button, alignment=Qt.AlignmentFlag.AlignRight)
         self.layout().insertWidget(self.layout().indexOf(self.question) + 1, self.details)
         self.next_button.setFocus(Qt.FocusReason.TabFocusReason)
 
-    def typing(self, on: bool) -> None:
-        """The keyboard open: only the name and it - the rest back when it's closed (↵ or ⌨)."""
-        self.keyboard.setVisible(on)
-        for widget in self.not_while_typing:
-            widget.setVisible(not on)
-        if on:
-            self.name_field.setFocus()
-        else:
-            self.next_button.setFocus(Qt.FocusReason.TabFocusReason)
+    def open_keyboard(self) -> None:
+        """The app's on-screen keyboard (keyboard_overlay - as for every text field) for the name."""
+        from gamingcrypt.ui.keyboard_overlay import KeyboardOverlay
+
+        window = self.window()
+        overlay = getattr(window, "keyboard_overlay", None)
+        if overlay is None:
+            overlay = window.keyboard_overlay = KeyboardOverlay(window)
+        overlay.open_for(self.name_field)
+        self.keyboard = overlay
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt API
+        from PySide6.QtCore import QEvent
+
+        if watched is getattr(self, "name_field", None) and event.type() == QEvent.Type.MouseButtonRelease:
+            self.open_keyboard()
+        return super().eventFilter(watched, event)
 
     def choose_share(self, share: float) -> None:
         self.share = share
@@ -235,23 +236,22 @@ class FormatConfirm(QFrame):
         self.confirm()
 
     def ask_code(self) -> None:
-        """Encrypting it with your code: entered again, checked - the container gets the drive's password."""
-        from gamingcrypt.ui.code_prompt import CodeEntry
-        from gamingcrypt.ui.secret_input import METHOD_LABELS
+        """Encrypting it with your code: entered again - the whole screen, as on the lock screen - and
+        checked; the container gets the drive's password. Cancel: not formatted."""
+        from gamingcrypt.ui.code_prompt import ask_code
 
-        self.title.setText(f"Encrypt {self.drive.name}")
-        self.question.setText(f"It's encrypted with your code - enter your {METHOD_LABELS.get(self.method, 'code')}.")
-        self.code = CodeEntry(self.method, self.check_code)
-        self.code.accepted.connect(self._code_entered)
-        self.layout().insertWidget(self.layout().indexOf(self.question) + 1, self.code)
-        self.code.focus_first()
+        screen = ask_code(self, f"🔒 Encrypt {self.drive.name}", "It's encrypted with your code - the one that "
+                          "unlocks GamingCrypt.", self.method, self.check_code, self._code_entered,
+                          self._code_cancelled)
+        self.code = screen.entry
+
+    def _code_cancelled(self) -> None:
+        self.code = None
+        self.cancelled.emit()
 
     def _code_entered(self, password: str) -> None:
         self.password = password
-        if self.code is not None:
-            self.code.hide()
-            self.code.deleteLater()
-            self.code = None
+        self.code = None
         self.title.setText(f"Format {self.drive.name}")
         self.confirm()
 

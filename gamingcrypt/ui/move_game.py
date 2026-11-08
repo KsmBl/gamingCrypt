@@ -13,13 +13,13 @@ import shutil
 import time
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QFrame, QLabel, QProgressBar, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QFrame, QLabel, QProgressBar, QVBoxLayout, QWidget
 
 from gamingcrypt import moving
 from gamingcrypt.ui import theme
 from gamingcrypt.ui.game_widgets import format_size
 from gamingcrypt.ui.tasks import run_async
-from gamingcrypt.ui.widgets import FlowLayout, big_button, set_status
+from gamingcrypt.ui.widgets import big_button, set_status
 
 ICONS = {"usb": "🔌", "drive": "🖴", "sd": "💾"}
 MARKS = {"waiting": "○", "now": "◐", "done": "✓", "failed": "✗"}
@@ -64,7 +64,7 @@ class MoveGame(QFrame):
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(12)
         self.title = QLabel(f"Move {game.name}")
-        self.title.setObjectName("section")
+        self.title.setObjectName("cardTitle")  # (as a card's, not a page's heading)
         self.title.setWordWrap(True)
         layout.addWidget(self.title)
         self.question = QLabel(f"It's on {game_place(game)}. Where should it go?")
@@ -101,19 +101,21 @@ class MoveGame(QFrame):
         self.state.hide()
         layout.addWidget(self.state)
         self.buttons = []
-        row = FlowLayout(spacing=12)
-        for place in places:
+        for place in places:  # (one under another: the whole width - a name and its room fit)
             button = big_button(place_text(place))
             button.clicked.connect(lambda _c=False, p=place: self.start(p))
-            row.addWidget(button)
+            layout.addWidget(button)
             self.buttons.append(button)
+        row = QHBoxLayout()  # (as every question: the buttons on the right, Cancel first)
+        row.setSpacing(12)
+        row.addStretch()
+        self.cancel_button = big_button("Cancel")
+        self.cancel_button.clicked.connect(self.cancel)
+        row.addWidget(self.cancel_button)
         self.ok_button = big_button("OK", "primary")
         self.ok_button.clicked.connect(self.finished.emit)
         self.ok_button.hide()
         row.addWidget(self.ok_button)
-        self.cancel_button = big_button("Cancel")
-        self.cancel_button.clicked.connect(self.cancel)
-        row.addWidget(self.cancel_button)
         layout.addLayout(row)
         if not places:
             self.question.setText("It can't go anywhere else: put in a USB stick, USB drive or SD card.")

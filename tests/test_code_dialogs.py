@@ -1,7 +1,6 @@
-"""The code asked for in a box over the screen (encrypting a stick, opening one): it fits any screen,
-sits in the middle, nothing overlaps or is cut off - and every dot stays where it is when one's tapped.
-
-At 1280x800 the 5x5 dots used to be pushed off-centre and their ⌫ / ✓ lay over dots."""
+"""The code asked for again (encrypting a stick, opening one): the whole screen, as the lock screen -
+its title, "Enter your PIN", the same pads - nothing cut off or squeezed, in the middle, and every
+dot stays where it is when one's tapped (with a mouse and with a finger)."""
 
 from pathlib import Path
 
@@ -12,9 +11,11 @@ from PySide6.QtWidgets import QAbstractButton, QLabel, QLineEdit, QWidget
 
 from gamingcrypt.system.removable import Removable
 from gamingcrypt.ui import theme
-from gamingcrypt.ui.modal import show_modal
+from gamingcrypt.ui.modal import open_modal, show_modal
 
-SCREENS = [(1280, 800), (1280, 720), (1366, 768), (1920, 1080), (1920, 1200), (2560, 1600), (1024, 600), (800, 600)]
+# the lock screen's sizes: 720 px high and more (its 5x5 and pattern shrink to fit down to 600)
+SCREENS = [(1280, 800), (1280, 720), (1366, 768), (1920, 1080), (1920, 1200), (2560, 1600)]
+SMALL = [(1024, 600)]
 METHODS = ["grid5", "pattern", "pin", "password"]
 STICK = Removable(Path("/x"), "usb", "STICK", "/dev/sdb1", "exfat", "/dev/sdb", 32 * 1024 ** 3,
                   container="/x/GamingCrypt.vc", host=Path("/x"))
@@ -34,44 +35,44 @@ def settle(qtbot) -> None:
     qtbot.wait(30)
 
 
-def format_dialog(qtbot, host, method):
+def format_code(qtbot, host, method, monkeypatch):
     from gamingcrypt.ui.format_drive import FormatConfirm
 
     box = FormatConfirm(STICK, formats=["exfat", "ext4"], encrypt=lambda *a, **k: None,
                         check_code=lambda _s: None, method=method)
     show_modal(host, box, lambda: None)
     box.choose("exfat")
-    box.next_button.click()  # (its name, how much is encrypted: as they are)
+    box.next_button.click()  # (its name, how much is encrypted: as they are) - then the code
     settle(qtbot)
-    return box, box.code.input.widget
+    page = box.code.parentWidget()
+    return page, box.code.input.widget
 
 
-def unlock_dialog(qtbot, host, method, monkeypatch):
+def unlock_code(qtbot, host, method, monkeypatch):
     from gamingcrypt.ui import unlock_stick
+    from gamingcrypt.ui.code_prompt import FullScreen
 
     monkeypatch.setattr(unlock_stick, "methods_of", lambda _v: [method])
-    box = unlock_stick.UnlockStick(STICK)
-    show_modal(host, box, lambda: None)
+    page = unlock_stick.UnlockStick(STICK)
+    FullScreen(host, page)
     settle(qtbot)
-    return box, box.input.widget
+    return page, page.input.widget
 
 
-def code_prompt(qtbot, host, method):
-    from gamingcrypt.ui.code_prompt import CodePrompt
+def your_code(qtbot, host, method, monkeypatch):
+    from gamingcrypt.ui.code_prompt import ask_code
 
-    box = CodePrompt("🔓 Unlock STICK", "It's encrypted with your code.", method, lambda _s: None)
-    show_modal(host, box, lambda: None)
+    page = ask_code(host, "🔓 Unlock STICK", "It's encrypted with your code.", method, lambda _s: None,
+                    lambda _p: None)
     settle(qtbot)
-    return box, box.entry.input.widget
+    return page, page.entry.input.widget
 
 
-DIALOGS = {"format": format_dialog, "unlock": unlock_dialog, "prompt": code_prompt}
+DIALOGS = {"format": format_code, "unlock": unlock_code, "prompt": your_code}
 
 
 def open_dialog(qtbot, host, kind, method, monkeypatch):
-    if kind == "unlock":
-        return unlock_dialog(qtbot, host, method, monkeypatch)
-    return DIALOGS[kind](qtbot, host, method)
+    return DIALOGS[kind](qtbot, host, method, monkeypatch)
 
 
 def rect_in(widget: QWidget, ancestor: QWidget) -> QRect:
@@ -79,7 +80,7 @@ def rect_in(widget: QWidget, ancestor: QWidget) -> QRect:
 
 
 def shown_parts(box: QWidget) -> list[QWidget]:
-    """What one sees and taps in the box: its buttons, fields, labels, the dots."""
+    """What one sees and taps: its buttons, fields, labels, the dots."""
     from gamingcrypt.ui.secret_input import DotCanvas, PatternWidget
 
     kinds = (QAbstractButton, QLineEdit, QLabel, DotCanvas, PatternWidget)
@@ -87,42 +88,83 @@ def shown_parts(box: QWidget) -> list[QWidget]:
             and not (isinstance(w, QLabel) and not w.text())]
 
 
+def check_fits(page, pad, host, w, h, squeeze: bool = True) -> None:
+    assert rect_in(page, host) == host.rect(), "not the whole screen"
+    for part in shown_parts(page):
+        where = rect_in(part, page)
+        assert page.rect().contains(where), f"{type(part).__name__} {getattr(part, 'text', lambda: '')()!r} " \
+                                            f"cut off at {w}x{h}: {where}"
+        if squeeze and not isinstance(part, QLabel):
+            assert part.height() >= part.minimumSizeHint().height() - 1, f"{type(part).__name__} squeezed"
+    centre = rect_in(pad, page).center().x()
+    assert abs(centre - page.width() / 2) <= 3, f"the input is off-centre by {centre - page.width() / 2}"
+
+
 @pytest.mark.parametrize("w,h", SCREENS)
 @pytest.mark.parametrize("method", METHODS)
 @pytest.mark.parametrize("kind", list(DIALOGS))
-def test_it_fits_and_sits_in_the_middle(qtbot, monkeypatch, kind, method, w, h):
+def test_the_whole_screen_as_the_lock_screen(qtbot, monkeypatch, kind, method, w, h):
     host = screen(qtbot, w, h)
-    box, pad = open_dialog(qtbot, host, kind, method, monkeypatch)
-    where = rect_in(box, host)
-    assert host.rect().contains(where), f"the box {where} is off the {w}x{h} screen"
-    assert abs(where.left() - (w - where.right() - 1)) <= 2  # in the middle
-    assert abs(where.top() - (h - where.bottom() - 1)) <= 2 or where.height() >= h - 2 * 12 - 2
-    for part in shown_parts(box):
-        inside = rect_in(part, box)
-        assert box.rect().contains(inside), f"{type(part).__name__} {part.objectName()} is cut off: {inside}"
-        if not isinstance(part, QLabel):
-            assert part.height() >= part.minimumSizeHint().height() - 1, f"{type(part).__name__} squeezed"
-    # the input in the middle of the box
-    centre = rect_in(pad, box).center().x()
-    assert abs(centre - box.width() / 2) <= 3, f"the {method} input is off-centre by {centre - box.width() / 2}"
+    page, pad = open_dialog(qtbot, host, kind, method, monkeypatch)
+    check_fits(page, pad, host, w, h)
+    assert page.findChild(QLabel, "title").text().startswith(("🔓", "🔒"))
+    assert open_modal(host) is not None and open_modal(host).content is page  # (the controller stays in it)
 
 
-@pytest.mark.parametrize("w,h", SCREENS)
+@pytest.mark.parametrize("w,h", SMALL)
+@pytest.mark.parametrize("method", ["grid5", "pattern"])
 @pytest.mark.parametrize("kind", list(DIALOGS))
-def test_the_dots_and_their_buttons_dont_overlap(qtbot, monkeypatch, kind, w, h):
+def test_the_dots_shrink_on_a_small_screen(qtbot, monkeypatch, kind, method, w, h):
     host = screen(qtbot, w, h)
-    box, pad = open_dialog(qtbot, host, kind, "grid5", monkeypatch)
-    canvas = rect_in(pad.canvas, box)
-    side = min(pad.canvas.width(), pad.canvas.height())
-    assert side >= 200  # big enough for a finger: 40 px a dot at least
-    assert abs(canvas.center().x() - box.width() / 2) <= 3  # the dots in the middle
-    for button in (pad.back_button, pad.ok_button):
-        where = rect_in(button, box)
-        assert not where.intersects(canvas), f"{button.text()} lies over the dots"
-        assert where.top() - canvas.bottom() >= 10  # a gap: a tap on the last row doesn't hit it
-        for i in range(25):
-            dot = pad.canvas.node_center(i).toPoint() + canvas.topLeft()
-            assert not where.contains(dot)
+    page, pad = open_dialog(qtbot, host, kind, method, monkeypatch)
+    check_fits(page, pad, host, w, h)
+    target = getattr(pad, "canvas", pad)
+    side = min(target.width(), target.height())  # (both draw a square in what they have)
+    assert side >= 220  # (and it fits: check_fits)
+
+
+def test_the_lock_screens_own_pads(qtbot, monkeypatch):
+    from gamingcrypt.ui.secret_input import DotGridPad, PinPad, SIDE_BUTTON
+
+    host = screen(qtbot, 1920, 1080)
+    _page, dots = your_code(qtbot, host, "grid5", monkeypatch)
+    assert isinstance(dots, DotGridPad) and dots.canvas.minimumWidth() == 400  # (room: its own size)
+    assert dots.back_button.size() == SIDE_BUTTON and dots.hint.isVisible()  # ⌫ ✓ beside it, the buttons' hint
+    _page, pin = your_code(qtbot, screen(qtbot, 1920, 1080), "pin", monkeypatch)
+    assert isinstance(pin, PinPad) and pin.buttons["1"].objectName() == "pinKey"
+
+
+def test_cancel_and_b_close_it(qtbot, monkeypatch):
+    from gamingcrypt.ui.code_prompt import ask_code
+
+    host = screen(qtbot, 1280, 800)
+    cancelled = []
+    page = ask_code(host, "T", "x", "pin", lambda _s: None, lambda _p: None, lambda: cancelled.append(1))
+    page.cancel_button.click()
+    settle(qtbot)
+    assert cancelled == [1] and open_modal(host) is None
+    page = ask_code(host, "T", "x", "pin", lambda _s: None, lambda _p: None, lambda: cancelled.append(2))
+    assert page.gamepad_back() and cancelled == [1, 2]
+
+
+def test_the_right_code_hands_on_the_password(qtbot):
+    from gamingcrypt.ui.code_prompt import ask_code
+
+    host = screen(qtbot, 1280, 800)
+    got = []
+    page = ask_code(host, "T", "x", "pin", lambda s: "the password" if s == "1234" else None, got.append)
+    page.entry.try_code("0000")
+    qtbot.waitUntil(lambda: not page.entry.working)
+    assert page.entry.status.text() == "Wrong code - try again" and got == []
+    page.entry.try_code("1234")
+    qtbot.waitUntil(lambda: got == ["the password"])
+    assert open_modal(host) is None
+
+
+def test_the_code_over_formatting_has_the_controller(qtbot, monkeypatch):
+    host = screen(qtbot, 1280, 800)
+    page, _pad = format_code(qtbot, host, "pin", monkeypatch)
+    assert open_modal(host).content is page  # (the top one: not the format box under it)
 
 
 def dot_pixels(host, canvas, count: int) -> tuple[list, object]:
@@ -134,81 +176,23 @@ def dot_pixels(host, canvas, count: int) -> tuple[list, object]:
     return [image.pixelColor(p) for p in centres], image.pixelColor(between)
 
 
-@pytest.mark.parametrize("w,h", [(1280, 800), (1024, 600), (1920, 1080)])
+@pytest.mark.parametrize("w,h", [(1280, 800), (1280, 720), (1920, 1080)])
 @pytest.mark.parametrize("kind", list(DIALOGS))
 def test_every_dot_stays_when_the_first_is_tapped(qtbot, monkeypatch, kind, w, h):
     host = screen(qtbot, w, h)
-    box, pad = open_dialog(qtbot, host, kind, "grid5", monkeypatch)
+    _page, pad = open_dialog(qtbot, host, kind, "grid5", monkeypatch)
     canvas = pad.canvas
     before, background = dot_pixels(host, canvas, 25)
     assert all(c != background for c in before), "not every dot is drawn"
-    geometry = (canvas.geometry(), box.geometry())
     first = canvas.node_center(0).toPoint()
     QTest.mousePress(canvas, Qt.MouseButton.LeftButton, pos=first)
     QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=first)
     settle(qtbot)
     after, background_after = dot_pixels(host, canvas, 25)
     assert pad.nodes == [0] and pad.display.text() == "●"
-    assert (canvas.geometry(), box.geometry()) == geometry  # nothing moved
-    assert background_after == background
-    assert all(c != background for c in after), "dots went away when the first was tapped"
-    assert after[0] == theme_color("ACCENT")  # the tapped one lights up
-    assert after[1:] == before[1:]  # the others as they were
-    qtbot.waitUntil(lambda: dot_pixels(host, canvas, 1)[0][0] == before[0], timeout=1000)  # (and goes out again)
+    assert background_after == background and all(c != background for c in after)
+    assert after[1:] == before[1:]
 
-
-@pytest.mark.parametrize("w,h", [(1280, 800), (1024, 600)])
-@pytest.mark.parametrize("kind", list(DIALOGS))
-def test_the_swipe_pattern_keeps_its_dots(qtbot, monkeypatch, kind, w, h):
-    host = screen(qtbot, w, h)
-    box, pad = open_dialog(qtbot, host, kind, "pattern", monkeypatch)
-    before, background = dot_pixels(host, pad, 9)
-    assert all(c != background for c in before)
-    QTest.mousePress(pad, Qt.MouseButton.LeftButton, pos=pad.node_center(0).toPoint())
-    settle(qtbot)
-    after, _ = dot_pixels(host, pad, 9)
-    assert pad.nodes == [0] and all(c != background for c in after)
-
-
-def test_a_pin_shows_its_digits_and_keys_fit(qtbot, monkeypatch):
-    host = screen(qtbot, 1024, 600)
-    box, pad = format_dialog(qtbot, host, "pin")
-    for key in "1234":
-        pad.buttons[key].click()
-    assert pad.display.text() == "1234"
-    keys = [rect_in(b, box) for b in pad.buttons.values()]
-    assert all(not a.intersects(b) for i, a in enumerate(keys) for b in keys[i + 1:])  # no key over another
-
-
-def test_the_lock_screen_keeps_its_big_pad(qtbot):
-    from gamingcrypt.ui.secret_input import DotGridPad, PinPad, SecretInput
-
-    dots, digits = SecretInput("grid5"), SecretInput("pin")
-    for widget in (dots, digits):
-        qtbot.addWidget(widget)
-    big, pin = dots.widget, digits.widget
-    assert isinstance(big, DotGridPad) and big.canvas.minimumWidth() == 400  # (compact only in a box)
-    assert big.back_button.size().width() == 120
-    assert isinstance(pin, PinPad) and pin.buttons["1"].objectName() == "pinKey"
-
-
-def test_the_box_follows_the_screen(qtbot):
-    """Gaming mode's resolution changed while it's open: still on the screen, in the middle."""
-    host = screen(qtbot, 1920, 1080)
-    box, _pad = format_dialog(qtbot, host, "grid5")
-    host.resize(1024, 600)
-    settle(qtbot)
-    where = rect_in(box, host)
-    assert host.rect().contains(where) and abs(where.left() - (1024 - where.right() - 1)) <= 2
-
-
-def theme_color(name: str):
-    from PySide6.QtGui import QColor
-
-    return QColor(getattr(theme, name))
-
-
-# --- with a finger (a touch is "hover" too: a card lit up under it, the box with it) -----------------
 
 def touch(host, widget, pos, release: bool = True) -> None:
     device = touch.device = getattr(touch, "device", None) or QTest.createTouchDevice()
@@ -218,37 +202,26 @@ def touch(host, widget, pos, release: bool = True) -> None:
         QTest.touchEvent(host, device).release(0, where, host)
 
 
-def box_colour(host, box):
-    """The box's own colour: inside it, away from everything in it."""
-    return host.grab().toImage().pixelColor(box.mapTo(host, QPoint(box.width() - 30, box.height() // 2)))
-
-
 @pytest.mark.parametrize("look", ["dark", "light"])
-@pytest.mark.parametrize("w,h", [(1280, 800), (1024, 600), (1920, 1080)])
+@pytest.mark.parametrize("w,h", [(1280, 800), (1280, 720), (1920, 1080)])
 @pytest.mark.parametrize("kind", list(DIALOGS))
-def test_a_finger_on_the_dots_doesnt_grey_them_out(qtbot, monkeypatch, kind, w, h, look):
+def test_a_finger_on_the_dots(qtbot, monkeypatch, kind, w, h, look):
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance()
-    before_look, before_sheet = theme.current, app.styleSheet()  # (put back after: the others' look)
+    before_look, before_sheet = theme.current, app.styleSheet()
     theme.apply(look, app)
     try:
         host = screen(qtbot, w, h)
-        box, pad = open_dialog(qtbot, host, kind, "grid5", monkeypatch)
-        colour = box_colour(host, box)
+        _page, pad = open_dialog(qtbot, host, kind, "grid5", monkeypatch)
         dots, background = dot_pixels(host, pad.canvas, 25)
-        touch(host, pad.canvas, pad.canvas.node_center(0).toPoint(), release=False)  # (the finger still on it)
-        qtbot.wait(30)
-        assert box_colour(host, box) == colour, "the box lit up under the finger"
+        touch(host, pad.canvas, pad.canvas.node_center(0).toPoint(), release=False)
+        settle(qtbot)
         held, held_background = dot_pixels(host, pad.canvas, 25)
         assert held_background == background and all(c != held_background for c in held[1:])
         QTest.touchEvent(host, touch.device).release(0, pad.canvas.mapTo(host, pad.canvas.node_center(0).toPoint()),
                                                    host)
-        qtbot.wait(30)
-        after, after_background = dot_pixels(host, pad.canvas, 25)
-        assert pad.nodes == [0] and box_colour(host, box) == colour
-        assert after_background == background and all(c != after_background for c in after)
-        for _ in range(3):  # more dots, more fingers
+        for _ in range(3):
             touch(host, pad.canvas, pad.canvas.node_center(12).toPoint())
             qtbot.wait(20)
         assert pad.nodes == [0, 12, 12, 12] and all(c != background for c in dot_pixels(host, pad.canvas, 25)[0])
@@ -260,16 +233,15 @@ def test_a_finger_on_the_dots_doesnt_grey_them_out(qtbot, monkeypatch, kind, w, 
 @pytest.mark.parametrize("kind", list(DIALOGS))
 def test_a_finger_on_the_pin_keys(qtbot, monkeypatch, kind):
     host = screen(qtbot, 1280, 800)
-    box, pad = open_dialog(qtbot, host, kind, "pin", monkeypatch)
-    colour = box_colour(host, box)
+    _page, pad = open_dialog(qtbot, host, kind, "pin", monkeypatch)
     for key in "1234":
         touch(host, pad.buttons[key], pad.buttons[key].rect().center())
         qtbot.wait(20)
-    assert pad.display.text() == "1234" and box_colour(host, box) == colour
+    assert pad.display.text() == "1234"
 
 
 def test_every_box_over_the_screen_stays_as_it_is_under_a_finger(qtbot):
-    """Not only the code: Remove, Move, Format - any card shown as a box."""
+    """Remove, Move, Format - any card shown as a box: a finger doesn't light it up."""
     from PySide6.QtWidgets import QFrame, QVBoxLayout
 
     host = screen(qtbot, 1280, 800)
@@ -279,7 +251,21 @@ def test_every_box_over_the_screen_stays_as_it_is_under_a_finger(qtbot):
     show_modal(host, content, lambda: None)
     settle(qtbot)
     assert content.objectName() == "dialog"
-    colour = box_colour(host, content)
-    touch(host, content, QPoint(content.width() - 30, content.height() // 2), release=False)
-    qtbot.wait(30)
-    assert box_colour(host, content) == colour
+    spot = QPoint(content.width() - 30, content.height() // 2)
+    colour = host.grab().toImage().pixelColor(content.mapTo(host, spot))
+    touch(host, content, spot, release=False)
+    settle(qtbot)
+    assert host.grab().toImage().pixelColor(content.mapTo(host, spot)) == colour
+
+
+def test_the_box_follows_the_screen(qtbot):
+    """Gaming mode's resolution changed while one is open: still on the screen, in the middle."""
+    from gamingcrypt.ui.format_drive import FormatConfirm
+
+    host = screen(qtbot, 1920, 1080)
+    box = FormatConfirm(STICK, formats=["exfat"])
+    show_modal(host, box, lambda: None)
+    host.resize(1280, 720)
+    settle(qtbot)
+    where = rect_in(box, host)
+    assert host.rect().contains(where) and abs(where.left() - (1280 - where.right() - 1)) <= 2

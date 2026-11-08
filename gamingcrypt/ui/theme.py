@@ -400,7 +400,8 @@ QLabel#healthBad {{ color: {c['DANGER']}; font-size: 24px; font-weight: 700; }}
 QLabel#healthOptional {{ color: {c['TEXT_DIM']}; font-size: 24px; font-weight: 700; }}
 
 /* whole screens: the colour and the hexagons (everything on them is transparent) */
-MainWindow, LaunchOverlay, LockScreen, AuthSetupWizard, ControlsPage, BluetoothPage, SaveStatesPage {{
+MainWindow, LaunchOverlay, LockScreen, AuthSetupWizard, ControlsPage, BluetoothPage, SaveStatesPage,
+CodeScreen, UnlockStick {{
     background-color: {c['BG']};
     background-image: url({hexes});
     background-repeat: no-repeat;
