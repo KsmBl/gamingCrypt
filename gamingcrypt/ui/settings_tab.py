@@ -274,6 +274,9 @@ class SettingsTab(QStackedWidget):
         layout = page("Storage")
         self.storage_page = StoragePage(lambda: self.steam, emulation_fn=self.emulation_paths,
                                         can_delete=lambda: users.current(self.config).can_delete_games)
+        # (each user's own: config["sticks"] is theirs while they're logged in - users.OWN)
+        self.storage_page.stick_settings_fn = lambda: self.config.setdefault("sticks", {"remember": True})
+        self.storage_page.save_fn = lambda: self.save(self.config)
         layout.addWidget(self.storage_page)
         layout.addStretch()
 

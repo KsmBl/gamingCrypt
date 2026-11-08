@@ -97,6 +97,9 @@ class ContinueCard(QFrame):
         self.setVisible(game is not None)
         if game is None:
             return
+        away = getattr(game, "away", "")  # (remembered: its stick isn't in)
+        self.play_button.setEnabled(not away)
+        self.play_button.setText(f"Put {away} in" if away else "▶  Play")
         self.title.setText(game.name)
         if self.windows:
             from gamingcrypt.ui.wine_pages import load_windows_cover
@@ -118,7 +121,7 @@ class ContinueCard(QFrame):
         load_cover(self.tab.service, game.appid, self.cover, 150, 225)
 
     def play(self) -> None:
-        if self.game is None:
+        if self.game is None or getattr(self.game, "away", ""):
             return
         if self.windows:
             launcher = getattr(self.tab, f"{self.game.KIND}_launcher")
@@ -585,13 +588,41 @@ class GamesHome(QWidget):
             self.empty_label.setText("No installed games found")
 
 
+def with_remembered(tab, kind: str, found, drives, home=None):
+    """(in the worker thread) What's on the sticks that are in is remembered (stick_memory.py); with
+    the user's setting on, the games of the sticks that aren't in are added - greyed out (away)."""
+    from gamingcrypt import stick_memory
+
+    memory = tab.stick_memory
+    if memory is None:
+        return found
+    games = [g for found_games in found.values() for g in found_games] if isinstance(found, dict) else found
+    try:
+        memory.update(kind, drives, [g for g in games if getattr(g, "stick", "")])
+    except OSError:
+        pass  # (the drive is full or gone: nothing remembered this time)
+    if not (tab.stick_settings() or {}).get("remember", True):
+        return found
+    present = {stick_memory.stick_key(d) for d in drives}
+    here = {g.appid for g in games}
+    away = [g for g in stick_memory.ghosts(memory, kind, present, home) if g.appid not in here]
+    if not away:
+        return found
+    if isinstance(found, dict):
+        merged = {sid: list(gs) for sid, gs in found.items()}
+        for game in away:
+            merged.setdefault(game.system.id, []).append(game)
+        return {sid: sorted(gs, key=lambda g: g.name.lower()) for sid, gs in merged.items()}
+    return sorted([*found, *away], key=lambda g: g.name.casefold())
+
+
 class GamesTab(QStackedWidget):
     """Navigation stack: home -> Steam library -> game details / store."""
 
     def __init__(self, service, library_path: str = "", parent: QWidget | None = None,
                  library_settings: dict | None = None, emulation_root: str = "", windows_root: str = "",
                  linux_root: str = "", minecraft_root: str = "", user=None, rate_games: bool = False,
-                 people=None):
+                 people=None, stick_settings=None):
         """user: who's using the device (users.User) - None: the admin. rate_games: the game
         pages offer "Age rating" (the admin, when a user has an age). people: () -> all users."""
         super().__init__(parent)
@@ -630,6 +661,15 @@ class GamesTab(QStackedWidget):
         self.play_log = PlayLog(self.emulation) if self.emulation is not None else None
         self.roms: dict = {}  # system id -> games
         self.drives: list = []  # USB sticks, USB drives, SD cards that are in (system.removable): their games too
+        # which games are on which stick - on the encrypted drive - and whether those of a stick that isn't
+        # in are shown (each user's own setting: () -> config["sticks"])
+        from pathlib import Path as _P
+
+        from gamingcrypt.stick_memory import StickMemory
+
+        drive_root = next((_P(r).parent for r in (emulation_root, windows_root, linux_root) if r), None)
+        self.stick_memory = StickMemory(drive_root) if drive_root is not None else None
+        self.stick_settings = stick_settings or (lambda: {"remember": True})
         # Windows games (Proton / Wine): a folder each in <drive>/Windows Games
         from pathlib import Path as _Path
 
@@ -813,7 +853,8 @@ class GamesTab(QStackedWidget):
 
             if os.path.ismount(paths.root.parent) and not paths.roms.exists():
                 paths.ensure()  # first time on an unlocked drive: the folders to put things in
-            return scan_all(paths, drives)
+            found = scan_all(paths, drives)
+            return with_remembered(self, "roms", found, drives)
 
         run_async(work, self.latest("roms", self._roms_loaded), lambda _e: None, owner=self)
 
@@ -881,7 +922,7 @@ class GamesTab(QStackedWidget):
 
             if not root.exists() and os.path.ismount(root.parent):
                 root.mkdir(exist_ok=True)  # an unlocked drive: the folder to copy games into
-            return scan(root, sizes=False, drives=drives)
+            return with_remembered(self, "windows", scan(root, sizes=False, drives=drives), drives, root)
 
         run_async(work, self.latest("windows", self._windows_loaded), lambda _e: None, owner=self)
 
@@ -956,7 +997,7 @@ class GamesTab(QStackedWidget):
 
             if not root.exists() and os.path.ismount(root.parent):
                 root.mkdir(exist_ok=True)  # an unlocked drive: the folder to copy games into
-            return scan(root, sizes=False, drives=drives)
+            return with_remembered(self, "linux", scan(root, sizes=False, drives=drives), drives, root)
 
         run_async(work, self.latest("linux", self._linux_loaded), lambda _e: None, owner=self)
 

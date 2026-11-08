@@ -57,6 +57,8 @@ class RomGame:
     minutes: int = 0
     discs: tuple[Path, ...] = ()  # a game on several discs: path is the playlist (.m3u) GamingCrypt wrote
     removable: str = ""  # on a USB stick, USB drive or SD card (system.removable.KINDS) - "" on the drive
+    stick: str = ""  # ... which one (stick_memory.stick_key)
+    away: str = ""  # that stick isn't in: its name - remembered, not playable now (stick_memory.py)
 
     @property
     def appid(self) -> int:
@@ -115,7 +117,8 @@ def write_playlist(paths: EmulationPaths, system: System, title: str, discs: lis
     return playlist
 
 
-def scan(paths: EmulationPaths, system: System, roms: Path | None = None, removable: str = "") -> list[RomGame]:
+def scan(paths: EmulationPaths, system: System, roms: Path | None = None, removable: str = "",
+         stick: str = "") -> list[RomGame]:
     """roms: another roms folder (on a USB stick: removable says which kind) - the playlists of its
     games on several discs are written onto the encrypted drive all the same."""
     files = []
@@ -143,14 +146,20 @@ def scan(paths: EmulationPaths, system: System, roms: Path | None = None, remova
         number = disc_number(f.name)
         group = groups.get(DISC.sub("", f.stem).strip()) if number is not None else None
         if group is None or len(group) < 2:
-            games.append(RomGame(system, f, clean_name(f.name), _size(f), removable=removable))
+            games.append(RomGame(system, f, clean_name(f.name), _size(f), removable=removable, stick=stick))
         elif f is group[0]:
             discs = sorted(group, key=lambda d: disc_number(d.name))
             title = DISC.sub("", f.stem).strip()
             playlist = write_playlist(paths, system, title, discs)
             games.append(RomGame(system, playlist, clean_name(title + ".m3u"), sum(_size(d) for d in discs),
-                                 discs=tuple(discs), removable=removable))
+                                 discs=tuple(discs), removable=removable, stick=stick))
     return sorted(games, key=lambda g: g.name.lower())
+
+
+def stick_key(drive) -> str:
+    from gamingcrypt.stick_memory import stick_key as key
+
+    return key(drive)
 
 
 def scan_all(paths: EmulationPaths, drives: list | tuple = ()) -> dict[str, list[RomGame]]:
@@ -163,7 +172,7 @@ def scan_all(paths: EmulationPaths, drives: list | tuple = ()) -> dict[str, list
         extra = []
         for drive in drives:
             for roms in drive.roms():
-                for game in scan(paths, system, roms, drive.kind):
+                for game in scan(paths, system, roms, drive.kind, stick_key(drive)):
                     if game.appid not in seen:
                         seen.add(game.appid)
                         extra.append(game)

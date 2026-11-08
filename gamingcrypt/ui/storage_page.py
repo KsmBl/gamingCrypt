@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QProgressBar, QVBoxLayout, QWidget
 
 from gamingcrypt.steam import running, storage
@@ -17,6 +17,7 @@ from gamingcrypt.ui.widgets import big_button, set_status
 class StoragePage(QWidget):
     roms_changed = Signal()  # an emulated game was removed: the Games tab rescans
     drives_changed = Signal()  # a stick was formatted: looked for again
+    remember_changed = Signal()  # shown / hidden: the games of sticks that aren't in (the Games tab looks again)
 
     def __init__(self, service_fn: Callable[[], object], games_running: Callable[[], set] = running.running_appids,
                  parent: QWidget | None = None, emulation_fn: Callable[[], object] | None = None,
@@ -50,6 +51,25 @@ class StoragePage(QWidget):
         self.drive_grid.setColumnStretch(0, 1)
         layout.addLayout(self.drive_grid)
         self.drive_rows: dict = {}
+        # the games of sticks that aren't in: shown greyed out or not (each user's own), and the sticks
+        # remembered - on the encrypted drive (stick_memory.py)
+        self.stick_settings_fn: Callable[[], dict | None] = lambda: None  # set by Settings: config["sticks"]
+        self.save_fn: Callable[[], None] = lambda: None
+        self.remember_button = big_button("", checkable=True)
+        self.remember_button.toggled.connect(self._remember_toggled)
+        self.remember_button.hide()
+        layout.addWidget(self.remember_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.remember_hint = QLabel("A USB stick or SD card that isn't in keeps its games in the list, greyed out - "
+                                    "in Favorites and Continue playing too. Which games are on which stick is kept "
+                                    "on your encrypted drive.")
+        self.remember_hint.setObjectName("cardMeta")
+        self.remember_hint.setWordWrap(True)
+        self.remember_hint.hide()
+        layout.addWidget(self.remember_hint)
+        self.remembered_grid = QGridLayout()
+        self.remembered_grid.setColumnStretch(0, 1)
+        layout.addLayout(self.remembered_grid)
+        self.remembered_rows: dict = {}
         self.libraries = QVBoxLayout()
         layout.addLayout(self.libraries)
         row = QHBoxLayout()
@@ -325,7 +345,8 @@ class StoragePage(QWidget):
 
         _clear(self.drive_grid)
         self.drive_rows = {}
-        self.drives_heading.setVisible(bool(self.drives or self.unusable))
+        self.drives_heading.setVisible(bool(self.drives or self.unusable) or self.stick_settings_fn() is not None)
+        self.show_remembered()
         for row, drive in enumerate(self.unusable, start=len(self.drives)):
             size = f"  ·  {format_size(drive.size)}" if drive.size else ""
             text = QLabel(f"{drive.name}\n{LABELS[drive.kind]}{size}")
@@ -376,6 +397,63 @@ class StoragePage(QWidget):
             self.drive_rows[drive] = [text, bar, button]
             if drive.read_only == "damaged":
                 self.drive_rows[drive].append(self._repair_button(drive, row))
+
+    # the games of sticks that aren't in -------------------------------------------------------------
+    def show_remembered(self) -> None:
+        settings = self.stick_settings_fn()
+        self.remember_button.setVisible(settings is not None)
+        self.remember_hint.setVisible(settings is not None)
+        if settings is not None:
+            on = bool(settings.get("remember", True))
+            self.remember_button.blockSignals(True)
+            self.remember_button.setChecked(on)
+            self.remember_button.blockSignals(False)
+            self.remember_button.setText(f"👻 Games of sticks that aren't in: {'shown' if on else 'hidden'}")
+        _clear(self.remembered_grid)
+        self.remembered_rows = {}
+        memory = getattr(self.library_fn(), "stick_memory", None)
+        if memory is None or settings is None:
+            return
+        from gamingcrypt import stick_memory
+        from gamingcrypt.system.removable import LABELS
+
+        present = {stick_memory.stick_key(d) for d in self.drives}
+        try:
+            away = memory.away(present)
+        except OSError:
+            away = {}
+        for row, (key, entry) in enumerate(sorted(away.items(), key=lambda kv: str(kv[1].get("name", "")))):
+            count = sum(len(entry.get(kind) or []) for kind in stick_memory.KINDS)
+            kind = LABELS.get(entry.get("kind", ""), "USB stick")
+            text = QLabel(f"{entry.get('name', '?')}\n{kind}  ·  {count} game{'s' if count != 1 else ''}  ·  not in")
+            text.setObjectName("cardMeta")
+            forget = big_button("Forget")
+            forget.clicked.connect(lambda _c=False, k=key: self.forget(k))
+            self.remembered_grid.addWidget(text, row, 0)
+            self.remembered_grid.addWidget(forget, row, 1)
+            self.remembered_rows[key] = [text, forget]
+
+    def _remember_toggled(self, on: bool) -> None:
+        settings = self.stick_settings_fn()
+        if settings is None:
+            return
+        settings["remember"] = on
+        self.save_fn()
+        self.show_remembered()
+        self.remember_changed.emit()
+
+    def forget(self, key: str) -> None:
+        """Its games aren't in the list any more until it's put in again."""
+        memory = getattr(self.library_fn(), "stick_memory", None)
+        if memory is None:
+            return
+        try:
+            memory.forget(key)
+        except OSError as exc:
+            set_status(self.status, f"Could not forget it: {exc}", error=True)
+            return
+        self.show_remembered()
+        self.remember_changed.emit()
 
     def _repair_button(self, drive, row: int):
         button = big_button("🛠 Repair…", "primary")

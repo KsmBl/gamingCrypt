@@ -254,6 +254,25 @@ class MoveGame(QFrame):
         self.failed.emit(why)
 
 
+def put_in_text(game) -> str:
+    """"put GAMES in again" - or its kind, when its name isn't known."""
+    if getattr(game, "away", ""):
+        return f"put {game.away} in again"
+    kind = getattr(game, "removable", "")
+    return f"put its {dict(usb='USB stick', drive='USB drive', sd='SD card').get(kind, 'USB stick')} in again"
+
+
+def faded(card) -> None:
+    """A remembered game whose stick isn't in: its card greyed out, and where it is."""
+    from PySide6.QtWidgets import QGraphicsOpacityEffect
+
+    effect = QGraphicsOpacityEffect(card.cover)
+    effect.setOpacity(0.35)
+    card.cover.setGraphicsEffect(effect)
+    card.meta.setText(f"On {card.game.away} · not in")
+    card.setProperty("away", True)
+
+
 def game_place(game) -> str:
     """"the encrypted drive", "a USB stick" ..."""
     from gamingcrypt.system.removable import LABELS
@@ -282,6 +301,9 @@ class Movable:
 
     def drives_changed(self) -> None:
         """A stick put in / taken out: Move is there when the game can go somewhere (the admin's)."""
+        if getattr(self.game, "away", "") or self.gone:
+            self.move_button.hide()
+            return
         self.move_button.setVisible(getattr(self.tab, "can_delete", True) and bool(self.move_places()))
 
     gone = False  # its stick was taken out (game_found)
@@ -291,13 +313,14 @@ class Movable:
         None: not there (its stick taken out). Play waits until it's back."""
         if self.move_box is not None and self.move_box.moving:
             return  # (it's being moved: the page follows when it's done)
-        if game is None:
+        if game is None or getattr(game, "away", ""):  # (away: remembered - its stick isn't in)
+            if game is not None:
+                self.game = game
             if not self.gone:
                 self.gone = True
                 self.main_button.setEnabled(False)
-                where = "USB stick" if not getattr(self.game, "removable", "") else {
-                    "usb": "USB stick", "drive": "USB drive", "sd": "SD card"}.get(self.game.removable, "USB stick")
-                set_status(self.status, f"Not here at the moment - put its {where} in again to play it", error=True)
+                self.move_button.hide()
+                set_status(self.status, f"Not here at the moment - {put_in_text(self.game)} to play it", error=True)
                 self.status.setVisible(True)
             return
         if self.gone:

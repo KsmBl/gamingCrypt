@@ -275,6 +275,7 @@ OWN = {
     "steam": OWN_STEAM,
     "appearance": None,  # dark / light, text size
     "overlay_bar": None,  # the performance overlay: where, how big, what's on it
+    "sticks": None,  # whether the games of a stick that isn't in are shown
     "system": ("gaming_refresh", "follow_game_refresh", "gaming_resolution", "volume_step", "power_limit_w",
                "display"),
 }

@@ -76,6 +76,10 @@ DEFAULTS: dict[str, Any] = {
         # Libraries not shown on the Games tab (Settings -> Games -> Libraries).
         "hidden": [],
     },
+    "sticks": {
+        # The games of a USB stick / SD card that isn't in: still in the list, greyed out (each user's own).
+        "remember": True,
+    },
     "input": {
         # Apply calibration + button mapping through a virtual controller.
         "enabled": False,

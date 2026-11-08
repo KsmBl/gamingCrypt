@@ -14,7 +14,7 @@ from gamingcrypt.ui.game_widgets import (COVER_H, COVER_W, Cover, card_margins, 
                                         placeholder_cover)
 from gamingcrypt.ui.game_look import Backdrop, FactChips
 from gamingcrypt.ui.tasks import run_async
-from gamingcrypt.ui.move_game import Movable
+from gamingcrypt.ui.move_game import Movable, faded
 from gamingcrypt.ui.widgets import FlowLayout, big_button, enable_touch_scroll, set_status
 
 STATES_SHOWN = 3  # on a game's page: the newest save states
@@ -77,6 +77,8 @@ class RomCard(QFrame):
         self.meta = QLabel(format_size(game.size) + played)
         self.meta.setObjectName("cardMeta")
         layout.addWidget(self.meta)
+        if game.away:
+            faded(self)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt API
         self.clicked.emit(self.game)
@@ -457,6 +459,8 @@ class RomGamePage(Movable, QWidget):
         self.status.setObjectName("status")
         self.status.setWordWrap(True)
         self.drives_changed()
+        if getattr(game, "away", ""):
+            self.game_found(game)  # (remembered: its stick isn't in - Play waits)
         info.addWidget(self.status)
         self.states_title = QLabel("Continue from a save state")
         self.states_title.setObjectName("cardTitle")

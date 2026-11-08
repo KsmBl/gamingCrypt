@@ -38,6 +38,8 @@ class WindowsGame:
     minutes: int = 0
     removable: str = ""  # on a USB stick, USB drive or SD card (system.removable.KINDS) - "" on the drive
     home: Path | None = None  # on one: the drive's library folder, where its prefixes are
+    stick: str = ""  # ... which one (stick_memory.stick_key)
+    away: str = ""  # that stick isn't in: its name - remembered, not playable now (stick_memory.py)
 
     KIND = "windows"  # a Linux game (linux.library.LinuxGame) is the same, without Proton / Wine
     LABEL = "Windows"
@@ -77,7 +79,10 @@ def scan(root: Path, sizes: bool = True, kind: type = WindowsGame, drives: list 
     seen = {g.appid for g in games}
     for drive in drives:
         for p in _folders(getattr(drive, kind.KIND)):
-            game = kind(p, p.name, folder_size(p) if sizes else 0, removable=drive.kind, home=root)
+            from gamingcrypt.stick_memory import stick_key
+
+            game = kind(p, p.name, folder_size(p) if sizes else 0, removable=drive.kind, home=root,
+                        stick=stick_key(drive))
             if game.appid not in seen:
                 seen.add(game.appid)
                 games.append(game)

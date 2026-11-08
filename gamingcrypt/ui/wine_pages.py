@@ -23,7 +23,7 @@ from gamingcrypt.ui.game_widgets import (COVER_H, COVER_W, Cover, Tappable, card
                                         format_playtime, format_size, placeholder_cover)
 from gamingcrypt.ui.movies_tab import MovieUploadPage
 from gamingcrypt.ui.tasks import run_async
-from gamingcrypt.ui.move_game import Movable
+from gamingcrypt.ui.move_game import Movable, faded
 from gamingcrypt.ui.widgets import FlowLayout, big_button, enable_touch_scroll, set_status, settle_focus
 from gamingcrypt.linux import library as linux_library
 from gamingcrypt.wine import library
@@ -82,6 +82,8 @@ class WindowsCard(Tappable):
         self.meta = QLabel(format_playtime(game.minutes))
         self.meta.setObjectName("cardMeta")
         layout.addWidget(self.meta)
+        if game.away:
+            faded(self)
         self.tapped.connect(lambda: self.clicked.emit(self.game))
 
 
@@ -332,6 +334,8 @@ class WindowsGamePage(Movable, QWidget):
         self.status.setObjectName("status")
         self.status.setWordWrap(True)
         self.drives_changed()
+        if getattr(game, "away", ""):
+            self.game_found(game)  # (remembered: its stick isn't in - Play waits)
         self.status.hide()
         info.addWidget(self.status)
         info.addStretch()

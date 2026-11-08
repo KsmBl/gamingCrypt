@@ -2311,6 +2311,7 @@ class MainWindow(QMainWindow):
         if storage_page is not None and hasattr(games, "reload_roms"):
             storage_page.roms_changed.connect(games.reload_roms)  # removed in Settings -> Storage
             storage_page.library_fn = lambda: games  # (its roots and the sticks that are in)
+            storage_page.remember_changed.connect(games.reload_roms)  # (the games of sticks that aren't in)
             storage_page.drives_changed.connect(self.drives_changed)  # formatted / unlocked: looked at anew
             storage_page.config_fn = lambda: self.config  # (encrypting a stick: the drive's settings)
             storage_page.code_check_fn = self.password_for_code  # (encrypting / opening one: the code again)
@@ -2633,6 +2634,7 @@ def default_pages(config: dict) -> dict[str, QWidget]:
     games = GamesTab(service, library_path=library_path, library_settings=libraries, emulation_root=emulation_root,
                      windows_root=windows_root, linux_root=linux_root, minecraft_root=minecraft_root,
                      user=users.current(config), people=lambda: users.all_users(config),
+                     stick_settings=lambda: config.get("sticks") or {},
                      rate_games=users.current(config).admin and any(u.age is not None
                                                                     for u in users.all_users(config)))
     from gamingcrypt.emulation import cores, retroarch
