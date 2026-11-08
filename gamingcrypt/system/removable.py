@@ -27,7 +27,7 @@ MOUNTABLE = {"vfat", "exfat", "ntfs", "ntfs3", "ext2", "ext3", "ext4", "btrfs", 
 SYSTEM_MOUNTS = ("/", "/boot", "/boot/efi", "/efi", "/home", "/usr", "/var", "/nix", "[SWAP]")
 CARD_READER = re.compile(r"\b(sd|sdxc|sdhc|mmc|micro ?sd|card ?reader|cardreader)\b", re.IGNORECASE)
 DRIVE_FROM = 256 * 1024 ** 3  # bigger than any common stick: a USB hard disk or SSD
-LSBLK = ["lsblk", "-J", "-b", "-o", "NAME,PATH,TYPE,TRAN,RM,HOTPLUG,ROTA,SIZE,FSTYPE,MOUNTPOINTS,LABEL,MODEL"]
+LSBLK = ["lsblk", "-J", "-b", "-o", "NAME,PATH,TYPE,TRAN,RM,HOTPLUG,ROTA,SIZE,FSTYPE,MOUNTPOINTS,LABEL,MODEL,UUID,RO"]
 
 
 @dataclass(frozen=True)
@@ -40,6 +40,7 @@ class Removable:
     disk: str = field(default="", compare=False)  # the whole stick: /dev/sdb
     size: int = field(default=0, compare=False)  # the whole stick's, in bytes
     problem: str = field(default="", compare=False)  # not usable (not mounted): why - "" when it is
+    uuid: str = field(default="", compare=False)  # its file system's id: which stick it is (not its name)
     container: str = field(default="", compare=False)  # encrypted: its VeraCrypt container (stick_crypt.py)
     host: Path | None = field(default=None, compare=False)  # ... and where the stick itself is mounted
 
@@ -151,7 +152,8 @@ def parse(listing: dict, exclude: tuple[str, ...] = ()) -> tuple[list[Removable]
             if any(real == e or real.startswith(e + os.sep) or e.startswith(real + os.sep) for e in excluded):
                 continue
             found.append(Removable(Path(point), kind, (part.get("label") or "").strip(), part.get("path") or "",
-                                   part.get("fstype") or "", disk.get("path") or "", int(disk.get("size") or 0)))
+                                   part.get("fstype") or "", disk.get("path") or "", int(disk.get("size") or 0),
+                                   uuid=(part.get("uuid") or "").lower()))
     return found, unmounted, blank
 
 
@@ -167,7 +169,8 @@ class Drives:
         self.mount = mount
         self.run = run or (lambda *a, **k: _run(*a, **k))
         self.crypt_factory = crypt_factory  # (tests: a stand-in VeraCrypt for the encrypted sticks)
-        self.opened: set[str] = set()  # the containers this opened (closed when their stick is out)
+        # by container id (stick_crypt.container_id) - not path: a stick renamed / mounted elsewhere is the same
+        self.opened: dict[str, str] = {}  # the containers this opened -> their path (closed when the stick is out)
         self.refused: dict[str, str] = {}  # container -> the password it didn't open with (not tried again)
         self.tried: dict[str, str] = {}  # partitions that wouldn't mount -> why: not tried again until they're out
         self.unusable: list[Removable] = []  # (after look()) sticks that are in but can't be used: why
@@ -215,7 +218,8 @@ class Drives:
                 shown.append(stick)
                 continue
             volume = str(volume)
-            present.add(volume)
+            ident = stick_crypt.container_id(volume)
+            present.add(ident)
             locked = replace(stick, container=volume, host=stick.mount)
             if password is None:
                 if stick_crypt.is_open(volume):
@@ -223,21 +227,20 @@ class Drives:
                 else:
                     unusable.append(replace(locked, problem=stick_crypt.NEEDS_CODE))
                 continue
-            if self.refused.get(volume) == password:
+            if self.refused.get(ident) == password:
                 unusable.append(replace(locked, problem=stick_crypt.EARLIER))
                 continue
             opened = stick_crypt.open_stick(stick, password, self.crypt_factory)
             if opened.problem:
                 if opened.problem == stick_crypt.EARLIER:
-                    self.refused[volume] = password
+                    self.refused[ident] = password
                 unusable.append(opened)
                 continue
-            self.refused.pop(volume, None)
-            self.opened.add(volume)
+            self.refused.pop(ident, None)
+            self.opened[ident] = volume
             shown.append(opened)
-        for volume in sorted(self.opened - present):  # taken out while open
-            stick_crypt.close(volume, self.crypt_factory)
-            self.opened.discard(volume)
+        for ident in sorted(set(self.opened) - present):  # taken out while open
+            stick_crypt.close(self.opened.pop(ident), self.crypt_factory)
         self.refused = {v: p for v, p in self.refused.items() if v in present}
         return shown
 
@@ -245,7 +248,7 @@ class Drives:
         """The panic lock: every stick's container closed (its games aren't there any more)."""
         from gamingcrypt.system import stick_crypt
 
-        for volume in sorted(self.opened):
+        for volume in sorted(self.opened.values()):
             stick_crypt.close(volume, self.crypt_factory)
         self.opened.clear()
 

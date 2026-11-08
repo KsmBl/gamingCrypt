@@ -64,15 +64,33 @@ def container_of(mount: Path | str) -> Path | None:
     return path if path.is_file() else None
 
 
+_ids: dict[str, str] = {}  # container path -> its id (known after the stick is gone: to close it)
+
+
+def container_id(volume: str | Path) -> str:
+    """Which container it is - whatever the stick is called and wherever it's mounted: from the salt
+    at the start of every VeraCrypt volume (64 random bytes, written once when it's made). Two
+    sticks both called GAMES are two containers; a stick renamed, or mounted at GAMES1, is the same."""
+    try:
+        with open(volume, "rb") as f:
+            head = f.read(64)
+    except OSError:
+        head = b""
+    if len(head) == 64:
+        _ids[str(volume)] = hashlib.sha256(head).hexdigest()[:16]
+    return _ids.get(str(volume)) or hashlib.sha256(str(volume).encode()).hexdigest()[:16]
+
+
 def mount_dir(volume: str | Path) -> Path:
-    """Where a stick's container is opened: below the home folder (the helper allows it there)."""
-    tag = hashlib.sha256(str(volume).encode()).hexdigest()[:10]
-    return Path(os.path.expanduser("~/.local/share/gamingcrypt/drives")) / tag
+    """Where a stick's container is opened: below the home folder (the helper allows it there) - one
+    folder per container (container_id), not per path."""
+    return Path(os.path.expanduser("~/.local/share/gamingcrypt/drives")) / container_id(volume)
 
 
-def unlocker(volume: str | Path, factory=None) -> VeraCryptUnlocker:
+def unlocker(volume: str | Path, factory=None, mount_point: Path | None = None) -> VeraCryptUnlocker:
     """The stick's password is the volume's password as it is (no derivation on top: kdf=None)."""
-    cfg = {"volume": str(volume), "mount_point": str(mount_dir(volume)), "kdf": None, "keyring": None}
+    where = mount_point if mount_point is not None else mount_dir(volume)
+    cfg = {"volume": str(volume), "mount_point": str(where), "kdf": None, "keyring": None}
     return (factory or VeraCryptUnlocker.from_config)(cfg)
 
 
@@ -135,9 +153,12 @@ def open_stick(stick, password: str, factory=None):
 
 
 def close(volume: str | Path, factory=None, force: bool = True) -> bool:
+    """Closed by where it's open (VeraCrypt takes the mount folder too): also when its stick was taken
+    out, or is mounted somewhere else now."""
     if not is_open(volume):
         return True
-    result = unlocker(volume, factory).dismount(force=force)
+    inside = mount_dir(volume)
+    result = unlocker(inside, factory, mount_point=inside).dismount(force=force)
     try:
         mount_dir(volume).rmdir()
     except OSError:

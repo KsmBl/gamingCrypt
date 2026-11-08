@@ -1,6 +1,7 @@
 """Encrypted sticks: a VeraCrypt container with the drive's code (same password, same key derivation)."""
 
 import json
+import os
 import subprocess
 from dataclasses import replace
 from pathlib import Path
@@ -35,7 +36,7 @@ class FakeUnlocker:
 
     def create_volume(self, path, size_gb, secret, quick=True, progress=None, cancel=None, **_kw):
         self.vc.calls.append(("create", path, size_gb))
-        Path(path).write_bytes(b"vc")
+        Path(path).write_bytes(os.urandom(64) + b"vc")
         self.vc.passwords[path] = secret
         for pct in (40.0, 100.0):
             if progress:
@@ -67,8 +68,8 @@ class FakeUnlocker:
 def vc(monkeypatch):
     fake = FakeVeraCrypt()
     monkeypatch.setattr(stick_crypt, "_mounted", lambda path: Path(path) in fake.mounted)
-    monkeypatch.setattr(stick_crypt, "unlocker", lambda volume, factory=None: fake.factory(
-        {"volume": str(volume), "mount_point": str(stick_crypt.mount_dir(volume))}))
+    monkeypatch.setattr(stick_crypt, "unlocker", lambda volume, factory=None, mount_point=None: fake.factory(
+        {"volume": str(volume), "mount_point": str(mount_point or stick_crypt.mount_dir(volume))}))
     return fake
 
 
@@ -94,7 +95,7 @@ def encrypted_stick(tmp_path, vc, password, cfg, name="STICK"):
     mount = tmp_path / name
     mount.mkdir()
     volume = mount / stick_crypt.CONTAINER
-    volume.write_bytes(b"vc")
+    volume.write_bytes(os.urandom(64) + b"vc")
     vc.passwords[str(volume)] = password
     stick_crypt.write_info(volume, cfg["unlock"], cfg["users"])
     return Removable(mount, "usb", name, "/dev/sdb1", "exfat", "/dev/sdb", 32 * 1024 ** 3)
@@ -157,7 +158,7 @@ def test_put_in_while_unlocked_it_opens(tmp_path, vc, config):
     drives.look()
     assert [c[0] for c in vc.calls] == ["open"]  # open already: not again
     drives.run = Lsblk(False)  # taken out
-    assert drives.look() == [] and [c[0] for c in vc.calls] == ["open", "close"] and drives.opened == set()
+    assert drives.look() == [] and [c[0] for c in vc.calls] == ["open", "close"] and not drives.opened
 
 
 def test_locked_it_waits(tmp_path, vc, config):
@@ -185,7 +186,7 @@ def test_the_panic_lock_closes_them(tmp_path, vc, config):
     drives = Drives(run=Lsblk(stick.mount))
     drives.look()
     drives.close_all()
-    assert vc.mounted == set() and drives.opened == set()
+    assert vc.mounted == set() and not drives.opened
 
 
 def test_formatting_closes_it_first_and_can_encrypt(tmp_path, vc, config):
@@ -200,7 +201,8 @@ def test_formatting_closes_it_first_and_can_encrypt(tmp_path, vc, config):
     now = removable.format_drive(opened, "exfat", "GAMES", run=StickWithoutTable(new), step=lambda _k: None,
                                  encrypt=lambda s: stick_crypt.create(s, password, config["unlock"], config["users"],
                                                                       free=4 * 1024 ** 3))
-    assert ("close", str(stick.mount / "GamingCrypt.vc")) in vc.calls  # (closed before the stick was unmounted)
+    inside = str(stick_crypt.mount_dir(stick.mount / "GamingCrypt.vc"))
+    assert ("close", inside) in vc.calls  # (closed - by where it's open - before the stick was unmounted)
     assert now.encrypted and now.host == new
     assert (now.mount / "Emulation" / "roms" / "snes").is_dir() and (now.mount / "Windows Games").is_dir()
     assert not (new / "Emulation").exists()  # the folders are inside, not on the stick itself
@@ -411,7 +413,7 @@ def test_a_changed_admin_code_rekeys_the_sticks_that_are_in(qtbot, config, monke
 
         def __init__(self):
             super().__init__()
-            self.config, self.drives = config, SimpleNamespace(opened={"/s/GamingCrypt.vc"})
+            self.config, self.drives = config, SimpleNamespace(opened={"a1b2c3": "/s/GamingCrypt.vc"})
 
         def remember_code(self, _secret):
             pass
@@ -522,3 +524,80 @@ def test_a_users_code_gives_the_drives_password(config, monkeypatch):
     app = SimpleNamespace(config=config, verifier=verifier.make("9876"))
     assert MainWindow.password_for_code(app, "9876") == drive_password(config)
     assert MainWindow.password_for_code(app, "1234") is None  # the admin's isn't Mia's
+
+
+# --- which stick is which: by its container / file system, not its name or where it's mounted ---------
+
+def test_two_sticks_with_the_same_name_are_two(tmp_path, vc, config):
+    password = drive_password(config)
+    one = encrypted_stick(tmp_path / "a", vc, password, config, name="GAMES") if (tmp_path / "a").mkdir() is None else None
+    two = encrypted_stick(tmp_path / "b", vc, password, config, name="GAMES") if (tmp_path / "b").mkdir() is None else None
+    first, second = (s.mount / stick_crypt.CONTAINER for s in (one, two))
+    assert stick_crypt.container_id(first) != stick_crypt.container_id(second)
+    assert stick_crypt.mount_dir(first) != stick_crypt.mount_dir(second)
+    stick_crypt.open_stick(one, password)
+    assert stick_crypt.is_open(first) and not stick_crypt.is_open(second)  # (one open: not the other)
+
+
+def test_renamed_or_mounted_elsewhere_its_the_same(tmp_path, vc, config):
+    password = drive_password(config)
+    stick = encrypted_stick(tmp_path, vc, password, config, name="GAMES")
+    volume = stick.mount / stick_crypt.CONTAINER
+    where = stick_crypt.mount_dir(volume)
+    moved = tmp_path / "GAMES1"  # (another stick called GAMES was in: this one got GAMES1)
+    stick.mount.rename(moved)
+    vc.passwords[str(moved / stick_crypt.CONTAINER)] = password
+    assert stick_crypt.mount_dir(moved / stick_crypt.CONTAINER) == where
+    assert stick_crypt.container_id(volume) == stick_crypt.container_id(moved / stick_crypt.CONTAINER)  # (gone: known)
+
+
+def test_an_open_stick_mounted_elsewhere_isnt_opened_twice_or_closed(tmp_path, vc, config):
+    password = drive_password(config)
+    stick = encrypted_stick(tmp_path, vc, password, config, name="STICK")
+    stick_crypt.keys.set(password)
+    drives = Drives(run=Lsblk(stick.mount))
+    first = drives.look()[0]
+    moved = tmp_path / "STICK1"
+    stick.mount.rename(moved)
+    vc.passwords[str(moved / stick_crypt.CONTAINER)] = password
+    drives.run = Lsblk(moved)
+    again = drives.look()[0]
+    assert again.mount == first.mount and again.host == moved
+    assert [c[0] for c in vc.calls] == ["open"]  # not opened again - and not closed as "taken out"
+
+
+def test_closed_when_taken_out_by_where_its_open(tmp_path, vc, config):
+    password = drive_password(config)
+    stick = encrypted_stick(tmp_path, vc, password, config)
+    stick_crypt.keys.set(password)
+    drives = Drives(run=Lsblk(stick.mount))
+    inside = drives.look()[0].mount
+    import shutil
+
+    shutil.rmtree(stick.mount)  # pulled out: the container file isn't there to say which it was
+    drives.run = Lsblk(False)
+    drives.look()
+    assert vc.calls[-1] == ("close", str(inside)) and not stick_crypt.is_open(inside)
+
+
+def test_an_earlier_code_isnt_tried_again_under_another_name(tmp_path, vc, config):
+    stick = encrypted_stick(tmp_path, vc, "an earlier password", config, name="OLD")
+    stick_crypt.keys.set(drive_password(config))
+    drives = Drives(run=Lsblk(stick.mount))
+    drives.look()
+    moved = tmp_path / "OLD1"
+    stick.mount.rename(moved)
+    vc.passwords[str(moved / stick_crypt.CONTAINER)] = "an earlier password"
+    drives.run = Lsblk(moved)
+    assert drives.look() == [] and drives.unusable[0].problem == stick_crypt.EARLIER
+    assert [c[0] for c in vc.calls] == ["open"]
+
+
+def test_a_plain_sticks_file_system_id():
+    listing = {"blockdevices": [{"name": "sdb", "path": "/dev/sdb", "type": "disk", "tran": "usb", "size": 8,
+                                 "children": [{"name": "sdb1", "path": "/dev/sdb1", "type": "part", "fstype": "exfat",
+                                               "uuid": "1A2B-3C4D", "label": "GAMES",
+                                               "mountpoints": ["/run/media/me/GAMES"]}]}]}
+    found = removable.parse(listing)[0]
+    assert found[0].uuid == "1a2b-3c4d"
+    assert "UUID" in removable.LSBLK[-1]

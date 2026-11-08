@@ -647,7 +647,7 @@ class MainWindow(QMainWindow):
 
         self.remember_code(secret)
         old = stick_crypt.keys.password
-        opened = sorted(getattr(getattr(self, "drives", None), "opened", set()))
+        opened = sorted(dict(getattr(getattr(self, "drives", None), "opened", {}) or {}).values())  # (their paths)
         config = self.config
 
         def rekey(new) -> None:
