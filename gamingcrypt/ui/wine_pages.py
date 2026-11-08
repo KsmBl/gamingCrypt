@@ -144,6 +144,9 @@ class WindowsLibraryPage(QWidget):
         self.grid.take_all()
         for game in games:
             card = self.cards.get(game.appid)
+            if card is not None and card.game != game:  # moved (onto / off a stick), its stick out / in
+                self.cards.pop(game.appid).deleteLater()
+                card = None
             if card is None:
                 card = WindowsCard(game, covers=getattr(self.tab, f"{self.KIND}_covers", None))
                 card.clicked.connect(getattr(self.tab, f"open_{self.KIND}_game"))

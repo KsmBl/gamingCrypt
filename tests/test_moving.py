@@ -576,3 +576,56 @@ def test_errors_say_where(emu, stick, monkeypatch):
     monkeypatch.setattr(moving, "_copy_file", denied)
     with pytest.raises(MoveError, match=r"Permission denied: .*STICK/Emulation/roms/snes/\.moving-Super"):
         moving.move(rom(emu, "snes"), Place(stick), emu)
+
+
+# --- after a move, every card shows where the game is now ----------------------------------------------
+
+def badges(tab, name) -> list[str]:
+    """The badge on every card of that game: the home list, an open system / Windows library page."""
+    from gamingcrypt.ui.emulation_pages import RomCard, SystemPage
+    from gamingcrypt.ui.wine_pages import WindowsCard, WindowsLibraryPage
+
+    found = [c.cover.badge for c in tab.home.grid.widgets() if getattr(c.game, "name", "") == name]
+    for page in [*tab.pages_of(SystemPage), *tab.pages_of(WindowsLibraryPage)]:
+        found += [c.cover.badge for c in page.cards.values() if isinstance(c, (RomCard, WindowsCard))
+                  and c.game.name == name and not c.isHidden()]
+    return found
+
+
+@pytest.mark.parametrize("w,h", [(1280, 800), (1280, 720), (1920, 1080)])
+def test_moved_off_the_stick_the_badge_goes(qtbot, tab, emu, windows, stick, w, h):
+    from gamingcrypt.ui.wine_pages import WindowsGamePage
+
+    tab.resize(w, h)
+    moving.move(wine.scan(windows)[0], Place(stick), None)  # Celeste onto the stick
+    moving.move(rom(emu, "snes"), Place(stick), emu)  # Mario too
+    tab.set_drives([stick])
+    qtbot.waitUntil(lambda: tab.windows_games and tab.windows_games[0].removable == "usb"
+                    and tab.roms["snes"][0].removable == "usb")
+    tab.open_system("snes")
+    tab.open_windows_library()  # (both open, one under the other)
+    qtbot.wait(20)
+    assert badges(tab, "Celeste").count("usb") == 2 and badges(tab, "Super Mario World").count("usb") == 2
+    tab.open_windows_game(tab.windows_games[0])
+    page = tab.currentWidget()
+    assert isinstance(page, WindowsGamePage) and page.cover.badge == "usb"
+    page.move_button.click()
+    box = page.move_box
+    assert box.buttons[0].text() == "🔒 To the encrypted drive"
+    box.buttons[0].click()
+    qtbot.waitUntil(lambda: box.over)
+    box.ok_button.click()
+    qtbot.waitUntil(lambda: tab.windows_games[0].removable == "")
+    qtbot.waitUntil(lambda: badges(tab, "Celeste") == ["", ""])  # home and the library page: no badge
+    moving.move(tab.roms["snes"][0], Place(None), emu)
+    tab.reload_roms()
+    qtbot.waitUntil(lambda: badges(tab, "Super Mario World") == ["", ""])
+
+
+def test_moved_onto_the_stick_the_badge_comes(qtbot, tab, emu, stick):
+    tab.set_drives([stick])
+    tab.open_system("snes")
+    qtbot.waitUntil(lambda: badges(tab, "Super Mario World") == ["", ""])
+    moving.move(tab.roms["snes"][0], Place(stick), emu)
+    tab.reload_roms()
+    qtbot.waitUntil(lambda: badges(tab, "Super Mario World") == ["usb", "usb"])

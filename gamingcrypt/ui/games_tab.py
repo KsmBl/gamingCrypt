@@ -935,8 +935,8 @@ class GamesTab(QStackedWidget):
         self.windows_games = games
         from gamingcrypt.ui.wine_pages import WindowsLibraryPage
 
-        for page in self.pages_of(WindowsLibraryPage, exactly=True):  # open: shows what came / went
-            if [g.appid for g in page.games] != [g.appid for g in games]:
+        for page in self.pages_of(WindowsLibraryPage, exactly=True):  # open: shows what came / went - or moved
+            if list(page.games) != list(games):  # (the games themselves: a moved one has the same id)
                 page.set_games(games)
         self.home.apply_libraries()
         self.home.update_continue()
@@ -1010,8 +1010,8 @@ class GamesTab(QStackedWidget):
         self.linux_games = games
         from gamingcrypt.ui.wine_pages import LinuxLibraryPage
 
-        for page in self.pages_of(LinuxLibraryPage):  # open: shows what came / went
-            if [g.appid for g in page.games] != [g.appid for g in games]:
+        for page in self.pages_of(LinuxLibraryPage):  # open: shows what came / went - or moved
+            if list(page.games) != list(games):  # (the games themselves: a moved one has the same id)
                 page.set_games(games)
         self.home.apply_libraries()
         self.home.update_continue()
