@@ -97,16 +97,29 @@ def test_an_unmounted_stick_is_mounted():
     assert system.calls == ["lsblk", "udisksctl", "lsblk"]
 
 
-def test_one_that_wont_mount_isnt_tried_again_until_its_back():
+class Clock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+def test_one_that_wont_mount_is_tried_a_few_times_then_not_until_its_back():
     system = FakeSystem(mounts=False)
     drives = Drives(run=system)
+    drives.clock = clock = Clock()
     assert drives.look() == [] and drives.look() == []
-    assert system.calls.count("udisksctl") == 1
+    assert system.calls.count("udisksctl") == 1  # (again only a moment later)
+    for _ in range(5):
+        clock.now += 2
+        drives.look()
+    assert system.calls.count("udisksctl") == removable.MOUNT_TRIES
     drives.run = lambda args, **_k: subprocess.CompletedProcess(args, 0, '{"blockdevices": []}', "")
     drives.look()  # taken out
     drives.run = system
     drives.look()
-    assert system.calls.count("udisksctl") == 2
+    assert system.calls.count("udisksctl") == removable.MOUNT_TRIES + 1
 
 
 def test_nothing_mounted_when_asked_not_to():
@@ -306,14 +319,66 @@ class Mounter:
         return subprocess.CompletedProcess(args, 0, json.dumps(listing), "")
 
 
-def test_one_that_wont_mount_says_why():
+def test_one_that_wont_mount_says_why_once_its_tried_a_few_times():
     system = Mounter()
     drives = Drives(run=system)
-    assert drives.look() == []
+    drives.clock = clock = Clock()
+    assert drives.look() == [] and drives.unusable == []  # just put in: maybe too early - not said yet
+    for _ in range(removable.MOUNT_TRIES - 1):
+        clock.now += 2
+        drives.look()
     assert [d.problem for d in drives.unusable] == ["Couldn't be mounted: Not authorized"]
     assert drives.unusable[0].device == "/dev/sdb1" and drives.unusable[0].disk == "/dev/sdb"
+    clock.now += 60
     drives.look()
-    assert system.calls.count("udisksctl") == 1 and len(drives.unusable) == 1  # not tried again, still said
+    assert system.calls.count("udisksctl") == removable.MOUNT_TRIES and len(drives.unusable) == 1  # still said
+
+
+def test_a_stick_mounted_on_the_second_try_is_never_unusable():
+    """Put in, the first try was too early (the kernel was still reading it): no "unusable" notice."""
+    from types import SimpleNamespace
+
+    from gamingcrypt.app import MainWindow
+
+    system = FakeSystem()
+    tries = []
+    real = system.__call__
+
+    def early_then_fine(args, **kw):
+        if args[0] == "udisksctl" and not tries:
+            tries.append(1)
+            return subprocess.CompletedProcess(args, 1, "", "Error mounting /dev/sdb1: not a valid block device")
+        return real(args, **kw)
+
+    drives = Drives(run=early_then_fine)
+    drives.clock = clock = Clock()
+    said = []
+    app = SimpleNamespace(notify=lambda text, icon: said.append(icon))
+    MainWindow.drives_arrived(app, [], [])
+    found = drives.look()
+    MainWindow.drives_arrived(app, found, drives.unusable)
+    clock.now += 2
+    found = drives.look()
+    MainWindow.drives_arrived(app, found, drives.unusable)
+    assert found and said == ["🔌"]  # only "ready" - never "can't be used"
+
+
+def test_a_stick_that_looks_empty_at_first_isnt_said_to_be(monkeypatch):
+    blank = {"blockdevices": [disk("sdc")]}  # (no partitions read yet)
+    ready = {"blockdevices": [disk("sdc", children=[part("sdc1", "/run/media/me/SSD", label="SSD")])]}
+    answers = [blank, ready]
+    drives = Drives(run=lambda args, **_k: subprocess.CompletedProcess(args, 0, json.dumps(answers[0]), ""))
+    drives.clock = clock = Clock()
+    assert drives.look() == [] and drives.unusable == []
+    answers.pop(0)
+    clock.now += 1
+    assert [d.name for d in drives.look()] == ["SSD"] and drives.unusable == []
+    answers[0] = blank  # one that really is empty: said after a while
+    drives.look()
+    assert drives.unusable == []
+    clock.now += removable.BLANK_AFTER_S
+    drives.look()
+    assert drives.unusable[0].problem == "Not formatted - format it to use it"
 
 
 def test_a_stick_being_formatted_isnt_mounted_in_between():

@@ -204,7 +204,11 @@ class Drives:
         # by container id (stick_crypt.container_id) - not path: a stick renamed / mounted elsewhere is the same
         self.opened: dict[str, str] = {}  # the containers this opened -> their path (closed when the stick is out)
         self.refused: dict[str, str] = {}  # container -> the password it didn't open with (not tried again)
-        self.tried: dict[str, str] = {}  # partitions that wouldn't mount -> why: not tried again until they're out
+        # partitions that wouldn't mount -> (why, how often, when last): tried again a few times - just put
+        # in, the kernel may still be reading it - then not until they're out
+        self.tried: dict[str, tuple[str, int, float]] = {}
+        self.blank_since: dict[str, float] = {}  # sticks that look empty -> since when (said only after a while)
+        self.clock = time.monotonic
         self.unusable: list[Removable] = []  # (after look()) sticks that are in but can't be used: why
 
     def look(self) -> list[Removable]:
@@ -218,23 +222,32 @@ class Drives:
         found, unmounted, blanks = parse(listing, self.exclude, read_only_mounts())
         disks = {d.get("path"): d for d in listing.get("blockdevices") or []}
         present = {p.get("path") for p in unmounted}
-        self.tried = {path: why for path, why in self.tried.items() if path in present}  # out: tried again when back
+        self.tried = {path: t for path, t in self.tried.items() if path in present}  # out: tried again when back
+        now = self.clock()
         unusable = []
         for part in unmounted:
             path = part.get("path") or ""
             disk = next((d for d in disks.values() if part is d or part in (d.get("children") or [])), {})
             if not path or disk.get("path") in BUSY:
                 continue  # (being formatted: not mounted in between)
-            if self.mount and path not in self.tried:
+            why, attempts, last = self.tried.get(path, ("", 0, 0.0))
+            if self.mount and attempts < MOUNT_TRIES and now - last >= MOUNT_AGAIN_S:
                 why = self._mount(path)
                 if not why:
+                    self.tried.pop(path, None)
                     return self.look()  # mounted: found with its mount point
-                self.tried[path] = why
-            if path in self.tried:
-                unusable.append(_unusable(disk, kind_of(disk) or "usb", f"Couldn't be mounted: {self.tried[path]}",
-                                          part))
+                attempts, last = attempts + 1, now
+                self.tried[path] = (why, attempts, last)
+            if attempts >= MOUNT_TRIES:  # (before that: maybe it was just too early)
+                unusable.append(_unusable(disk, kind_of(disk) or "usb", f"Couldn't be mounted: {why}", part))
         found = self._open_encrypted(found, unusable)
-        self.unusable = [d for d in [*blanks, *unusable] if d.disk not in BUSY]
+        blank_disks = {b.disk for b in blanks}
+        self.blank_since = {d: t for d, t in self.blank_since.items() if d in blank_disks}
+        for disk in blank_disks:
+            self.blank_since.setdefault(disk, now)
+        # a stick just put in looks empty until the kernel read its partitions: "not formatted" only after a while
+        settled = [b for b in blanks if now - self.blank_since[b.disk] >= BLANK_AFTER_S]
+        self.unusable = [d for d in [*settled, *unusable] if d.disk not in BUSY]
         return sorted(found, key=lambda d: str(d.mount))
 
     def _open_encrypted(self, found: list, unusable: list) -> list:
@@ -310,6 +323,9 @@ FORMATS = {  # file system -> (what it's good for, its partition type in an MBR 
               "0x07", "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7"),
     "ext4": ("Linux only - Linux games start from it", "0x83", "0fc63daf-8483-4772-8e79-3d69d8477de4"),
 }
+MOUNT_TRIES = 3  # a partition that won't mount: tried so often before it's said
+MOUNT_AGAIN_S = 1.5  # ... this far apart
+BLANK_AFTER_S = 3.0  # a stick that looks empty: said once it still does after this long
 BUSY: set[str] = set()  # disks being formatted (/dev/sdb): nothing mounts them meanwhile
 MBR_UP_TO = 2 * 1024 ** 4  # bigger: a GPT table (an MBR can't reach past 2 TiB)
 TOOL_FOLDERS = ("/usr/bin", "/usr/sbin", "/sbin", "/bin")
