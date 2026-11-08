@@ -5,13 +5,16 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from gamingcrypt import saves
 from gamingcrypt.ui.game_widgets import format_size
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import big_button, enable_touch_scroll, set_status
+
+
+STATE_PICTURE = QSize(96, 64)  # a save state's picture in its line
 
 
 def when(timestamp: float) -> str:
@@ -155,6 +158,12 @@ class SavesPage(QWidget):
             self._button(actions, row, "delete", "🗑 Delete", lambda: self.ask_delete(row), "danger")
             actions.addStretch()
             layout.addLayout(actions)
+        if row.states:  # an emulated game: each save state on its own - deleted on its own
+            heading = QLabel(f"Save states · {len(row.states)}")
+            heading.setObjectName("cardMeta")
+            layout.addWidget(heading)
+            for state in row.states:
+                layout.addLayout(self._state_line(row, state))
         for backup in row.backups:
             line = QHBoxLayout()
             label = QLabel(f"Backup of {when(backup.made)}  ·  {format_size(backup.size)}")
@@ -164,6 +173,39 @@ class SavesPage(QWidget):
             self._button(line, row, "drop", "🗑", lambda b=backup: self.ask_delete_backup(b), which=backup.path.name)
             layout.addLayout(line)
         return card
+
+    def _state_line(self, row, state) -> QHBoxLayout:
+        """Its picture, its slot, when it was saved and how long was played up to it - and 🗑."""
+        from PySide6.QtGui import QPixmap
+
+        from gamingcrypt.ui.game_widgets import Cover
+        from gamingcrypt.ui.save_states import played_text
+
+        line = QHBoxLayout()
+        line.setSpacing(14)
+        picture = Cover()
+        picture.setFixedSize(STATE_PICTURE)
+        picture.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        if state.picture is not None:
+            pixmap = QPixmap(str(state.picture))
+            if not pixmap.isNull():
+                picture.setPixmap(pixmap.scaled(STATE_PICTURE, Qt.AspectRatioMode.KeepAspectRatio,
+                                                Qt.TransformationMode.SmoothTransformation))
+        line.addWidget(picture)
+        played = played_text(state.played)
+        text = QLabel(f"Slot {state.slot + 1}  ·  {when(state.saved_at)}" + (f"\n{played}" if played else ""))
+        text.setObjectName("cardMeta")
+        text.setWordWrap(True)
+        line.addWidget(text, 1)
+        self._button(line, row, "state", "🗑", lambda s=state: self.ask_delete_state(row, s), which=str(state.slot))
+        return line
+
+    def ask_delete_state(self, row, state) -> None:
+        box = self.box
+        self._ask(f"Delete save state {state.slot + 1} of {self.game.name} ({when(state.saved_at)})?\n"
+                  "The other save states and the game's saves stay.", "🗑 Delete",
+                  lambda: self._run("Deleting…", lambda: saves.delete_state(box, row.user, state.slot),
+                                    f"Save state {state.slot + 1} deleted"))
 
     def _button(self, layout, row, what: str, text: str, action, kind: str = "", which: str = ""):
         button = big_button(text, kind) if kind else big_button(text)

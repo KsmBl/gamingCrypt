@@ -201,6 +201,17 @@ def slots(paths: EmulationPaths, game: RomGame) -> list[State]:
     return found
 
 
+def delete(paths: EmulationPaths, game: RomGame, slot: int) -> bool:
+    """One save state gone - with its picture and play time; the other slots stay as they are.
+    False: it wasn't there (any more)."""
+    with _saving:  # (not in the middle of a save)
+        state = state_file(paths, game, slot)
+        if not state.is_file():
+            return False
+        _delete(state)
+        return True
+
+
 def newest(paths: EmulationPaths, game: RomGame, count: int) -> list[State]:
     """The states last saved, the newest first."""
     saved = [s for s in slots(paths, game) if not s.empty]

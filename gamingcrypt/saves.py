@@ -49,6 +49,7 @@ class UserSaves:
     size: int = 0
     changed: float = 0.0  # 0: no saves
     backups: list[Backup] = field(default_factory=list)
+    states: list = field(default_factory=list)  # an emulated game: the user's save states (savestates.State)
 
     @property
     def has_saves(self) -> bool:
@@ -266,8 +267,24 @@ def overview(box, users: list[str]) -> list[UserSaves]:
     found = []
     for user in dict.fromkeys([*users, *box.owners(), *named]):
         size, changed = box.measure(user) if box.has(user) else (0, 0.0)
-        found.append(UserSaves(user, size, changed, backups(box, user)))
+        found.append(UserSaves(user, size, changed, backups(box, user), box_states(box, user)))
     return found
+
+
+def box_states(box, user: str) -> list:
+    """An emulated game's save states of that user, by slot (none for a Windows game's prefix)."""
+    if not isinstance(box, RomSaves):
+        return []
+    from gamingcrypt.emulation import savestates
+
+    return [s for s in savestates.slots(EmulationPaths(box.root, user), box.game) if not s.empty]
+
+
+def delete_state(box, user: str, slot: int) -> bool:
+    """One of that user's save states - the others, and the rest of their saves, stay."""
+    from gamingcrypt.emulation import savestates
+
+    return savestates.delete(EmulationPaths(box.root, user), box.game, slot)
 
 
 def _store_backup(box, user: str) -> Backup:
