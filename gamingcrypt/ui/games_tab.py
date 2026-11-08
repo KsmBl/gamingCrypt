@@ -12,6 +12,7 @@ from gamingcrypt.steam.sorting import filter_games, sort_games
 from gamingcrypt.ui.combo import ComboBox
 from gamingcrypt.ui.game_widgets import (Cover, GameCard, SourceCard, format_date, format_playtime, load_cover,
                                         placeholder_cover)
+from gamingcrypt.ui import theme
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import (
     FlowLayout,
@@ -270,6 +271,7 @@ class GamesHome(QWidget):
         sources.addWidget(self.add_card)
         self.sources_row = sources
         self.system_cards: dict[str, SourceCard] = {}  # emulated systems with games
+        self.stick_cards: dict[str, SourceCard] = {}  # USB sticks / SD cards (stick_memory.stick_key) with games
         self.content_layout.addWidget(self.sources)
 
         self.results_heading = heading("Installed games")
@@ -384,6 +386,7 @@ class GamesHome(QWidget):
     def library_cards(self) -> dict:
         cards = {"favorites": self.favorites_card, "steam": self.steam_card, "recent": self.recent_card}
         cards.update({f"emu:{sid}": card for sid, card in self.system_cards.items()})
+        cards.update({f"stick:{key}": card for key, card in self.stick_cards.items()})
         if self.tab.windows_root is not None:
             cards["windows"] = self.windows_card
         if self.tab.linux_root is not None:
@@ -408,15 +411,68 @@ class GamesHome(QWidget):
                 card.tapped.connect(lambda s=sid: self.tab.open_system(s))
                 self.system_cards[sid] = card
             card.subtitle.setText(f"{len(games)} game{'s' if len(games) != 1 else ''}")
-        # order: Favorites, Steam, Recently played, the systems (as in SYSTEMS), Add ROMs last
+        self.order_sources()
+
+    def order_sources(self) -> None:
+        """Favorites, Steam, Recently played, the systems (as in SYSTEMS), the sticks, Add ROMs last."""
         from gamingcrypt.emulation.systems import SYSTEMS
 
         self.sources_row.take_all()
         for card in [self.favorites_card, self.steam_card, self.recent_card, self.windows_card, self.linux_card,
                      self.minecraft_card,
-                     *(self.system_cards[s.id] for s in SYSTEMS if s.id in self.system_cards), self.add_card]:
+                     *(self.system_cards[s.id] for s in SYSTEMS if s.id in self.system_cards),
+                     *(self.stick_cards[k] for k in sorted(self.stick_cards, key=self._stick_order)), self.add_card]:
             self.sources_row.addWidget(card)
         self.apply_libraries()
+
+    def _stick_order(self, key: str):
+        card = self.stick_cards[key]
+        return (bool(card.property("away")), card.title.text().casefold())
+
+    def sticks(self) -> dict:
+        """Every stick with games: the ones that are in, and remembered ones that aren't (their games
+        greyed out): key -> (name, kind, games, away)."""
+        from gamingcrypt.stick_memory import stick_key
+
+        found: dict = {}
+        for drive in self.tab.drives:
+            found[stick_key(drive)] = [drive.name, drive.kind, [], False]
+        for game in self.all_games():
+            key = getattr(game, "stick", "")
+            if not key:
+                continue
+            if key not in found:
+                found[key] = [game.away or "USB stick", game.removable or "usb", [], bool(game.away)]
+            found[key][2].append(game)
+        return {k: tuple(v) for k, v in found.items()}
+
+    def set_sticks(self) -> None:
+        """One card per USB stick / USB drive / SD card - its games on a page of their own."""
+        from gamingcrypt.ui import library_icons as icons
+
+        sticks = self.sticks()
+        changed = False
+        for key in [k for k in self.stick_cards if k not in sticks]:
+            self.stick_cards.pop(key).deleteLater()
+            changed = True
+        for key, (name, kind, games, away) in sticks.items():
+            card = self.stick_cards.get(key)
+            if card is None or card.property("kind") != kind:
+                if card is not None:
+                    card.deleteLater()
+                card = SourceCard(name, "", icon=lambda w, h, k=kind: icons.removable(k, min(w, h), theme.TEXT))
+                card.setProperty("kind", kind)
+                card.tapped.connect(lambda k=key: self.tab.open_stick(k))
+                self.stick_cards[key] = card
+                changed = True
+            card.title.setText(name)
+            count = len(games)
+            card.subtitle.setText(f"{count} game{'s' if count != 1 else ''}" + (" · not in" if away else ""))
+            if bool(card.property("away")) != away:
+                card.setProperty("away", away)
+                changed = True
+        if changed:
+            self.order_sources()
 
     def apply_libraries(self) -> None:
         """Only the libraries chosen in Settings; no heading when none is left."""
@@ -503,13 +559,21 @@ class GamesHome(QWidget):
         """New genres / years (fetched in the background): asked again."""
         self.facts.clear()
 
+    stick_choice = False  # "On a USB stick / SD card" is offered (some game is on one)
+
     def update_facts(self, games: list) -> None:
         from gamingcrypt import game_facts
 
-        missing = [g for g in games if g.appid not in self.facts]
+        on_sticks = any(getattr(g, "removable", "") for g in games)
+        if on_sticks != self.stick_choice:
+            self.stick_choice = on_sticks
+            self.facts.pop(-1, None)
+            missing = True  # (the platforms offered anew)
+        else:
+            missing = [g for g in games if g.appid not in self.facts]
         if not missing:
             return
-        for game in missing:
+        for game in [g for g in games if g.appid not in self.facts]:
             self.facts[game.appid] = game_facts.facts_of(game, self.tab)
         known = {g.appid: self.facts[g.appid] for g in games}
         for combo, choices in ((self.genre_combo, game_facts.all_genres(known)),
@@ -520,8 +584,11 @@ class GamesHome(QWidget):
                 combo.removeItem(1)
             for choice in choices:
                 combo.addItem(choice, choice)
+            if combo is self.platform_combo and self.stick_choice:
+                combo.addItem(STICK_CHOICE, game_facts.ON_A_STICK)
             if current and combo.findData(current) < 0:
-                combo.addItem(current, current)  # (still chosen, even with no game left)
+                combo.addItem(STICK_CHOICE if current == game_facts.ON_A_STICK else current,
+                              current)  # (still chosen, even with no game left)
             combo.setCurrentIndex(max(0, combo.findData(current)))
             combo.blockSignals(False)
 
@@ -614,6 +681,9 @@ def with_remembered(tab, kind: str, found, drives, home=None):
             merged.setdefault(game.system.id, []).append(game)
         return {sid: sorted(gs, key=lambda g: g.name.lower()) for sid, gs in merged.items()}
     return sorted([*found, *away], key=lambda g: g.name.casefold())
+
+
+STICK_CHOICE = "🔌 On a USB stick / SD card"
 
 
 class GamesTab(QStackedWidget):
@@ -906,6 +976,7 @@ class GamesTab(QStackedWidget):
         self.home.update_favorites()
         self.home.refresh_results()  # emulated games are in "Installed games" too
         self.refresh_game_pages()
+        self.home.set_sticks()
         self.fill_facts()  # their genres and years
         self.fetch_missing_cores(found)
 
@@ -943,6 +1014,7 @@ class GamesTab(QStackedWidget):
         self.home.update_favorites()
         self.home.refresh_results()
         self.refresh_game_pages()
+        self.home.set_sticks()
         self.fill_facts()
 
     def windows_by_appid(self, appid: int):
@@ -1018,6 +1090,7 @@ class GamesTab(QStackedWidget):
         self.home.update_favorites()
         self.home.refresh_results()
         self.refresh_game_pages()
+        self.home.set_sticks()
         self.fill_facts()
 
     def linux_runners(self) -> list:
@@ -1454,6 +1527,11 @@ class GamesTab(QStackedWidget):
         from gamingcrypt.ui.recent_page import FavoritesPage
 
         self.push(FavoritesPage(self))
+
+    def open_stick(self, key: str) -> None:
+        from gamingcrypt.ui.recent_page import StickPage
+
+        self.push(StickPage(self, key))
 
     def open_recent(self) -> None:
         from gamingcrypt.ui.recent_page import RecentPage

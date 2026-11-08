@@ -67,12 +67,16 @@ def in_decade(year: int | None, decade: str) -> bool:
     return int(decade) <= year < int(decade) + 10
 
 
+ON_A_STICK = "@stick"  # the platform filter's "On a USB stick / SD card"
+
+
 def choose(games: list, facts: dict[int, Facts], genre: str = "", platform: str = "", decade: str = "",
            sort: str = "name") -> list:
     """The games that match, in the chosen order (unknown years last)."""
     shown = [g for g in games
              if (not genre or genre in facts[g.appid].genres)
-             and (not platform or facts[g.appid].platform == platform)
+             and (not platform or facts[g.appid].platform == platform
+                  or (platform == ON_A_STICK and getattr(g, "removable", "")))
              and in_decade(facts[g.appid].year, decade)]
     by_name = sorted(shown, key=lambda g: g.name.casefold())
     if sort == "newest":

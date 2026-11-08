@@ -37,7 +37,7 @@ class RecentPage(QWidget):
         layout.setContentsMargins(30, 16, 30, 10)
         top = QHBoxLayout()
         top.addWidget(tab.back_button())
-        title = QLabel(self.title_text)
+        title = self.title_label = QLabel(self.title_text)
         title.setObjectName("title")
         top.addWidget(title)
         top.addStretch()
@@ -120,4 +120,27 @@ class FavoritesPage(RecentPage):
             self.cards[game.appid] = card
             self.grid.addWidget(card)
         self.status.setText("" if favorites else "No favorites yet - tap ☆ Favorite on a game's page")
+        self._focus_first()
+
+
+class StickPage(RecentPage):
+    """A USB stick's, USB drive's or SD card's library: the games on it - greyed out while it isn't in."""
+
+    def __init__(self, tab, key: str, parent: QWidget | None = None):
+        self.key = key
+        super().__init__(tab, parent)
+        name, kind, _games, away = tab.home.sticks().get(key, ("USB stick", "usb", [], False))
+        self.title_label.setText(name + ("  ·  not in" if away else ""))
+
+    def _loaded(self, _games: list[SteamGame]) -> None:
+        self.loading = False
+        found = self.tab.home.sticks().get(self.key)
+        games = sorted(found[2] if found else [], key=lambda g: g.name.casefold())
+        self.order = [g.appid for g in games]
+        for game in games:
+            card = self._card(game)
+            self.cards[game.appid] = card
+            self.grid.addWidget(card)
+        self.status.setText("" if games else "No games on it yet - move some onto it in Settings → Storage "
+                                             "or on a game's page")
         self._focus_first()
