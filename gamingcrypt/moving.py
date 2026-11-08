@@ -8,6 +8,7 @@ its id (it's the file / folder name), so its favorite, play time, saves, covers 
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import stat
@@ -292,8 +293,48 @@ def _why(exc: OSError) -> str:
     return f"{exc.strerror or exc}{where}"
 
 
+# A move's record next to the copy (.moving-<name>.gamingcrypt.json): what's copied, from where, and
+# once everything is on the drive for good, "complete". With it a move cut short - the stick pulled
+# out, the device off - is finished or undone the next time the library is looked at (recover()).
+RECORD = ".gamingcrypt.json"
+ACTIVE: set[str] = set()  # the records of the moves running now (recover() leaves them alone)
+
+
+def _sync() -> None:
+    """Everything written is on the drives for good - not only in memory - before the original goes:
+    an SSD pulled out right after the copy had the copy's new name only in memory, and lost it."""
+    try:
+        os.sync()
+    except OSError:
+        pass
+
+
+def _write_record(path: Path, data: dict) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w") as f:
+        json.dump(data, f)
+        f.flush()
+        os.fsync(f.fileno())
+    tmp.replace(path)
+
+
+def _stats(paths: list[Path]) -> tuple[int, int]:
+    files = _all_files(paths)
+    total = 0
+    for f in files:
+        try:
+            total += f.stat().st_size
+        except OSError:
+            pass
+    return len(files), total
+
+
 def move(game, place: Place, emulation=None, progress: Progress | None = None) -> Path:
-    """Copy it there, then delete it here. Where it is now (MoveError: not moved, nothing lost)."""
+    """Copy it there, then delete it here. Where it is now (MoveError: not moved, nothing lost).
+
+    The copy gets its real name only when it's complete, and the original is deleted only once that
+    is on the drive for good (_sync). Its record (RECORD) lets recover() finish or undo it, if it's cut
+    short anyway."""
     progress = progress if progress is not None else Progress()
     progress.stage = "check"
     files = files_of(game)
@@ -303,40 +344,121 @@ def move(game, place: Place, emulation=None, progress: Progress | None = None) -
     progress.stage = "copy"
     links = place.fstype not in NO_PERMISSIONS
     made: list[Path] = []
+    if isinstance(game, RomGame):
+        pairs = [(folder / f"{MOVING}{f.name}", folder / f.name) for f in files]
+        record = folder / f"{MOVING}{game.path.stem}{RECORD}"
+    else:
+        pairs = [(folder.parent / f"{MOVING}{folder.name}", folder)]
+        record = folder.parent / f"{MOVING}{folder.name}{RECORD}"
+    data = {"version": 1, "from": [str(f) for f in files], "complete": False,
+            "entries": [{"temp": t.name, "final": f.name} for t, f in pairs]}
+    ACTIVE.add(str(record))
     try:
-        if isinstance(game, RomGame):
-            folder.mkdir(parents=True, exist_ok=True)
-            copies = []
-            for f in files:
-                temp = folder / f"{MOVING}{f.name}"
+        try:
+            record.parent.mkdir(parents=True, exist_ok=True)
+            made.append(record)
+            _write_record(record, data)
+            if isinstance(game, RomGame):
+                for f, (temp, _final) in zip(files, pairs):
+                    made.append(temp)
+                    _copy_file(f, temp, progress)
+            else:
+                temp = pairs[0][0]
                 made.append(temp)
-                _copy_file(f, temp, progress)
-                copies.append((temp, folder / f.name))
+                _copy_tree(game.path, temp, progress, links)
             progress.stage = "finish"
-            for temp, final in copies:  # everything's there: now it's a game
+            _sync()
+            for entry, (temp, _final) in zip(data["entries"], pairs):
+                entry["files"], entry["bytes"] = _stats([temp])
+            data["complete"] = True  # (all of it is on the drive: from here on it's finished, not undone)
+            _write_record(record, data)
+            _sync()
+            for temp, final in pairs:  # now it's a game
                 temp.rename(final)
                 made.append(final)
-            moved = folder / game.path.name if not game.discs else folder
-        else:
-            folder.parent.mkdir(parents=True, exist_ok=True)
-            temp = folder.parent / f"{MOVING}{folder.name}"
-            made.append(temp)
-            _copy_tree(game.path, temp, progress, links)
-            progress.stage = "finish"
-            temp.rename(folder)
-            made.append(folder)
-            moved = folder
-    except MoveError:
-        for path in made:
-            _remove(path)
-        raise
-    except OSError as exc:
-        for path in made:
-            _remove(path)
-        raise MoveError(f"Could not move {game.name}: {_why(exc)}") from exc
-    progress.stage, progress.current = "delete", ""
-    left = [f for f in files if not _remove(f)]
+            moved = folder / game.path.name if isinstance(game, RomGame) and not game.discs else folder
+            _sync()  # (its name for good, before the original goes)
+        except MoveError:
+            for path in made:
+                _remove(path)
+            raise
+        except OSError as exc:
+            for path in made:
+                _remove(path)
+            raise MoveError(f"Could not move {game.name}: {_why(exc)}") from exc
+        progress.stage, progress.current = "delete", ""
+        left = [f for f in files if not _remove(f)]
+        _remove(record)
+        _sync()
+    finally:
+        ACTIVE.discard(str(record))
     if left:
         raise MoveError(f"{game.name} is on {place.name} now, but {left[0]} couldn't be deleted (permission "
                         "denied) - it's in both places")
     return moved
+
+
+def recover(folder: Path) -> list[str]:
+    """Moves into this folder that were cut short: finished or undone. What came back (names).
+
+    * the copy was complete (its record says so): it gets its real name, the original goes
+    * it wasn't, and the original is still there: the half copy goes - as if it hadn't been moved
+    * it wasn't, and the original isn't there: left as it is (nothing is deleted that could be the
+      only copy)
+    * no record (a move by an older GamingCrypt): the copy gets its real name, if that's free - it's
+      the only copy there is, as its original is deleted only after the copy had its name."""
+    folder = Path(folder)
+    try:
+        entries = list(folder.iterdir())
+    except OSError:
+        return []
+    back: list[str] = []
+    recorded: set[str] = set()
+    for record in [e for e in entries if e.name.startswith(MOVING) and e.name.endswith(RECORD)]:
+        try:
+            data = json.loads(record.read_text())
+            pairs = [(folder / e["temp"], folder / e["final"], e) for e in data["entries"]]
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        recorded.update(t.name for t, _f, _e in pairs)  # (not taken for an older one's below)
+        if str(record) in ACTIVE:
+            continue  # running now
+        originals = [Path(p) for p in data.get("from", [])]
+        if data.get("complete") and all(not t.exists() or _stats([t]) == (e.get("files"), e.get("bytes"))
+                                        for t, _f, e in pairs):
+            for temp, final, _e in pairs:
+                if temp.exists() and not final.exists():
+                    temp.rename(final)
+            _sync()
+            for original in originals:
+                if original.exists() and not any(original == f for _t, f, _e in pairs):
+                    _remove(original)
+            _remove(record)
+            _sync()
+            back.append(_tidy(pairs[0][1].name))
+        elif any(o.exists() for o in originals):
+            for temp, _final, _e in pairs:
+                _remove(temp)
+            _remove(record)
+        # (else: incomplete, no original - kept as it is)
+    for temp in entries:
+        name = temp.name
+        if not name.startswith(MOVING) or name.endswith(RECORD) or name.endswith(".tmp") or name in recorded:
+            continue
+        final = folder / name[len(MOVING):]
+        if final.exists():
+            continue
+        try:
+            temp.rename(final)
+        except OSError:
+            continue
+        back.append(_tidy(final.name))
+    if back:
+        _sync()
+    return back
+
+
+def _tidy(name: str) -> str:
+    from gamingcrypt.emulation.library import clean_name
+
+    return clean_name(name) if Path(name).suffix else name

@@ -655,6 +655,25 @@ class GamesHome(QWidget):
             self.empty_label.setText("No installed games found")
 
 
+def finish_moves(tab, folders) -> None:
+    """(in the worker thread) Moves into these folders that were cut short - a stick pulled out right
+    after a copy - are finished or undone (moving.recover); the games that came back are said."""
+    from gamingcrypt import moving
+
+    for folder in folders:
+        try:
+            tab.came_back.extend(moving.recover(folder))
+        except OSError:
+            pass
+
+
+def rom_folders(paths, drives) -> list:
+    from gamingcrypt.emulation.systems import SYSTEMS
+
+    roots = [paths.root / "roms", *(r for d in drives for r in d.roms())]
+    return [root / name for root in roots for s in SYSTEMS for name in (s.folder, *s.also_in)]
+
+
 def with_remembered(tab, kind: str, found, drives, home=None):
     """(in the worker thread) What's on the sticks that are in is remembered (stick_memory.py); with
     the user's setting on, the games of the sticks that aren't in are added - greyed out (away)."""
@@ -731,6 +750,7 @@ class GamesTab(QStackedWidget):
         self.play_log = PlayLog(self.emulation) if self.emulation is not None else None
         self.roms: dict = {}  # system id -> games
         self.drives: list = []  # USB sticks, USB drives, SD cards that are in (system.removable): their games too
+        self.came_back: list[str] = []  # games whose cut-short move was finished (finish_moves): said, then gone
         # which games are on which stick - on the encrypted drive - and whether those of a stick that isn't
         # in are shown (each user's own setting: () -> config["sticks"])
         from pathlib import Path as _P
@@ -882,10 +902,17 @@ class GamesTab(QStackedWidget):
         run_async(self.service.installed_games, self._installed_loaded, owner=self)
         self.reload_roms()
 
+    def say_came_back(self) -> None:
+        if self.came_back:
+            names, self.came_back[:] = list(dict.fromkeys(self.came_back)), []
+            self.home.show_notice(f"✓ Back in the list: {', '.join(names)} - its move hadn't quite finished, "
+                                  "now it has")
+
     def refresh_game_pages(self) -> None:
         """An emulated, Windows or Linux game's page that's open (on screen, or under another page):
         about the game as it's found now - on a stick put in again, moved - or, its stick taken out,
         saying it isn't there (until it's back)."""
+        self.say_came_back()
         here = {g.appid: g for games in [*self.roms.values(), self.pc_games()] for g in games}
         for page in self.pages_of(QWidget):
             if hasattr(page, "game_found"):
@@ -923,6 +950,7 @@ class GamesTab(QStackedWidget):
 
             if os.path.ismount(paths.root.parent) and not paths.roms.exists():
                 paths.ensure()  # first time on an unlocked drive: the folders to put things in
+            finish_moves(self, rom_folders(paths, drives))
             found = scan_all(paths, drives)
             return with_remembered(self, "roms", found, drives)
 
@@ -993,6 +1021,7 @@ class GamesTab(QStackedWidget):
 
             if not root.exists() and os.path.ismount(root.parent):
                 root.mkdir(exist_ok=True)  # an unlocked drive: the folder to copy games into
+            finish_moves(self, [root, *(d.windows for d in drives)])
             return with_remembered(self, "windows", scan(root, sizes=False, drives=drives), drives, root)
 
         run_async(work, self.latest("windows", self._windows_loaded), lambda _e: None, owner=self)
@@ -1069,6 +1098,7 @@ class GamesTab(QStackedWidget):
 
             if not root.exists() and os.path.ismount(root.parent):
                 root.mkdir(exist_ok=True)  # an unlocked drive: the folder to copy games into
+            finish_moves(self, [root, *(d.linux for d in drives)])
             return with_remembered(self, "linux", scan(root, sizes=False, drives=drives), drives, root)
 
         run_async(work, self.latest("linux", self._linux_loaded), lambda _e: None, owner=self)

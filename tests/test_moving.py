@@ -629,3 +629,119 @@ def test_moved_onto_the_stick_the_badge_comes(qtbot, tab, emu, stick):
     moving.move(tab.roms["snes"][0], Place(stick), emu)
     tab.reload_roms()
     qtbot.waitUntil(lambda: badges(tab, "Super Mario World") == ["usb", "usb"])
+
+
+# --- a move cut short (a stick pulled out right after copying) is finished or undone ---------------------
+
+ORI = "Ori and The Blind Forest - Definitive Edition"
+
+
+def test_the_original_goes_only_once_the_copy_is_on_the_drive_for_good(emu, stick, monkeypatch):
+    order = []
+    real_remove, real_rename = moving._remove, Path.rename
+    monkeypatch.setattr(moving, "_sync", lambda: order.append("sync"))
+    monkeypatch.setattr(moving, "_remove", lambda p: order.append(f"remove {p.name}") or real_remove(p))
+    monkeypatch.setattr(Path, "rename", lambda self, t: order.append(f"rename {Path(t).name}") or real_rename(self, t))
+    moving.move(rom(emu, "snes"), Place(stick), emu)
+    final = order.index("rename Super Mario World (USA).sfc")
+    gone = order.index("remove Super Mario World (USA).sfc")
+    assert "sync" in order[final + 1:gone]  # its new name on the drive for good, before the original goes
+    assert order.index("sync") < final  # (and the copy itself, before it got its name)
+    folder = stick.mount / "Emulation" / "roms" / "snes"
+    assert sorted(p.name for p in folder.iterdir()) == ["Super Mario World (USA).sfc"]  # no record left
+
+
+def test_an_older_versions_unfinished_move_comes_back(qtbot, tmp_path, windows, stick):
+    """The case from a device: the copy on the SSD kept its .moving- name, the original was gone."""
+    from gamingcrypt.ui.games_tab import GamesTab
+    from tests.fakes import FakeService
+
+    left = stick.mount / "Windows Games" / f".moving-{ORI}"
+    (left / "bin").mkdir(parents=True)
+    (left / "bin" / "ori.exe").write_bytes(b"MZ")
+    tab = GamesTab(FakeService(), library_settings=copy.deepcopy(DEFAULTS)["libraries"], windows_root=str(windows))
+    qtbot.addWidget(tab)
+    tab.set_drives([stick])
+    qtbot.waitUntil(lambda: any(g.name == ORI for g in tab.windows_games))
+    ori = next(g for g in tab.windows_games if g.name == ORI)
+    assert ori.path == stick.mount / "Windows Games" / ORI and (ori.path / "bin" / "ori.exe").exists()
+    assert not left.exists()
+    assert ORI in tab.home.notice.text() and "Back in the list" in tab.home.notice.text()
+
+
+def test_a_complete_copy_that_lost_its_name_gets_it(tmp_path):
+    folder = tmp_path / "Windows Games"
+    temp = folder / f".moving-{ORI}"
+    put(temp / "ori.exe", b"x" * 300)
+    original = tmp_path / "drive" / ORI
+    put(original / "ori.exe", b"x" * 300)
+    record = folder / f".moving-{ORI}{moving.RECORD}"
+    record.write_text(json.dumps({"from": [str(original)], "complete": True,
+                                  "entries": [{"temp": temp.name, "final": ORI, "files": 1, "bytes": 300}]}))
+    assert moving.recover(folder) == [ORI]
+    assert (folder / ORI / "ori.exe").exists() and not temp.exists() and not record.exists()
+    assert not original.exists()  # the move is done: the original goes
+
+
+def test_an_unfinished_copy_with_its_original_there_is_undone(tmp_path):
+    folder = tmp_path / "roms"
+    temp = put(folder / ".moving-Mario.sfc", b"half")
+    original = put(tmp_path / "drive" / "Mario.sfc", b"the whole game")
+    record = folder / f".moving-Mario{moving.RECORD}"
+    record.write_text(json.dumps({"from": [str(original)], "complete": False,
+                                  "entries": [{"temp": temp.name, "final": "Mario.sfc"}]}))
+    assert moving.recover(folder) == []
+    assert not temp.exists() and not record.exists() and original.read_bytes() == b"the whole game"
+
+
+def test_a_copy_that_isnt_whole_is_never_taken_for_the_game(tmp_path):
+    folder = tmp_path / "Windows Games"
+    temp = folder / f".moving-{ORI}"
+    put(temp / "ori.exe", b"x" * 10)  # (300 were copied - the drive lost some)
+    record = folder / f".moving-{ORI}{moving.RECORD}"
+    record.write_text(json.dumps({"from": [str(tmp_path / "gone")], "complete": True,
+                                  "entries": [{"temp": temp.name, "final": ORI, "files": 1, "bytes": 300}]}))
+    assert moving.recover(folder) == []
+    assert temp.exists() and record.exists() and not (folder / ORI).exists()  # kept: could be all there is
+    unfinished = folder / f".moving-Other{moving.RECORD}"
+    put(folder / ".moving-Other" / "a", b"x")
+    unfinished.write_text(json.dumps({"from": [str(tmp_path / "gone")], "complete": False,
+                                      "entries": [{"temp": ".moving-Other", "final": "Other"}]}))
+    assert moving.recover(folder) == [] and (folder / ".moving-Other").exists()  # no original: kept
+
+
+def test_an_older_ones_copy_beside_the_game_is_left(tmp_path):
+    folder = tmp_path / "roms"
+    put(folder / "Mario.sfc", b"game")
+    put(folder / ".moving-Mario.sfc", b"other")
+    assert moving.recover(folder) == [] and (folder / ".moving-Mario.sfc").exists()
+    assert (folder / "Mario.sfc").read_bytes() == b"game"
+    put(folder / ".moving-Zelda.sfc", b"zelda")
+    assert moving.recover(folder) == ["Zelda"] and (folder / "Zelda.sfc").exists()
+
+
+def test_a_move_thats_running_isnt_touched(emu, stick, monkeypatch):
+    import threading
+
+    started, go_on = threading.Event(), threading.Event()
+    real = moving._copy_file
+    folder = stick.mount / "Emulation" / "roms" / "psx"
+    found = []
+
+    def slow(source, dest, progress):
+        started.set()
+        go_on.wait(5)
+        real(source, dest, progress)
+
+    monkeypatch.setattr(moving, "_copy_file", slow)
+    story = rom(emu, "psx")
+    worker = threading.Thread(target=lambda: found.append(moving.move(story, Place(stick), emu)))
+    worker.start()
+    assert started.wait(5)
+    assert moving.recover(folder) == []  # (in the middle of it: not finished, not undone)
+    assert any(p.name.startswith(".moving-") for p in folder.iterdir())
+    go_on.set()
+    worker.join(10)
+    assert found and sorted(p.name for p in folder.iterdir()) == [
+        "Vagrant Story (Disc 1).bin", "Vagrant Story (Disc 1).cue",
+        "Vagrant Story (Disc 2).bin", "Vagrant Story (Disc 2).cue"]
