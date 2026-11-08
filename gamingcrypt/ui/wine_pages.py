@@ -416,6 +416,7 @@ class WindowsGamePage(Movable, QWidget):
                  self.runs_text(), self.upscale_text(), format_size(self.size) if self.size else "",
                  played(game)]
         self.facts.setText("\n".join(line for line in lines if line))
+        self.show_where()
 
     # actions ----------------------------------------------------------------------------
     def play(self) -> None:

@@ -254,6 +254,25 @@ class MoveGame(QFrame):
         self.failed.emit(why)
 
 
+WHERE = tuple(f"{icon} On " for icon in ICONS.values())
+
+
+def where_text(game, drives) -> str:
+    """"🔌 On GAMES" - and "· not in" while it isn't. "" on the encrypted drive."""
+    kind = getattr(game, "removable", "")
+    if not kind:
+        return ""
+    away = getattr(game, "away", "")
+    name = away
+    if not name:
+        from gamingcrypt.stick_memory import stick_key
+        from gamingcrypt.system.removable import LABELS
+
+        name = next((d.name for d in drives if stick_key(d) == getattr(game, "stick", "")), "") or \
+            f"a {LABELS.get(kind, 'USB stick')}"
+    return f"{ICONS.get(kind, '🔌')} On {name}" + (" · not in" if away else "")
+
+
 def put_in_text(game) -> str:
     """"put GAMES in again" - or its kind, when its name isn't known."""
     if getattr(game, "away", ""):
@@ -299,8 +318,20 @@ class Movable:
     def move_places(self) -> list:
         return moving.places(self.game, getattr(self.tab, "drives", []), getattr(self.tab, "emulation", None))
 
+    def show_where(self) -> None:
+        """A fact chip with the stick it's on ("🔌 On GAMES") - none on the encrypted drive."""
+        facts = getattr(self, "facts", None)
+        if facts is None:
+            return
+        lines = [line for line in facts.text().split("\n") if not line.startswith(WHERE)]
+        where = where_text(self.game, getattr(self.tab, "drives", []))
+        if where:
+            lines.insert(1, where)  # (after what it is: the system, "Windows game")
+        facts.setText("\n".join(lines))
+
     def drives_changed(self) -> None:
         """A stick put in / taken out: Move is there when the game can go somewhere (the admin's)."""
+        self.show_where()
         if getattr(self.game, "away", "") or self.gone:
             self.move_button.hide()
             return
@@ -316,6 +347,7 @@ class Movable:
         if game is None or getattr(game, "away", ""):  # (away: remembered - its stick isn't in)
             if game is not None:
                 self.game = game
+            self.show_where()
             if not self.gone:
                 self.gone = True
                 self.main_button.setEnabled(False)
