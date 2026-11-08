@@ -41,6 +41,7 @@ def format_dialog(qtbot, host, method):
                         check_code=lambda _s: None, method=method)
     show_modal(host, box, lambda: None)
     box.choose("exfat")
+    box.next_button.click()  # (its name, how much is encrypted: as they are)
     settle(qtbot)
     return box, box.code.input.widget
 

@@ -21,6 +21,7 @@ from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import FlowLayout, big_button, set_status
 
 NAMES = {"exfat": "exFAT", "ext4": "ext4"}
+SHARES = ((1.0, "All of it"), (0.75, "¾"), (0.5, "½"), (0.25, "¼"))  # how much of it is encrypted
 MARKS = {"waiting": "○", "now": "◐", "done": "✓", "failed": "✗"}
 
 
@@ -48,6 +49,9 @@ class FormatConfirm(QFrame):
         self.code = None  # the code's input, while it's asked for
         self.percent = 0.0  # how far the container is (written in the worker thread)
         self.chosen = ""
+        self.name = removable.clean_label(drive.label) if drive.label else "GAMES"  # what it's called afterwards
+        self.share = 1.0  # encrypted: how much of it (the rest stays a normal drive)
+        self.details = None  # the step with its name and how much is encrypted
         self.working = False
         self.over = False  # formatted or failed: only OK / Close is left
         self.reached: list[str] = []  # the steps started (appended in the worker thread, read by the timer)
@@ -147,10 +151,84 @@ class FormatConfirm(QFrame):
         first.setFocus(Qt.FocusReason.TabFocusReason)
 
     def choose(self, fstype: str) -> None:
-        """Encrypted: the code first (ask_code) - then the last question: everything on it is gone."""
+        """Its name, and how much is encrypted (ask_details) - then, encrypted, the code (ask_code) - then
+        the last question: everything on it is gone."""
         self.chosen = fstype
         for widget in [*self.choices.values(), *self.hints, self.encrypt_button, self.encrypt_note]:
             widget.hide()
+        self.ask_details()
+
+    def ask_details(self) -> None:
+        """A step of its own (a 600 px high screen hasn't room for it all on the first one)."""
+        from PySide6.QtWidgets import QHBoxLayout, QLineEdit
+
+        from gamingcrypt.ui.widgets import OnScreenKeyboard
+
+        self.title.setText(f"Format {self.drive.name}")
+        self.question.setText("What should it be called?" + (" And how much of it should be encrypted?"
+                                                              if self.encrypting else ""))
+        self.details = QWidget()
+        box = QVBoxLayout(self.details)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(10)
+        line = QHBoxLayout()
+        self.name_field = QLineEdit(self.name)
+        self.name_field.setMaxLength(11)  # (what every file system takes)
+        self.name_field.setPlaceholderText("GAMES")
+        line.addWidget(self.name_field, 1)
+        self.keyboard_button = big_button("⌨", checkable=True)
+        self.keyboard_button.toggled.connect(self.typing)
+        line.addWidget(self.keyboard_button)
+        box.addLayout(line)
+        self.keyboard = OnScreenKeyboard(self.name_field, compact=True)
+        self.keyboard.submitted.connect(lambda: self.keyboard_button.setChecked(False))
+        self.keyboard.hide()
+        box.addWidget(self.keyboard)
+        self.share_buttons = {}
+        self.not_while_typing = [self.question]  # (the keyboard needs the room: a 600 px high screen)
+        if self.encrypting:
+            note = QLabel("Encrypted - the rest stays a normal drive, for anything else:")
+            self.not_while_typing.append(note)
+            note.setObjectName("cardMeta")
+            note.setWordWrap(True)
+            box.addWidget(note)
+            shares = FlowLayout(spacing=10)
+            for share, text in SHARES:
+                button = big_button(text, choice=True)
+                button.setChecked(share == self.share)
+                button.clicked.connect(lambda _c=False, v=share: self.choose_share(v))
+                shares.addWidget(button)
+                self.share_buttons[share] = button
+                self.not_while_typing.append(button)
+            box.addLayout(shares)
+        self.next_button = big_button("Continue ›", "primary")
+        self.next_button.clicked.connect(self.details_done)
+        box.addWidget(self.next_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.not_while_typing += [self.next_button, self.cancel_button]
+        self.layout().insertWidget(self.layout().indexOf(self.question) + 1, self.details)
+        self.next_button.setFocus(Qt.FocusReason.TabFocusReason)
+
+    def typing(self, on: bool) -> None:
+        """The keyboard open: only the name and it - the rest back when it's closed (↵ or ⌨)."""
+        self.keyboard.setVisible(on)
+        for widget in self.not_while_typing:
+            widget.setVisible(not on)
+        if on:
+            self.name_field.setFocus()
+        else:
+            self.next_button.setFocus(Qt.FocusReason.TabFocusReason)
+
+    def choose_share(self, share: float) -> None:
+        self.share = share
+        for value, button in self.share_buttons.items():
+            button.setChecked(value == share)
+
+    def details_done(self) -> None:
+        self.name = removable.clean_label(self.name_field.text())
+        if self.details is not None:
+            self.details.hide()
+            self.details.deleteLater()
+            self.details = None
         if self.encrypting and self.password is None:
             self.ask_code()
             return
@@ -180,9 +258,11 @@ class FormatConfirm(QFrame):
     def confirm(self) -> None:
         """The last question: everything on it is gone."""
         fstype = self.chosen
-        how = f"{NAMES[fstype]}, encrypted" if self.encrypting else NAMES[fstype]
-        self.question.setText(f"Really delete everything on {self.drive.name}? It's formatted as {how} - "
-                              "this can't be undone.")
+        share = dict(SHARES).get(self.share, "") if self.share < 1.0 else ""
+        how = (f"{NAMES[fstype]}, encrypted" + (f" ({share} of it)" if share else "")) if self.encrypting \
+            else NAMES[fstype]
+        self.question.setText(f"Really delete everything on {self.drive.name}? It's formatted as {how} and called "
+                              f"{self.name} - this can't be undone.")
         self.format_button.show()
         self.cancel_button.setFocus(Qt.FocusReason.TabFocusReason)  # the safe answer first
 
@@ -206,13 +286,13 @@ class FormatConfirm(QFrame):
         self.show_steps()
         self.timer.start()
         drive, fstype, run, reached = self.drive, self.chosen, self.run, self.reached
-        label = drive.label or "GAMES"
+        label = self.name or "GAMES"
         encrypt = None
         if self.encrypting:
-            make, password = self.encrypt, self.password
+            make, password, share = self.encrypt, self.password, self.share
 
             def encrypt(stick):
-                return make(stick, password, progress=lambda pct: setattr(self, "percent", pct))
+                return make(stick, password, progress=lambda pct: setattr(self, "percent", pct), share=share)
 
         run_async(lambda: removable.format_drive(drive, fstype, label, run=run, step=reached.append, encrypt=encrypt),
                   self._done, self._failed, owner=self)

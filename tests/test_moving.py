@@ -387,6 +387,7 @@ def test_storage_formats_a_stick(qtbot, storage, stick, monkeypatch):
     box = storage.formatter
     assert set(box.choices) == {"exfat", "ext4"} and box.format_button.isHidden()
     box.choices["exfat"].click()
+    box.next_button.click()  # (its name, how much is encrypted: as they are)
     assert "Really delete everything on STICK" in box.question.text() and done == []
     box.format_button.click()
     qtbot.waitUntil(lambda: box.over)
@@ -435,6 +436,7 @@ def test_format_shows_each_step_and_the_time(qtbot, tmp_path, stick):
     qtbot.addWidget(box)
     box.show()
     box.choices["ext4"].click()
+    box.next_button.click()  # (its name, how much is encrypted: as they are)
     box.reached[:] = []
     box.started_at = clock.now
     box.working = True
@@ -464,6 +466,7 @@ def test_format_runs_its_steps_for_real(qtbot, tmp_path, stick):
     box = FormatConfirm(stick, formats=["exfat"], run=Udisks(tmp_path / "NEW"))
     qtbot.addWidget(box)
     box.choices["exfat"].click()
+    box.next_button.click()  # (its name, how much is encrypted: as they are)
     box.format_button.click()
     assert box.working and box.cancel_button.isHidden()  # can't be stopped half way
     box.gamepad_back()

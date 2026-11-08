@@ -275,6 +275,7 @@ def test_encrypting_asks_for_your_code(qtbot, monkeypatch, tmp_path, config):
     assert not box.encrypting and box.encrypt_button.text() == "🔓 Encrypted: off"
     box.encrypt_button.click()
     box.choices["exfat"].click()
+    box.next_button.click()  # (its name, how much is encrypted: as they are)
     assert box.code is not None and box.code.input.method == "pin" and box.format_button.isHidden()
     assert box.question.text() == "It's encrypted with your code - enter your PIN."
     box.start()
@@ -302,6 +303,7 @@ def test_without_encryption_no_code_is_asked(qtbot, tmp_path, config):
     qtbot.addWidget(box)
     box.encrypt_button.click()
     box.choose("exfat")
+    box.next_button.click()  # (its name, how much is encrypted: as they are)
     assert box.code is None and not box.format_button.isHidden()
 
 
@@ -338,6 +340,7 @@ def test_format_dialog_shows_the_container_being_made(qtbot, tmp_path, config, m
     qtbot.addWidget(box)
     box.password = "pw"
     box.choose("exfat")
+    box.next_button.click()  # (its name, how much is encrypted: as they are)
     box.working, box.started_at = True, box.clock()
     box.reached += ["check", "unmount", "table", "filesystem", "mount", "encrypt"]
     box.percent = 42.0

@@ -506,8 +506,8 @@ class StoragePage(QWidget):
             return None, "It can't be encrypted here: the encrypted drive isn't set up."
         unlock_cfg, users_list = config["unlock"], config.get("users")
 
-        def encrypt(stick, password, progress=None):
-            return stick_crypt.create(stick, password, unlock_cfg, users_list, progress=progress)
+        def encrypt(stick, password, progress=None, share=1.0):
+            return stick_crypt.create(stick, password, unlock_cfg, users_list, progress=progress, share=share)
 
         return encrypt, ""
 

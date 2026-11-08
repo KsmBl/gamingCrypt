@@ -167,13 +167,15 @@ def close(volume: str | Path, factory=None, force: bool = True) -> bool:
 
 
 def create(stick, password: str, unlock_cfg: dict, users: list | None = None, progress=None, factory=None,
-           cancel=None, free: int | None = None):
-    """The container on a stick that's just been formatted, filling it - and its sidecar. The stick,
-    opened, with the folders for games inside."""
+           cancel=None, free: int | None = None, share: float = 1.0):
+    """The container on a stick that's just been formatted - filling it, or that share of it (the rest
+    stays a normal drive, for anything else) - and its sidecar. The stick, opened, with the folders for
+    games inside."""
     import shutil
 
     free = shutil.disk_usage(stick.mount).free if free is None else free
-    size_gb = int((free - SPARE) // 1024 ** 3)
+    share = min(1.0, max(0.05, float(share)))
+    size_gb = int((free * share - (SPARE if share >= 1.0 else 0)) // 1024 ** 3)
     if size_gb < MIN_SIZE_GB:
         raise CryptError(f"{stick.name} is too small for an encrypted container (at least {MIN_SIZE_GB + 1} GB)")
     volume = Path(stick.mount) / CONTAINER
