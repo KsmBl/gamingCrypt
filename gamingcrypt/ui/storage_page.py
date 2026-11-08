@@ -380,6 +380,9 @@ class StoragePage(QWidget):
                 space, used = "", 0
             what = "  ·  ".join(x for x in (LABELS[drive.kind], "🔒 encrypted" if drive.encrypted else drive.fstype,
                                             space) if x)
+            speed = self.speed_of(drive)
+            if speed:
+                what += f"\n{speed}"
             if drive.read_only:  # (games on it play, nothing goes onto it)
                 what += "\n" + {"locked": "🔒 Write-protected (the switch on its side)",
                                  "damaged": "⚠ Read-only - taken out without ejecting it"}[drive.read_only]
@@ -397,6 +400,19 @@ class StoragePage(QWidget):
             self.drive_rows[drive] = [text, bar, button]
             if drive.read_only == "damaged":
                 self.drive_rows[drive].append(self._repair_button(drive, row))
+
+    def speed_of(self, drive) -> str:
+        """"USB 3.0 · writes 95 MB/s" - measured when it was put in the first time (drive_speed.py)."""
+        from gamingcrypt import stick_memory
+        from gamingcrypt.system import drive_speed
+
+        memory = getattr(self.library_fn(), "stick_memory", None)
+        if memory is None:
+            return ""
+        try:
+            return drive_speed.describe(memory.speed(stick_memory.stick_key(drive)))
+        except OSError:
+            return ""
 
     # the games of sticks that aren't in -------------------------------------------------------------
     def show_remembered(self) -> None:

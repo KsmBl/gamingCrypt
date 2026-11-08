@@ -60,6 +60,10 @@ def no_real_drives(monkeypatch):
     from gamingcrypt.system import stick_crypt
 
     monkeypatch.setattr(MainWindow, "UDEV_MONITOR", None)  # (no udevadm running beside the tests)
+    from gamingcrypt.system import drive_speed
+
+    monkeypatch.setattr(drive_speed, "SYS", Path("/nonexistent-sys"))  # (not the dev machine's USB ports)
+    monkeypatch.setattr(drive_speed, "TEST_BYTES", 64 * 1024)  # (a quick speed test)
     stick_crypt.keys.clear()
 
 

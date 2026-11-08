@@ -80,6 +80,20 @@ class StickMemory:
             if changed:
                 self._save(data)
 
+    def speed(self, key: str) -> dict | None:
+        entry = self.load().get(key)
+        return entry.get("speed") if isinstance(entry, dict) else None
+
+    def set_speed(self, key: str, drive, result: dict) -> None:
+        """How fast it is (system/drive_speed.py) - kept with what's known of it."""
+        if not self.usable:
+            return
+        with _lock:
+            data = self.load()
+            entry = data.setdefault(key, {"name": drive.name, "kind": drive.kind, "seen": int(time.time())})
+            entry["speed"] = result
+            self._save(data)
+
     def forget(self, key: str) -> None:
         with _lock:
             data = self.load()

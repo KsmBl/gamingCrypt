@@ -908,6 +908,48 @@ class GamesTab(QStackedWidget):
             self.home.show_notice(f"✓ Back in the list: {', '.join(names)} - its move hadn't quite finished, "
                                   "now it has")
 
+    notify = None  # set by the app: (text, icon) -> a notice - otherwise said on the Games tab
+
+    def check_speeds(self) -> None:
+        """A stick seen the first time: how fast it is (system/drive_speed.py) - once, kept on the
+        encrypted drive; a slow one gets a notice."""
+        from gamingcrypt.stick_memory import stick_key
+        from gamingcrypt.system import drive_speed
+
+        memory = self.stick_memory
+        if memory is None or not memory.usable:
+            return
+        self._measuring = getattr(self, "_measuring", set())
+        for drive in self.drives:
+            key = stick_key(drive)
+            if key in self._measuring:
+                continue
+            try:
+                if memory.speed(key) is not None:
+                    continue
+            except OSError:
+                continue
+            self._measuring.add(key)
+
+            def work(d=drive, k=key):
+                result = drive_speed.measure(d)
+                memory.set_speed(k, d, result)
+                return result
+
+            run_async(work, lambda result, d=drive, k=key: self._measured(d, k, result),
+                      lambda _e, k=key: self._measuring.discard(k), owner=self)
+
+    def _measured(self, drive, key: str, result: dict) -> None:
+        from gamingcrypt.system import drive_speed
+
+        self._measuring.discard(key)
+        if drive_speed.slow(result):
+            text = drive_speed.why_slow(drive.name, result)
+            if self.notify is not None:
+                self.notify(text, "🐢")
+            else:
+                self.home.show_notice(text)
+
     def refresh_game_pages(self) -> None:
         """An emulated, Windows or Linux game's page that's open (on screen, or under another page):
         about the game as it's found now - on a stick put in again, moved - or, its stick taken out,
@@ -931,6 +973,7 @@ class GamesTab(QStackedWidget):
             return
         self.drives = list(drives)
         self.reload_roms()
+        self.check_speeds()
         for page in self.pages_of(QWidget):
             if hasattr(page, "drives_changed"):  # a game's page: Move offers what's in now
                 page.drives_changed()

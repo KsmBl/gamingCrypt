@@ -2308,6 +2308,8 @@ class MainWindow(QMainWindow):
         self.shell.power_requested.connect(self.power_action)
         settings = pages.get("Settings")
         storage_page = getattr(settings, "storage_page", None)
+        if hasattr(games, "check_speeds"):
+            games.notify = self.notify  # (a slow stick: a notice, also over a game)
         if storage_page is not None and hasattr(games, "reload_roms"):
             storage_page.roms_changed.connect(games.reload_roms)  # removed in Settings -> Storage
             storage_page.library_fn = lambda: games  # (its roots and the sticks that are in)
