@@ -1,157 +1,231 @@
+<div align="center">
+
 # 🔒 GamingCrypt
 
-**A console-style launcher for Linux gaming handhelds, with your games on an encrypted drive.**
+**A console-style launcher for Linux gaming handhelds, with your whole game collection on an encrypted drive.**
 
-Unlock with a PIN, password or pattern, and you land in a fullscreen launcher for your
-Steam library, emulated games, Windows and Linux games, Minecraft, movies and shows. It works with
-touch and controller, and can boot the device straight into a SteamOS-like gaming mode.
+Unlock with a PIN, pattern or password and you're in a fullscreen launcher for Steam, emulators,
+Windows and Linux games, Minecraft, movies and shows, all usable with a controller or touch.
 
-| Games | Game page | Quick menu |
-|---|---|---|
-| ![games](docs/screenshots/games.png) | ![detail](docs/screenshots/detail.png) | ![quickmenu](docs/screenshots/quickmenu.png) |
+[![License: MIT](https://img.shields.io/badge/license-MIT-38bdf8.svg)](LICENSE)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-38bdf8.svg)
+![Linux](https://img.shields.io/badge/platform-Linux-38bdf8.svg)
+![Encrypted with VeraCrypt](https://img.shields.io/badge/encrypted-VeraCrypt-38bdf8.svg)
 
-| Movies | Shows | Lock screen |
-|---|---|---|
-| ![movies](docs/screenshots/movies.png) | ![shows](docs/screenshots/shows.png) | ![lock](docs/screenshots/lock.png) |
+<img src="docs/screenshots/games.png" alt="The GamingCrypt game list" width="820">
 
-| Minecraft | Minecraft instance | On-screen keyboard |
-|---|---|---|
-| ![minecraft](docs/screenshots/minecraft.png) | ![minecraft-instance](docs/screenshots/minecraft-instance.png) | ![keyboard](docs/screenshots/keyboard.png) |
+[Features](#-features) · [Screenshots](#-screenshots) · [Install](#-install) · [Adding games](#-adding-games) · [Security](#-security) · [Help](#-troubleshooting)
 
-| Light theme | Game page | Quick menu |
-|---|---|---|
-| ![games-light](docs/screenshots/games-light.png) | ![detail-light](docs/screenshots/detail-light.png) | ![quickmenu-light](docs/screenshots/quickmenu-light.png) |
+</div>
+
+---
+
+## ✨ Why GamingCrypt?
+
+Handhelds get lost, borrowed and stolen. GamingCrypt keeps your games, saves, accounts and media
+inside a **VeraCrypt** volume. Without your code it's just random data. With it, you go straight to a
+launcher that feels like a console.
+
+<table>
+<tr>
+<td width="33%" valign="top">
+
+### 🔐 Locked by default
+PIN, swipe pattern, 5×5 tap pattern or password. A panic lock closes everything at once.
+
+</td>
+<td width="33%" valign="top">
+
+### 🎮 Everything in one place
+Steam, 25 emulated systems, Windows and Linux games, Minecraft, movies and shows, all in one list.
+
+</td>
+<td width="33%" valign="top">
+
+### 🕹️ Made for controllers
+D-pad navigation, a quick menu during games, an on-screen keyboard and a full touch interface.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### 👥 For the whole family
+Each user has their own code, saves, Steam account and settings. Age ratings hide what isn't for them.
+
+</td>
+<td valign="top">
+
+### 🔌 Games on a stick
+USB sticks, external drives and SD cards show up in your library, and they're encrypted too.
+
+</td>
+<td valign="top">
+
+### 🖥️ Boots like a console
+An optional gaming mode starts GamingCrypt on gamescope right after boot, like SteamOS.
+
+</td>
+</tr>
+</table>
+
+## 📸 Screenshots
+
+| Your games | A game's page | The quick menu |
+|:---:|:---:|:---:|
+| ![Games](docs/screenshots/games.png) | ![Game page](docs/screenshots/detail.png) | ![Quick menu](docs/screenshots/quickmenu.png) |
+| **Unlocking** | **Movies** | **Shows** |
+| ![Lock screen](docs/screenshots/lock.png) | ![Movies](docs/screenshots/movies.png) | ![Shows](docs/screenshots/shows.png) |
+| **Minecraft** | **A Minecraft instance** | **On-screen keyboard** |
+| ![Minecraft](docs/screenshots/minecraft.png) | ![Minecraft instance](docs/screenshots/minecraft-instance.png) | ![Keyboard](docs/screenshots/keyboard.png) |
 
 <details>
-<summary>More screenshots</summary>
+<summary><b>☀️ Light theme</b></summary>
+<br>
 
-| Steam library | Movie page | Show page |
-|---|---|---|
-| ![steam](docs/screenshots/steam.png) | ![movie](docs/screenshots/movie.png) | ![show](docs/screenshots/show.png) |
-
-| Episodes | Settings | First start |
-|---|---|---|
-| ![episodes](docs/screenshots/episodes.png) | ![settings](docs/screenshots/settings.png) | ![create](docs/screenshots/create.png) |
-
-| 5×5 pattern | Swipe pattern | PIN, light |
-|---|---|---|
-| ![grid5](docs/screenshots/grid5.png) | ![pattern](docs/screenshots/pattern.png) | ![pin-light](docs/screenshots/pin-light.png) |
-
-| Steam library, light | Settings, light | |
-|---|---|---|
-| ![steam-light](docs/screenshots/steam-light.png) | ![settings-light](docs/screenshots/settings-light.png) | |
+| Games | Game page | Quick menu |
+|:---:|:---:|:---:|
+| ![Games, light](docs/screenshots/games-light.png) | ![Game page, light](docs/screenshots/detail-light.png) | ![Quick menu, light](docs/screenshots/quickmenu-light.png) |
+| **Steam library** | **Settings** | **PIN** |
+| ![Steam, light](docs/screenshots/steam-light.png) | ![Settings, light](docs/screenshots/settings-light.png) | ![PIN, light](docs/screenshots/pin-light.png) |
 
 </details>
 
-## Features
+<details>
+<summary><b>🖼️ More screenshots</b></summary>
+<br>
 
-- 🔐 **Encrypted game drive**: a VeraCrypt container or partition, unlocked with a PIN, password,
-  swipe pattern or 5×5 tap pattern. First start can create the container for you.
-- 👥 **Users**: an admin and as many users as you add, each with a code of their own that
-  unlocks the same drive - chosen on the lock screen. Every user has their own Steam account
-  and settings, favorites, play time, per-game settings, emulator saves and save states - and
-  their own look (theme, text size), performance overlay, resolution and refresh rate. Only the
-  admin can delete games, sees the Games, Security and System settings, and can lock Movies,
-  Shows, Music and Pictures for a user.
-- 🔞 **Age ratings**: give a user an age and they see only the games rated for it (USK from the
-  Steam store, ESRB for emulated games); the admin can rate any game by hand.
-- 🎮 **Steam**: your whole library, downloads and uninstalls without Steam's dialogs, a download
-  queue, Proton per game, store search, and several Steam accounts.
-- 🔎 **Filters**: all installed games by genre, platform and release year, sorted by name, date or last played.
-- ▶️ **Continue playing**: after a start you're on the main page with the game played last
-  highlighted - one press to play on.
-- 🖼️ **Game pages** with the game's cover blurred behind them and its facts as chips - what isn't known
-  isn't shown. An emulated game's page has your three newest save states: one press and you play on from there.
-- 👾 **Emulation**: from NES to PS2, Sega 32X, GameCube, Wii, Wii U, 3DS and Switch, through RetroArch and
-  Eden. Cores, covers and Dolphin's system files are downloaded for you; shaders and upscaling are
-  included. Wii U games as `.wua` (or `.wud` / `.wux` with your console's keys in
-  `bios/Cemu/keys.txt`) - they can't be saved as states. They're played with a Wii U Pro
-  Controller; a game that needs the GamePad's screen or touch gets the GamePad in its ⚙ Options.
-- 🌐 **Console language** for every console that has one - GameCube, Wii, Wii U, DS, 3DS, PS2, PSP,
-  Dreamcast and Switch (⚙ Options → 🌐 Language on the system's page): the games show their text in it -
-  like the device's language until you choose one.
-- 💾 **Save states**: nine slots per game in a 3 by 3 grid, each with a picture of the moment,
-  the date and time it was saved and how long you had played up to it. States are only saved and
-  loaded when you pick a slot - RetroArch never saves, loads or deletes one by itself.
-- ⏸ **Paused** while the quick menu is open over an emulated game.
-- ⏩ **Speed**: a slider in the quick menu, from 0.1x to 10x - the game goes on at it when you
-  close the menu. RetroArch can't change it while a game runs, so the game starts again where you
-  were (kept in a hidden state of its own, not one of the nine, gone again after two minutes); the
-  menu says so before you close it. Should the game not come back, that state is put into a free
-  slot and you're told which.
-- ⏩ **Speed for Windows, Linux and Steam games** (and Minecraft) too, like Cheat Engine's speedhack: the
-  same slider in the quick menu changes the game's clock while it runs - no restart. Only the game's
-  own timing changes, not the time of day. A Steam game needs Steam started by GamingCrypt (restart
-  Steam once after updating); a few games keep their own pace.
-- 🇪🇺 **50 Hz games**: tick "60 FPS" in the quick menu and a PAL game runs in step with a 60 Hz
-  screen (a fifth faster) instead of stuttering.
-- ❓ **Not recognised?** A file with an unusual name (patched, translated, renamed) gets no cover,
-  genre or year by itself: choose the game from a list on its page, and the filters find it.
-- 🧱 **Minecraft** (Java Edition), playable with the controller: sign in with your Microsoft account
-  by scanning a QR code with your phone (no typing on the handheld), make an instance (its own worlds
-  and settings, the Minecraft version you choose) and press Play - Minecraft and its Java are
-  downloaded the first time. With **Controller support** (on by default) it runs on Fabric with
-  Controlify - menus, inventory, crafting and chat all with the controller - and Sodium for a smoother
-  game; **🧩 Mods** in its Options adds any Fabric mod from Modrinth (searched with the controller) or
-  removes one. Each user has their own account; everything stays on the encrypted drive. Installed
-  and started by [portablemc](https://github.com/theorzr/portablemc), set up by itself.
-- ⌨️ **On-screen keyboard on a button combination** (Guide + X on a controller, Windows + Volume Up on
-  handhelds with a Windows key - set your own in Settings → Controller → Device buttons): in
-  GamingCrypt it types into the text field; **in a game** it opens over the game and types into it
-  (a virtual keyboard), steered with the controller - with Esc, Tab, Ctrl, Alt, arrows and F1 - F12 for PC
-  games. While it's open the game doesn't get the controller.
-- 🪟 **Windows and Linux games** outside Steam: copy the game folder onto the drive, pick its start
-  file, and play it with Proton, Wine or natively. Every user has their own saves and settings in a
-  Windows game (their own Wine prefix) - except in a game that saves into its own folder. The saves
-  from before stay with the admin.
-- 🔌 **Games on a USB stick, USB drive or SD card**: put it in and its games are in the game list too,
-  with a small stick, drive or SD card in the corner of their covers - until you take it out. Put them on
-  it like on the drive: ROMs in `Emulation/roms/<system>` (or `roms/<system>`), Windows games in
-  `Windows Games`, Linux games in `Linux Games`. It's mounted for you, also in gaming mode. Saves, save
-  states, covers and settings stay on the encrypted drive; a game that's on both is the one on the drive.
-- ⇄ **Move games onto a stick and back**: ⚙ Options → Move to… on an emulated, Windows or Linux game's
-  page, or in Settings → Storage - copied first, the original deleted only when the copy is complete, so
-  pulling the stick out half way loses nothing. Its favorite, play time and saves stay. Settings → Storage
-  also shows how full each stick is and **formats** it (exFAT for everywhere, ext4 for Linux games), with the
-  folders for games made right away. Moving and formatting are the admin's.
-- 🔒 **Encrypted sticks**: formatting encrypts a stick by default - a VeraCrypt container filling it, with the
-  same code as your drive (the same password through the same key derivation, so every user's code opens it too).
-  Put in while GamingCrypt is unlocked, it opens by itself and its games are in the list; the panic lock closes it.
-  Its key derivation settings are next to it, so another device with GamingCrypt opens it with the same code, and
-  plain VeraCrypt with `gamingcrypt --volume-password`. Changing your code changes the sticks that are in too; one
-  that wasn't is unlocked once with the old code in Settings → Storage.
-- ⚡ **Ready right away**: a stick is noticed the moment it's put in (udev), mounted and opened; an open game page
-  follows its game - Play waits while its stick is out.
-- 💾 **Saves page** (Options → Saves, for Windows and emulated games): how big each user's saves are and when
-  they last changed. Back them up, go back to a backup or delete them; the admin sees everyone's and can copy
-  saves from one user to another. What gets replaced is backed up first. The 3 newest backups are kept, and a
-  Windows game's backup is a whole Wine prefix (several hundred MB). Users only see their own.
-- 🖼️ **Wrong or missing picture?** Hold it (or **Options → Change picture**) to pick another one, for games, movies and shows.
-- 🎬 **Movies and shows** with covers, descriptions and cast looked up automatically; resume
-  where you stopped and watched marks; episodes are grouped into seasons.
-- 📶 **Upload over Wi-Fi**: add ROMs, games and videos from a browser (QR code) or a network share.
-- 🖧 **Services**: switch on SSH, or share your whole drive in the network while it's unlocked.
-- 🕹️ **Controller first**: console-style D-pad navigation, stick and trigger calibration, button
-  remapping, your own buttons for the quick menu, lock and keyboard, and a quick menu (volume, brightness, refresh rate, FPS limit, Bluetooth, force quit)
-  during games.
-- 📺 **Refresh rate**: changed while you play - from the quick menu and from Settings (no
-  restart) - on screens gamescope has other rates for (e.g. the Steam Deck); hidden on the others.
-- ⚙️ **Device settings**: resolution, refresh rate, brightness, power limit (TDP), audio devices.
-- 🎞️ **Animations**: tabs and pages slide, a game's cover flies from its card onto its page, and the
-  starting screen shows the game's art. Switch them off in Settings → Device → Appearance.
-- 🔊 **Sounds and rumble**: quiet sounds when the controller moves through the menus, and a short rumble
-  when a game starts or something goes wrong. Each can be switched off in Settings → Device → Appearance.
-- 🌗 Dark and light theme, in a handheld look: corners cut at 45°, the controller's highlight
-  lights up along the cuts, and hexagons fade in from the bottom right corner.
+| Steam library | Movie page | Show page |
+|:---:|:---:|:---:|
+| ![Steam](docs/screenshots/steam.png) | ![Movie](docs/screenshots/movie.png) | ![Show](docs/screenshots/show.png) |
+| **Episodes** | **Settings** | **First start** |
+| ![Episodes](docs/screenshots/episodes.png) | ![Settings](docs/screenshots/settings.png) | ![First start](docs/screenshots/create.png) |
+| **5×5 tap pattern** | **Swipe pattern** | |
+| ![5×5 pattern](docs/screenshots/grid5.png) | ![Swipe pattern](docs/screenshots/pattern.png) | |
 
-## Requirements
+</details>
+
+## 🚀 Features
+
+### 🎮 Games
+
+- **One library for everything**: Steam, emulated, Windows, Linux and Minecraft games side by side.
+  Filter by genre, platform and year, sort by name, date or last played, and search.
+- **Continue playing**: the game you played last waits at the top. One press and you're back in.
+- **Game pages** show the cover blurred in the background and the facts as chips (genre, year,
+  play time, where it's stored). Nothing unknown is shown.
+- **Wrong or missing picture?** Hold the cover, or use *Options → Change picture*, to pick another.
+- **Not recognised?** If a file is patched, translated or renamed, pick the right game from a list
+  and it gets its cover, genre and year.
+
+### 🟦 Steam
+
+- Your whole library, plus a download queue and uninstalls without Steam's own dialogs.
+- Proton per game, store search and **several Steam accounts**.
+- To see games you own but haven't installed, add a [Steam Web API key](https://steamcommunity.com/dev/apikey)
+  in *Settings → Steam*.
+
+### 👾 Emulation
+
+- **25 systems**, from the NES to the PS2: GameCube, Wii, Wii U, 3DS, Switch, Dreamcast, Saturn,
+  PSP, arcade and more, through RetroArch and Eden.
+- **Set up for you**: cores, covers and Dolphin's system files are downloaded automatically. Shaders and
+  upscaling are included.
+- **Save states**: nine slots per game, each with a picture of the moment, the date, and how long
+  you'd played. The newest three are on the game's page, one press to continue. Delete single states
+  on the game's *Saves* page.
+- **Speed slider** from 0.1× to 10×, and **60 FPS for PAL games** so 50 Hz games don't stutter.
+- **Console language** for every system that has one, so games show their text in your language.
+- The game is **paused** while the quick menu is open.
+
+<details>
+<summary>Wii U notes</summary>
+
+Wii U games work as `.wua`, or as `.wud` / `.wux` with your console's keys in `bios/Cemu/keys.txt`.
+They can't be saved as states. They're played with a Wii U Pro Controller. A game that needs the GamePad's
+screen or touch gets the GamePad in its ⚙ Options.
+
+</details>
+
+### 🪟 Windows and Linux games
+
+- Copy a game folder onto the drive, pick its start file and play it with **Proton, Wine or natively**.
+- Each user gets their own saves and settings (their own Wine prefix).
+- The quick menu's **speed slider** works here too, like a speedhack, without restarting the game.
+
+### 🧱 Minecraft (Java Edition)
+
+- **Sign in by QR code** with your phone. There's nothing to type on the handheld.
+- Instances with their own worlds, settings and Minecraft version.
+- **Played with the controller**: Fabric with Controlify and Sodium, on by default.
+- **🧩 Mods** from Modrinth, searched and installed with the controller.
+- Uses [portablemc](https://github.com/theorzr/portablemc), which sets itself up.
+
+### 🔌 USB sticks, drives and SD cards
+
+- **Plug it in and its games are in your list**, with a small stick, drive or SD card badge on
+  their covers. It's mounted and opened the moment it's connected.
+- **Encrypted with your code**: formatting puts a VeraCrypt container on it that opens with the same
+  code as your drive, for every user. You choose a name and how much of the stick to encrypt.
+- **Move games** to a stick and back with *⚙ Options → Move to…* or in *Settings → Storage*, with
+  progress shown. The copy is written in full before the original is deleted, so pulling the stick
+  out halfway loses nothing.
+- **Unplugged games stay visible** (greyed out) so you know where they are. Each user can switch this
+  on or off. The list of what's on which stick is kept on the encrypted drive.
+- **Every stick gets its own library page**, and there's an "On a USB stick / SD card" filter.
+- **Health checks**: slow sticks, read-only SD cards and damaged sticks are pointed out. A damaged stick
+  can be repaired without deleting anything.
+- Saves, save states, covers and settings always stay on the encrypted drive.
+
+### 🎬 Movies and shows
+
+- Covers, descriptions and cast are looked up automatically.
+- Resume where you stopped, with watched marks. Episodes are grouped into seasons.
+
+### 👥 Users and age ratings
+
+- An **admin** and as many users as you like. Each user has their own code to unlock the same drive.
+- Each user has their own Steam account, favorites, play time, saves, save states, theme,
+  text size, resolution and performance overlay.
+- **Age ratings**: give a user an age and they only see games rated for it (USK from Steam,
+  ESRB for emulated games). The admin can rate any game by hand.
+- Only the admin can delete or move games, see system settings, and lock media tabs for a user.
+
+### 💾 Saves
+
+- *Options → Saves* shows how big each user's saves are and when they last changed.
+- **Back up, restore or delete** saves. Anything that's replaced is backed up first.
+- The admin can copy saves from one user to another.
+
+### 🕹️ Controller and device
+
+- **Quick menu** during games: volume, brightness, refresh rate, FPS limit, TDP, Bluetooth, speed and force quit.
+- **On-screen keyboard** on a button combination (Guide + X by default). It also types **into games**,
+  with Esc, Tab, Ctrl, Alt, arrows and F-keys for PC games.
+- Stick and trigger calibration, button remapping, and your own buttons for the quick menu, lock and keyboard.
+- Resolution, refresh rate (changed while you play), brightness, power limit and audio devices.
+
+### 📶 Getting things onto it
+
+- **Upload over Wi-Fi** from a browser (scan the QR code) or a network share.
+- **SSH**, or share the whole drive on your network while it's unlocked.
+
+### 🌗 Look and feel
+
+- Dark and light theme in a handheld style, with 45° cut corners and a highlight that runs along them.
+- Animated tabs, covers that fly onto their page, and a start screen with the game's art.
+- Quiet menu sounds and short rumbles. Each can be switched off in *Settings → Device → Appearance*.
+
+## 📦 Install
+
+**You need:**
 
 - Linux with Python 3.10 or newer
 - [VeraCrypt](https://veracrypt.fr)
 - Steam (native or Flatpak)
-- For gaming mode: [gamescope](https://github.com/ValveSoftware/gamescope) and LightDM
+- *For gaming mode:* [gamescope](https://github.com/ValveSoftware/gamescope) and LightDM
 
-## Install
+**Then run:**
 
 ```sh
 git clone https://github.com/KsmBl/gamingCrypt.git
@@ -159,40 +233,75 @@ cd gamingCrypt
 ./install.sh
 ```
 
-Then start **GamingCrypt** from your app menu or run `gamingcrypt`. The first start walks you
-through choosing or creating an encrypted volume and setting your unlock method.
+Start **GamingCrypt** from your app menu or run `gamingcrypt`. The first start helps you
+create or choose an encrypted volume and set up how you unlock it.
+
+The installer asks for `sudo` once, to set up a small helper. The helper can only mount and manage
+VeraCrypt volumes, so unlocking never asks for a password. It also allows the virtual controller.
 
 | Option | What it does |
 |---|---|
-| `./install.sh --session` | Boot straight into gaming mode (GamingCrypt on gamescope). **⏻ → Desktop mode** switches to your desktop. |
-| `./install.sh --autostart` | Start GamingCrypt after you log in |
-| `./install.sh --uninstall` | Remove GamingCrypt (your settings are kept) |
+| `./install.sh --session` | Boot straight into gaming mode. **⏻ → Desktop mode** takes you to your desktop. |
+| `./install.sh --autostart` | Start GamingCrypt when you log in |
+| `./install.sh --boot-setup` | Ask the boot questions again (GRUB menu, second OS) |
+| `./install.sh --no-sudo` | Skip the VeraCrypt helper (only if VeraCrypt works without root for you) |
+| `./install.sh --uninstall` | Remove GamingCrypt. Your settings are kept. |
 
-To update, run `git pull && ./install.sh`.
+**Updating:** `git pull && ./install.sh`. After each update, GamingCrypt shows what's new.
 
-The installer asks for sudo once. It sets up a small helper that can only mount and manage
-VeraCrypt volumes, so unlocking needs no password prompt, and it allows the virtual controller.
+## 📂 Adding games
 
-## Security
+Put your games in these folders on the unlocked drive, or on a USB stick or SD card:
 
-- Your PIN, password or pattern is strengthened with **scrypt** and a random salt before it
-  reaches VeraCrypt, which makes every guess slow. A short PIN is still only a short PIN, so
-  use a long password or pattern if the drive needs real protection.
-- ⚠️ **Back up `~/.config/gamingcrypt/config.json`.** It holds the salt, and without it the
-  volume can't be opened. Container files also keep a copy next to them
-  (`<container>.gamingcrypt.json`).
-- To open the drive with plain VeraCrypt on another PC, run `gamingcrypt --volume-password`
+```text
+📁 Emulation/
+   📁 roms/
+      📁 snes/        Super Mario World.sfc
+      📁 gba/         …
+      📁 ps2/         …            (one folder per system)
+   📁 bios/           BIOS files and keys
+📁 Windows Games/
+   📁 Some Game/      (the whole game folder)
+📁 Linux Games/
+📁 Movies/
+📁 Shows/
+```
+
+On a stick, `roms/<system>` works as well as `Emulation/roms/<system>`. You can also use **⬆ Add ROMs** / **⬆ Add games** on a
+library page to upload over Wi-Fi, or move games in *Settings → Storage*.
+
+<details>
+<summary>System folder names</summary>
+
+`nes` · `snes` · `n64` · `gb` · `gbc` · `gba` · `nds` · `3ds` · `gc` · `wii` · `wiiu` · `switch` ·
+`mastersystem` · `megadrive` · `32x` · `gamegear` · `segacd` · `saturn` · `dreamcast` ·
+`psx` · `ps2` · `psp` · `pce` · `atari2600` · `arcade`
+
+</details>
+
+## 🛡️ Security
+
+- Your PIN, pattern or password is strengthened with **scrypt** and a random salt before it reaches
+  VeraCrypt, so every guess is slow. A short PIN is still a short PIN: use a long password or pattern if
+  the drive needs real protection.
+- Encrypted sticks use the same key derivation, so every user's code opens them. Changing your code
+  updates every stick that's plugged in. A stick that wasn't plugged in is unlocked once with the old code
+  in *Settings → Storage*.
+- > ⚠️ **Back up `~/.config/gamingcrypt/config.json`.** It holds the salt, and without it the volume
+  > can't be opened. Container files also keep a copy next to them (`<container>.gamingcrypt.json`).
+- To open the drive or a stick with plain VeraCrypt on another PC, run `gamingcrypt --volume-password`
   to get the real VeraCrypt password.
 
-## Troubleshooting
+## 🩺 Troubleshooting
 
-- `gamingcrypt --diagnose` shows which Steam folders, libraries and account were found.
-- `gamingcrypt --windowed` runs it in a window instead of fullscreen.
-- The log is in `~/.cache/gamingcrypt/gamingcrypt.log`.
-- To see your games that aren't installed, add a [Steam Web API key](https://steamcommunity.com/dev/apikey)
-  in **Settings → Steam**.
+| Problem | Try this |
+|---|---|
+| Steam games or accounts missing | `gamingcrypt --diagnose` shows which Steam folders, libraries and accounts were found |
+| Want to see it in a window | `gamingcrypt --windowed` |
+| Something went wrong | The log is in `~/.cache/gamingcrypt/gamingcrypt.log` |
+| Uninstalled Steam games don't show | Add a Steam Web API key in *Settings → Steam* |
 
-## Development
+## 🛠️ Development
 
 ```sh
 python -m venv --system-site-packages .venv
@@ -200,10 +309,8 @@ python -m venv --system-site-packages .venv
 QT_QPA_PLATFORM=offscreen .venv/bin/pytest
 ```
 
-Screenshots are made with `.venv/bin/python docs/screenshots.py` (sample data, no device needed).
+The screenshots are made with `.venv/bin/python docs/screenshots.py`, using sample data, so no device is needed.
 
-## License
+## 📄 License
 
-[MIT](LICENSE)
-
-The bundled Chakra Petch font is under the [SIL Open Font License](gamingcrypt/ui/fonts/OFL.txt).
+[MIT](LICENSE). The bundled Chakra Petch font is under the [SIL Open Font License](gamingcrypt/ui/fonts/OFL.txt).
