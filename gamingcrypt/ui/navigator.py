@@ -105,7 +105,7 @@ class GamepadNavigator(QObject):
         if ev_type == e.EV_KEY and value == 1:
             action = {e.BTN_SOUTH: self.activate, e.BTN_EAST: self.back, e.BTN_START: self.start,
                       # xpad layout: BTN_NORTH is X (the left button), BTN_WEST is Y (the top one)
-                      e.BTN_NORTH: lambda: self.hook("gamepad_west"), e.BTN_WEST: lambda: self.hook("gamepad_north"),
+                      e.BTN_NORTH: lambda: self.hook("gamepad_west"), e.BTN_WEST: self.north,
                       e.BTN_TL: lambda: self.switch_tab(-1), e.BTN_TR: lambda: self.switch_tab(1),
                       e.BTN_TL2: lambda: self.page(-1), e.BTN_TR2: lambda: self.page(1)}.get(code)
             if action is not None:
@@ -750,6 +750,19 @@ class GamepadNavigator(QObject):
                 return True
             w = w.parentWidget()
         return False
+
+    def north(self) -> bool:
+        """Y: on a page with a search field, its keyboard (ui/search_key.py); elsewhere the
+        widget's / page's own (a game's page: another picture)."""
+        from gamingcrypt.ui.search_key import open_search, search_on_page
+
+        w = self.focused() or self._parked()
+        edit = search_on_page(w)
+        if edit is not None:
+            if self._keyboard_for(edit) is None:  # (open already: typing goes on)
+                open_search(edit)
+            return True
+        return self.hook("gamepad_north")
 
     def switch_tab(self, delta: int) -> None:
         if self.tab_switch is None:

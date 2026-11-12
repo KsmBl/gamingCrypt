@@ -844,7 +844,8 @@ class MoviesTab(QStackedWidget):
         return True
 
     def gamepad_north(self) -> bool:
-        """Y: another poster for the highlighted movie / show (card or page)."""
+        """Y: another poster for the movie / show (its page - on a page with a search field Y
+        searches, ui/search_key.py)."""
         from gamingcrypt.ui.cover_picker import media_of
 
         window = self.window()

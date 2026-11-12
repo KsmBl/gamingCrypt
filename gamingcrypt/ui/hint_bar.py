@@ -42,7 +42,13 @@ def hints_for(widget: QWidget | None, menu: str = MENU) -> str:
         first = "Ⓐ  Open     ◀ ▶  Tabs"
     else:
         first = "Ⓐ  Select     Ⓑ  Back"
-    if has_picture(widget):
+    from gamingcrypt.ui.search_key import search_on_page
+
+    search = search_on_page(widget)
+    if search is not None:
+        if search is not widget:  # (on the field itself: Ⓐ  Keyboard says it)
+            first += "     Ⓨ  Search"
+    elif has_picture(widget):
         first += "     Ⓨ  Picture"
     if in_list(widget):
         first += f"     {PAGES}"

@@ -1562,7 +1562,8 @@ class GamesTab(QStackedWidget):
         return True
 
     def gamepad_north(self) -> bool:
-        """Y: another picture for the highlighted game (card or page)."""
+        """Y: another picture for the game (its page - on a page with a search field Y searches,
+        ui/search_key.py)."""
         from gamingcrypt.ui.cover_picker import game_of
 
         window = self.window()

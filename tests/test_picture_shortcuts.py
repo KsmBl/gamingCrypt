@@ -46,24 +46,20 @@ def games_tab(qtbot, tmp_path):
     return tab
 
 
-def test_y_on_a_game_card_or_page(qtbot, tmp_path):
+def test_y_on_a_game_page(qtbot, tmp_path):
+    """(On a card in the games, Y searches: tests/test_search_key.py - holding a card still works.)"""
     tab = games_tab(qtbot, tmp_path)
     nav = GamepadNavigator(tab)
-    card = tab.home.cards[5]
-    nav.focus(card)
-    assert "Ⓨ  Picture" in hints_for(card)
+    tab.open_game(5)
+    page = tab.currentWidget()
+    nav.focus(page.main_button)
+    assert "Ⓨ  Picture" in hints_for(page.main_button)
     press(nav, e.BTN_WEST)  # Y (xpad layout)
     picker = tab.currentWidget()
     assert isinstance(picker, CoverPicker) and picker.item.appid == 5
     assert "Ⓨ" not in hints_for(picker.search)  # nothing more to pick a picture for in there
-    press(nav, e.BTN_WEST)  # Y (xpad layout)
+    press(nav, e.BTN_WEST)  # Y (xpad layout): its own search
     assert tab.currentWidget() is picker  # Y in the picker opens no second one
-    tab.back()
-    tab.open_game(5)
-    page = tab.currentWidget()
-    nav.focus(page.main_button)
-    press(nav, e.BTN_WEST)  # Y (xpad layout)
-    assert isinstance(tab.currentWidget(), CoverPicker)
 
 
 def test_y_elsewhere_does_nothing(qtbot, tmp_path):
@@ -75,12 +71,14 @@ def test_y_elsewhere_does_nothing(qtbot, tmp_path):
     assert tab.currentWidget() is tab.home
 
 
-def test_y_on_a_movie(qtbot, movies_root):  # noqa: F811
+def test_y_on_a_movie_page(qtbot, movies_root):  # noqa: F811
     tab = make_movies_tab(qtbot, movies_root)
     nav = GamepadNavigator(tab)
     card = next(iter(tab.home.cards.values()))
-    nav.focus(card)
-    assert "Ⓨ  Picture" in hints_for(card)
+    tab.open_movie(card.movie)
+    page = tab.currentWidget()
+    nav.focus(page.main_button)
+    assert "Ⓨ  Picture" in hints_for(page.main_button)
     press(nav, e.BTN_WEST)  # Y (xpad layout)
     assert isinstance(tab.currentWidget(), CoverPicker) and tab.currentWidget().item.key == card.movie.key
 
