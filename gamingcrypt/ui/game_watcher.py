@@ -95,6 +95,7 @@ class GameWatcher(QObject):
         self.appid = int(appid)
         self.phase = "launching"
         self.started_at = self.clock()
+        self.started_wall = time.time()  # (Steam's log has the time of day: steam/launch_log.py)
         self.last_phase = ""
         self.stall_reported = False
         self.seen_at = 0.0

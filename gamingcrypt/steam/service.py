@@ -281,6 +281,15 @@ class SteamService:
             return Path(path)
         return root
 
+    def launch_problem(self, appid: int, since: float) -> str | None:
+        """Why the game didn't start, as Steam's own log tells it (None: it doesn't)."""
+        from gamingcrypt.steam import launch_log
+
+        try:
+            return launch_log.explain(self.root, appid, since)
+        except Exception:  # noqa: BLE001 - (only ever an explanation)
+            return None
+
     def free_space(self) -> int | None:
         """Room left where downloads go (the encrypted drive, when it's Steam's library)."""
         from gamingcrypt.system import drive_space

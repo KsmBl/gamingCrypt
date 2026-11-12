@@ -139,6 +139,7 @@ class GameDetailPage(QWidget):
         self._progress_timer.timeout.connect(self.poll_progress)
         self.protondb_text = ""
         self.free_bytes: int | None = None  # room left where it would be downloaded to
+        self.launched_at = 0.0  # (when Play was pressed - Steam's log since then: game_session_ended)
         self.refresh()
         self._fetch_size()
         self._fetch_free()
@@ -285,7 +286,10 @@ class GameDetailPage(QWidget):
         if appid != self.game.appid:
             return
         if failed:
-            set_status(self.status, f"{self.game.name} didn't start - check Steam", error=True)
+            ask = getattr(self.service, "launch_problem", None)
+            why = ask(appid, self.launched_at) if callable(ask) and self.launched_at else None
+            set_status(self.status, f"{self.game.name} didn't start: {why}" if why
+                       else f"{self.game.name} didn't start - check Steam", error=True)
         else:
             set_status(self.status, "")
 
@@ -343,6 +347,9 @@ class GameDetailPage(QWidget):
     def main_action(self) -> None:
         client = self.service.client
         if self.game.installed:
+            import time
+
+            self.launched_at = time.time()  # (Steam's log since then says why, if it doesn't start)
             ok = client.play(self.game.appid)
             set_status(self.status, f"Starting {self.game.name}…" if ok else "Could not reach Steam - is it installed?",
                        error=not ok)

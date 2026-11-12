@@ -2036,11 +2036,25 @@ class MainWindow(QMainWindow):
         self.notify(f"{self.game_name(appid)} closed after {max(1, round(seconds))} s - it may have crashed. {tip}",
                     "⚠")
 
+    def steam_launch_problem(self, appid: int, since: float | None = None) -> str | None:
+        """A Steam game that didn't start: why, from Steam's log (None: nothing found there)."""
+        from gamingcrypt.minecraft.library import MINECRAFT_APPID_BASE
+
+        if appid >= MINECRAFT_APPID_BASE:  # (GamingCrypt's own games all count from there up)
+            return None
+        games = getattr(self.shell, "pages", {}).get("Games") if self.shell else None
+        ask = getattr(getattr(games, "service", None), "launch_problem", None)
+        if not callable(ask):
+            return None
+        return ask(appid, since if since is not None else getattr(self.game_watcher, "started_wall", 0.0))
+
     def game_didnt_start(self, appid: int) -> None:
         tip = self.start_tip(appid)
         if tip is None:
             return
-        self.notify(f"{self.game_name(appid)} didn't start. {tip}", "⚠")
+        why = self.steam_launch_problem(appid)
+        self.notify(f"{self.game_name(appid)} didn't start: {why}" if why
+                    else f"{self.game_name(appid)} didn't start. {tip}", "⚠")
 
     def game_over(self, appid: int | None = None, failed: bool = False) -> None:
         overlay = getattr(self, "game_volume_osd", None)
