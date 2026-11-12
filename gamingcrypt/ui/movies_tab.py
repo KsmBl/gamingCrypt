@@ -805,8 +805,12 @@ class MoviesTab(QStackedWidget):
         if previous is not None and shiboken6.isValid(previous) and previous.isVisible():
             focus_and_reveal(previous)
 
+    def at_top(self) -> bool:
+        """On its first page: B goes back nowhere (and the hint bar doesn't say it does)."""
+        return self.currentWidget() is self.home
+
     def gamepad_back(self) -> bool:
-        if self.currentWidget() is self.home:
+        if self.at_top():
             return False
         self.back()
         return True

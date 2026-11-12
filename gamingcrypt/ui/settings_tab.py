@@ -447,6 +447,10 @@ class SettingsTab(QStackedWidget):
         self.addWidget(self.wizard)
         self.setCurrentWidget(self.wizard)
 
+    def at_top(self) -> bool:
+        """On the overview: B goes back nowhere (and the hint bar doesn't say it does)."""
+        return self.currentWidget() is self.overview
+
     def gamepad_back(self) -> bool:
         page = self.currentWidget()
         if page is self.overview:

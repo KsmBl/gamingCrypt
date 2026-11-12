@@ -50,9 +50,31 @@ def hints_for(widget: QWidget | None, menu: str = MENU) -> str:
             first += "     Ⓨ  Search"
     elif has_picture(widget):
         first += "     Ⓨ  Picture"
+    if not can_go_back(widget):
+        first = first.replace("     Ⓑ  Back", "")
     if in_list(widget):
         first += f"     {PAGES}"
     return f"{first}     {COMMON.format(menu=menu)}"
+
+
+def can_go_back(widget: QWidget | None) -> bool:
+    """Does B go back from here? Not on the first page of a tab (the games, the movies, the
+    settings' overview, a tab without pages) - a keyboard open there it does close."""
+    from gamingcrypt.ui.widgets import OnScreenKeyboard
+
+    node = widget
+    while node is not None:
+        if isinstance(node, OnScreenKeyboard):
+            return True
+        at_top = getattr(node, "at_top", None)
+        if callable(at_top):
+            return not at_top()
+        if callable(getattr(node, "gamepad_back", None)):
+            return True  # (its own: it may well go somewhere)
+        if node.property("tabPage"):
+            return False
+        node = node.parentWidget()
+    return True  # (not in a tab: a box, the lock screen - their own Back)
 
 
 def in_list(widget: QWidget | None) -> bool:

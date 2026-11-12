@@ -43,6 +43,7 @@ class Shell(QWidget):
             button.setVisible(name not in self.locked)
             page = pages.get(name) or ComingSoon(name)
             self.pages[name] = page
+            page.setProperty("tabPage", True)  # (B goes no further back than it: hint_bar.can_go_back)
             self.stack.addWidget(page)
         bar_layout.addStretch()
         self.battery = QLabel("")
