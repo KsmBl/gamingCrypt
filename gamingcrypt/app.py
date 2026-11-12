@@ -2437,6 +2437,13 @@ class MainWindow(QMainWindow):
             storage_page.config_fn = lambda: self.config  # (encrypting a stick: the drive's settings)
             storage_page.code_check_fn = self.password_for_code  # (encrypting / opening one: the code again)
             storage_page.code_method_fn = lambda: users.current(self.config).method
+        users_section = getattr(settings, "users_section", None)
+        if users_section is not None and hasattr(games, "home"):
+            users_section.games_fn = lambda: games  # (who sees how many games, the ones not rated)
+            users_section.update_counts()
+            users_section.changed.connect(  # an age given or taken: the games' pages offer a rating
+                lambda: setattr(games, "rate_games", users.current(self.config).admin and any(
+                    u.age is not None for u in users.all_users(self.config))))
         if hasattr(settings, "libraries_changed") and hasattr(games, "home"):
             settings.libraries_changed.connect(games.home.apply_libraries)
         if hasattr(settings, "hotkeys_changed"):

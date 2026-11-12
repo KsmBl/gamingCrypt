@@ -87,6 +87,14 @@ def allowed(game, tab) -> bool:
     return age is not None and age <= limit
 
 
+def overview(games: list, tab, age: int) -> tuple[int, list]:
+    """For a user of that age, among the games: how many they see - and the ones nobody has a
+    rating for (hidden from them until the admin rates them)."""
+    found = [(game, age_of(game, tab)) for game in games]
+    return (sum(1 for _g, rated in found if rated is not None and rated <= age),
+            [game for game, rated in found if rated is None])
+
+
 class RatedService:
     """The Steam service for a user who isn't the admin. What it lists is theirs:
     - when a game was played last, and for how long, is what *they* played (Steam itself only

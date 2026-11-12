@@ -209,6 +209,57 @@ class CodeFlow(QWidget):
         return True
 
 
+class RatePage(QWidget):
+    """The games nobody has a rating for: users with an age don't see them until the admin gives
+    each one (Settings -> Users -> "Rate them"). Each rating is kept right away."""
+
+    done = Signal(int)  # how many got a rating
+
+    def __init__(self, games_tab, games: list):
+        from PySide6.QtWidgets import QScrollArea
+
+        from gamingcrypt.ui.rating_row import rating_row
+        from gamingcrypt.ui.widgets import enable_touch_scroll
+
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(40, 20, 40, 20)
+        heading = QLabel("Games without an age rating")
+        heading.setObjectName("title")
+        layout.addWidget(heading)
+        hint = QLabel("Users with an age don't see these. Choose the age each game is for - or leave it, "
+                      "and it stays hidden from them.")
+        hint.setObjectName("cardMeta")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        enable_touch_scroll(scroll)
+        content = QWidget()
+        scroll.setWidget(content)
+        rows = QVBoxLayout(content)
+        rows.setContentsMargins(0, 0, 10, 0)
+        self.combos: dict[int, ComboBox] = {}
+        for game in sorted(games, key=lambda g: g.name.lower()):
+            name = QLabel(game.name)
+            name.setObjectName("cardTitle")
+            rows.addWidget(name)
+            row = rating_row(games_tab, game)
+            rows.addWidget(row)
+            self.combos[game.appid] = row.combo
+        rows.addStretch()
+        layout.addWidget(scroll, 1)
+        self.done_button = big_button("Done", "primary")
+        self.done_button.clicked.connect(lambda: self.done.emit(self.rated()))
+        layout.addWidget(self.done_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        first = next(iter(self.combos.values()), self.done_button)
+        self.setFocusProxy(first)
+
+    def rated(self) -> int:
+        return sum(1 for combo in self.combos.values() if combo.currentData() is not None)
+
+
 class UsersSection(QFrame):
     """The list of users with what can be done with each. ``tab``: the Settings tab (its config,
     its save and its stack of pages); ``admin_check(code) -> bool``: is that the code the admin
@@ -237,6 +288,7 @@ class UsersSection(QFrame):
         self.add_button.clicked.connect(self.add_user)
         self.body.addWidget(self.add_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.rows: dict[str, dict] = {}
+        self.games_fn: Callable[[], object] = lambda: None  # set by the app: the admin's Games tab
         self.refresh()
 
     @property
@@ -323,7 +375,67 @@ class UsersSection(QFrame):
                     widgets["locks"][tab] = button
                 lock_line.addStretch()
                 self.list.addWidget(locks)
+            if me.admin and not user.admin and user.age is not None:
+                self.list.addWidget(self._rating_line(user, widgets))
             self.rows[user.id] = widgets
+        self.update_counts()
+
+    def _rating_line(self, user, widgets: dict) -> QWidget:
+        """"Sees 40 of 52 games  ·  3 not rated"  [Rate them] - under a user with an age."""
+        line_widget = QWidget()
+        line_widget.setObjectName("menuRow")
+        line = QHBoxLayout(line_widget)
+        line.setContentsMargins(24, 0, 0, 6)
+        sees = QLabel("")
+        sees.setObjectName("cardMeta")
+        line.addWidget(sees)
+        rate = big_button("Rate them")
+        rate.clicked.connect(self.rate_games)
+        line.addWidget(rate)
+        line.addStretch()
+        widgets["sees"], widgets["rate"] = sees, rate
+        widgets["sees_row"] = line_widget
+        return line_widget
+
+    def _games(self) -> tuple[object, list]:
+        tab = self.games_fn()
+        home = getattr(tab, "home", None)
+        return tab, (home.all_games() if home is not None else [])
+
+    def update_counts(self) -> None:
+        """What each user with an age gets to see (the games, their ratings: as they are now)."""
+        from gamingcrypt import ratings
+
+        shown = [(user, self.rows[user.id]) for user in users.all_users(self.config)
+                 if user.id in self.rows and "sees" in self.rows[user.id]]
+        if not shown:
+            return
+        tab, games = self._games()
+        for user, widgets in shown:
+            widgets["sees_row"].setVisible(tab is not None)
+            if tab is None:
+                continue
+            seen, unrated = ratings.overview(games, tab, user.age)
+            not_rated = f"  ·  {len(unrated)} not rated - hidden from {user.name}" if unrated else ""
+            widgets["sees"].setText(f"Sees {seen} of {len(games)} games{not_rated}")
+            widgets["rate"].setVisible(bool(unrated))
+
+    def showEvent(self, event) -> None:  # noqa: N802 - Qt
+        super().showEvent(event)
+        self.update_counts()  # (a game installed or rated since)
+
+    def rate_games(self) -> None:
+        from gamingcrypt import ratings
+
+        tab, games = self._games()
+        if tab is None:
+            return
+        tab.rate_games = True  # (someone has an age now - also on the games' own pages)
+        unrated = [g for g in games if ratings.age_of(g, tab) is None]
+        page = RatePage(tab, unrated)
+        page.done.connect(lambda count: self._close(f"{count} of {len(unrated)} games rated" if count else ""))
+        self._open(page)
+        page.setFocus()
 
     def _saved(self, message: str = "") -> None:
         self.tab.save(self.config)
