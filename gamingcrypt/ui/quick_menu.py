@@ -689,6 +689,19 @@ class QuickMenu(QWidget):
         self.keyboard_requested.emit()
 
     def _lock(self) -> None:
+        """Locking closes the game: asked first while one runs (a movie keeps its place - not asked).
+        The lock buttons of the device stay instant: they're for when it has to be quick."""
+        if self.appid is None or getattr(self, "movie", False):
+            self._lock_now()
+            return
+        from gamingcrypt.ui.modal import ask
+
+        name = self.title.text()
+        lost = ("what you played since your last save state is lost" if not self.state_row.isHidden()
+                else "what wasn't saved in the game is lost")
+        ask(self, f"Lock now?\n{name} is closed - {lost}.", "🔒  Lock now", self._lock_now)
+
+    def _lock_now(self) -> None:
         self.hide()
         self.lock_now.emit()
 
