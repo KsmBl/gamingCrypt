@@ -1986,6 +1986,28 @@ class MainWindow(QMainWindow):
         if reopen:
             self.toggle_quick_menu()  # e.g. the headphones just connected: now in its outputs
 
+    SPACE_CHECK_MS = 4000
+    space_warned = False  # once each time it's unlocked - not at every download
+
+    def check_drive_space(self) -> None:
+        """The games drive (a container of a fixed size) nearly full: said once, with where to look."""
+        from gamingcrypt.system import drive_space
+
+        mount = os.path.expanduser(self.config["unlock"].get("mount_point", "") or "")
+        if self.space_warned or not mount or self.screen_name != "shell":
+            return
+
+        def done(free: int | None) -> None:
+            if drive_space.is_low(free) and not self.space_warned and self.screen_name == "shell":
+                self.space_warned = True
+                from gamingcrypt.ui.game_widgets import format_size
+
+                self.notify(f"Your games drive is almost full - {format_size(free)} free. Settings → Storage "
+                            "shows what takes the room.", "⚠")
+
+        run_async(lambda: drive_space.free(mount) if os.path.ismount(mount) else None, done, lambda _e: None,
+                  owner=self)
+
     def start_tip(self, appid: int) -> str | None:
         """What to try when a game didn't start or closed right away - None: say nothing (a movie,
         Minecraft: it says why itself)."""
@@ -2336,6 +2358,7 @@ class MainWindow(QMainWindow):
         from gamingcrypt import users
 
         users.leave(self.config)  # locked: nobody's logged in
+        self.space_warned = False  # (said again after the next unlock)
         from gamingcrypt.system import stick_crypt
 
         stick_crypt.keys.clear()  # (the next code opens the sticks again)
@@ -2386,6 +2409,7 @@ class MainWindow(QMainWindow):
                 self.download_notifier = DownloadNotifier(
                     service.downloads, lambda appid: any(g.appid == appid for g in service.installed_games()), self)
                 self.download_notifier.message.connect(lambda icon, text: self.notify(text, icon))
+                self.download_notifier.message.connect(lambda icon, _t: icon == "⬇" and self.check_drive_space())
         from gamingcrypt.session.mode import in_gaming_session
 
         for name in ("Movies", "Shows"):
@@ -2396,6 +2420,7 @@ class MainWindow(QMainWindow):
         # (what the admin locked for this user isn't there)
         self.shell = Shell(pages, show_hints=in_gaming_session(), locked=users.current(self.config).locked)
         self.shell.hint_bar.set_quick_menu(self.hotkeys["quick_menu"])
+        QTimer.singleShot(self.SPACE_CHECK_MS, self.check_drive_space)  # (after what's said at the start)
         self.use_own_steam_account(service)
         theme.on_change(self.retheme)
         self.shell.exit_requested.connect(self.desktop_mode)

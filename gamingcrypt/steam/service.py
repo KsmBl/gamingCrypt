@@ -281,6 +281,12 @@ class SteamService:
             return Path(path)
         return root
 
+    def free_space(self) -> int | None:
+        """Room left where downloads go (the encrypted drive, when it's Steam's library)."""
+        from gamingcrypt.system import drive_space
+
+        return drive_space.free(self.target_library())
+
     @property
     def silent_install(self) -> bool:
         return bool(self.cfg.get("silent_install", True))

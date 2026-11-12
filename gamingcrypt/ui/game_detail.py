@@ -138,8 +138,10 @@ class GameDetailPage(QWidget):
         self._progress_timer = QTimer(self)
         self._progress_timer.timeout.connect(self.poll_progress)
         self.protondb_text = ""
+        self.free_bytes: int | None = None  # room left where it would be downloaded to
         self.refresh()
         self._fetch_size()
+        self._fetch_free()
         self._fetch_protondb()
         if not game.installed and self._silent and self.service.install_progress(game.appid).state != "missing":
             self._start_watching()  # a download queued earlier is still running
@@ -153,6 +155,7 @@ class GameDetailPage(QWidget):
             state,
             format_playtime(g.playtime_minutes),
             self.size_text(),
+            self.room_text(),
             f"Released: {format_date(g.release_date)}" if g.release_date else "",
             f"Genres: {', '.join(g.genres)}" if g.genres else "",
             f"Price: {format_price(g.price_cents, g.currency)}" if g.price_cents is not None else "",
@@ -294,6 +297,27 @@ class GameDetailPage(QWidget):
             return f"Size: ~{format_size(g.store_size)} (store)"
         return "Size: loading…" if self._fetching_size else ""
 
+    def room_text(self) -> str:
+        """Not installed: how much room there is for it - said when it won't fit."""
+        from gamingcrypt.system import drive_space
+
+        g = self.game
+        if g.installed or self.free_bytes is None:
+            return ""
+        if not drive_space.fits(g.store_size, self.free_bytes):
+            return f"⚠ Only {format_size(self.free_bytes)} free on your games drive"
+        return f"Free on your games drive: {format_size(self.free_bytes)}"
+
+    def _fetch_free(self) -> None:
+        free_space = getattr(self.service, "free_space", None)
+        if self.game.installed or not callable(free_space):
+            return
+        run_async(free_space, self._free_fetched, lambda _e: None, owner=self)
+
+    def _free_fetched(self, free: int | None) -> None:
+        self.free_bytes = free
+        self.refresh()
+
     def _fetch_size(self) -> None:
         """Not installed and no size yet: ask the store now instead of waiting for the library."""
         needs = getattr(self.service, "needs_metadata", None)
@@ -323,6 +347,20 @@ class GameDetailPage(QWidget):
             set_status(self.status, f"Starting {self.game.name}…" if ok else "Could not reach Steam - is it installed?",
                        error=not ok)
             return
+        from gamingcrypt.system import drive_space
+
+        if not drive_space.fits(self.game.store_size, self.free_bytes):
+            from gamingcrypt.ui.modal import ask
+
+            ask(self.window(), f"{self.game.name} needs about {format_size(self.game.store_size)}, but only "
+                               f"{format_size(self.free_bytes)} are free on your games drive - the download stops "
+                               "when it's full.\n\nSettings → Storage shows what takes the room.",
+                "⬇  Download anyway", self.download)
+            return
+        self.download()
+
+    def download(self) -> None:
+        client = self.service.client
         if not self._silent:
             ok = client.install(self.game.appid)
             set_status(self.status, "Download started in Steam" if ok else "Could not reach Steam - is it installed?",
