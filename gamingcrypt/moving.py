@@ -353,6 +353,10 @@ def move(game, place: Place, emulation=None, progress: Progress | None = None) -
     data = {"version": 1, "from": [str(f) for f in files], "complete": False,
             "entries": [{"temp": t.name, "final": f.name} for t, f in pairs]}
     ACTIVE.add(str(record))
+    from gamingcrypt import ongoing
+
+    job = ongoing.start(ongoing.Job(f"Moving {game.name} to {place.name}", lambda: progress.fraction,
+                                    progress.cancelled.set))
     try:
         try:
             record.parent.mkdir(parents=True, exist_ok=True)
@@ -392,6 +396,7 @@ def move(game, place: Place, emulation=None, progress: Progress | None = None) -
         _sync()
     finally:
         ACTIVE.discard(str(record))
+        ongoing.end(job)
     if left:
         raise MoveError(f"{game.name} is on {place.name} now, but {left[0]} couldn't be deleted (permission "
                         "denied) - it's in both places")

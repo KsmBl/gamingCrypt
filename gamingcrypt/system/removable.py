@@ -381,9 +381,12 @@ def format_drive(drive: Removable, fstype: str, label: str, run=None, layout=Tru
                  encrypt=None) -> Removable:
     """Everything on the stick is deleted (see _format) - and meanwhile the app doesn't mount it again
     (it looks every few seconds: a stick mounted between unmounting and formatting is busy)."""
+    from gamingcrypt import ongoing
+
     BUSY.add(drive.disk)
     try:
-        return _format(drive, fstype, label, run, layout, step, encrypt)
+        with ongoing.running(f"Formatting {drive.name}"):
+            return _format(drive, fstype, label, run, layout, step, encrypt)
     finally:
         BUSY.discard(drive.disk)
 
@@ -488,7 +491,10 @@ def repair(drive: Removable, run=None, step=None) -> Removable:
     device = drive.device
     if not device:
         raise FormatError("It isn't known which stick that is")
+    from gamingcrypt import ongoing
+
     BUSY.add(drive.disk)
+    job = ongoing.start(ongoing.Job(f"Repairing {drive.name}"))
     try:
         step("unmount")
         if drive.container:
@@ -509,3 +515,4 @@ def repair(drive: Removable, run=None, step=None) -> Removable:
         return replace(drive, mount=_mount_new(run, device), read_only="", container="", host=None)
     finally:
         BUSY.discard(drive.disk)
+        ongoing.end(job)

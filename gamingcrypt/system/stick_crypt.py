@@ -194,6 +194,13 @@ def create(stick, password: str, unlock_cfg: dict, users: list | None = None, pr
 def rekey(volume: str | Path, old: str, new: str, unlock_cfg: dict, users: list | None = None,
           factory=None) -> bool:
     """Today's password for a stick that had another one (closed meanwhile, opened again after)."""
+    from gamingcrypt import ongoing
+
+    with ongoing.running("Giving a USB stick your new code"):
+        return _rekey(volume, old, new, unlock_cfg, users, factory)
+
+
+def _rekey(volume, old: str, new: str, unlock_cfg: dict, users: list | None, factory) -> bool:
     was_open = is_open(volume)
     if was_open and not close(volume, factory, force=False):
         return False

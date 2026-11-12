@@ -391,7 +391,7 @@ class MainWindow(QMainWindow):
             return
         self._last_power_press = now
         if self.sleep_allowed() and self.config["system"].get("power_button") == "sleep":
-            self.go_to_sleep()
+            self.when_nothing_runs("Sleep", self.go_to_sleep)
             return
         # default: the power menu (sleep, shut down, restart, Windows, desktop mode)
         if not self.isVisible():
@@ -532,7 +532,39 @@ class MainWindow(QMainWindow):
                 set_status(lock.status, "Locked" if result.success else f"Could not lock the drive: {result.message}",
                            error=not result.success)
 
-        run_async(work, done, lambda exc: done(UnlockResult(False, str(exc))), owner=self)
+        self.after_jobs(lock, lambda: run_async(work, done, lambda exc: done(UnlockResult(False, str(exc))),
+                                                owner=self))
+
+    JOBS_POLL_MS = 500
+
+    def after_jobs(self, lock, then: Callable[[], None]) -> None:
+        """Locking: a move is stopped (its copy deleted, the game stays where it was); a stick being
+        formatted is waited for - the lock screen is up meanwhile, nothing to see, the drive closed after."""
+        from gamingcrypt import ongoing
+        from gamingcrypt.ui.widgets import set_status
+
+        ongoing.cancel_what_can_stop()
+        if not ongoing.busy():
+            then()
+            return
+        lock.busy = True  # (no unlocking before it's locked)
+        timer = QTimer(self)
+
+        def look() -> None:
+            if ongoing.busy():
+                if shiboken6.isValid(lock):
+                    set_status(lock.status, f"Locking when this is done:\n{ongoing.summary()}")
+                return
+            timer.stop()
+            timer.deleteLater()
+            if shiboken6.isValid(lock):
+                lock.busy = False
+                set_status(lock.status, "Locking…")
+            then()
+
+        timer.timeout.connect(look)
+        timer.start(self.JOBS_POLL_MS)
+        look()
 
     def battery_low(self, percent: int) -> None:
         """A red border around the screen and a message, 10 s - in gaming mode drawn by gamescope
@@ -2026,6 +2058,9 @@ class MainWindow(QMainWindow):
 
     def desktop_mode(self) -> None:
         """In the gaming session: switch to the desktop (tileWin); otherwise just quit."""
+        self.when_nothing_runs("Desktop mode", self._desktop_now)
+
+    def _desktop_now(self) -> None:
         from gamingcrypt.session import mode
 
         if mode.in_gaming_session():
@@ -2034,7 +2069,8 @@ class MainWindow(QMainWindow):
             self.close()
 
     def restart_gaming_mode(self) -> None:
-        self.leave_gaming_mode("restart")
+        """(e.g. for another resolution: gaming mode starts again - not while a stick is formatted)"""
+        self.when_nothing_runs("Restart gaming mode", lambda: self.leave_gaming_mode("restart"))
 
     def leave_gaming_mode(self, target: str) -> None:
         """Close Steam, then end gamescope: it waits for every program started inside it.
@@ -2097,11 +2133,33 @@ class MainWindow(QMainWindow):
         mode.revert_display()
         self.restart_gaming_mode()
 
+    POWER_WORDS = {"shutdown": "Shut down", "restart": "Restart", "sleep": "Sleep"}
+
+    def when_nothing_runs(self, what: str, do: Callable[[], None]) -> None:
+        """``do`` right away - unless a game is being moved or a stick formatted (ongoing.py): then asked
+        first, as cutting that short leaves a half-formatted stick (or a move to finish later)."""
+        from gamingcrypt import ongoing
+        from gamingcrypt.ui.modal import ask
+
+        if not ongoing.busy():
+            do()
+            return
+        if not self.isVisible():
+            self.bring_to_front()
+        log.info("%s asked while busy: %s", what, ongoing.summary().replace("\n", "; "))
+        ask(self, f"Still going on:\n{ongoing.summary()}\n\n{what} now cuts it short - a stick that's being "
+                  "formatted can't be used after that. Wait until it's done, or do it anyway?",
+            f"{what} anyway", do)
+
     def power_action(self, kind: str) -> None:
         log.info("power action: %s", kind)
         if kind == "lock":
             self.panic_lock()
             return
+        what = self.POWER_WORDS.get(kind, "Restart")
+        self.when_nothing_runs(what, lambda: self._power_now(kind))
+
+    def _power_now(self, kind: str) -> None:
         if kind == "sleep":
             if self.shell is not None:
                 self.shell.power_menu.close_menu()

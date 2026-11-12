@@ -65,6 +65,11 @@ def no_real_drives(monkeypatch):
     monkeypatch.setattr(drive_speed, "SYS", Path("/nonexistent-sys"))  # (not the dev machine's USB ports)
     monkeypatch.setattr(drive_speed, "TEST_BYTES", 64 * 1024)  # (a quick speed test)
     stick_crypt.keys.clear()
+    from gamingcrypt import ongoing
+
+    ongoing.clear()
+    yield
+    ongoing.clear()
 
 
 @pytest.fixture
