@@ -29,6 +29,7 @@ STALL_S = 15
 # Some games restart themselves through Steam right after starting (e.g. Unity games
 # via SteamAPI_RestartAppIfNecessary): for a moment none of their processes exist.
 EXIT_GRACE_S = 6
+SHORT_S = 15  # gone that soon after it started, without being quit: it most likely crashed
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,7 @@ class GameWatcher(QObject):
     visible = Signal(int)   # its window should be up -> step aside now
     finished = Signal(int)  # the game exited
     failed = Signal(int)    # the game never showed up
+    ended_early = Signal(int, float)  # it ran, then was gone after that many seconds (crashed?) - before finished
     phase_text = Signal(str)  # what's happening right now (for the loading screen)
     stalled = Signal(int)   # no game process for STALL_S -> show what Steam is showing
 
@@ -126,7 +128,12 @@ class GameWatcher(QObject):
             if now - self.gone_at < self.timing.exit_grace_s and not getattr(self, "quitting", False):
                 return
             log.info("app %s exited", appid)
+            ran = self.gone_at - self.seen_at if self.phase in ("starting", "playing") else None
+            quitting = getattr(self, "quitting", False)
             self._stop()
+            if ran is not None and ran < SHORT_S and not quitting:
+                log.warning("app %s was gone after %.0f s", appid, ran)
+                self.ended_early.emit(appid, ran)
             self.finished.emit(appid)
             return
         if self.gone_at is not None:

@@ -71,6 +71,8 @@ class MainWindow(QMainWindow):
         self.game_watcher.failed.connect(self.game_ended)
         self.game_watcher.finished.connect(lambda appid: self.game_over(appid))
         self.game_watcher.failed.connect(lambda appid: self.game_over(appid, failed=True))
+        self.game_watcher.failed.connect(self.game_didnt_start)
+        self.game_watcher.ended_early.connect(self.game_ended_early)
         from PySide6.QtCore import QTimer as Clock  # (QTimer is imported further down in here too)
 
         self.play_clock = Clock(self)  # an emulated game's play time, kept every minute while it runs
@@ -1983,6 +1985,40 @@ class MainWindow(QMainWindow):
         page.deleteLater()
         if reopen:
             self.toggle_quick_menu()  # e.g. the headphones just connected: now in its outputs
+
+    def start_tip(self, appid: int) -> str | None:
+        """What to try when a game didn't start or closed right away - None: say nothing (a movie,
+        Minecraft: it says why itself)."""
+        from gamingcrypt.emulation.library import EMU_APPID_BASE
+        from gamingcrypt.linux.library import is_linux_appid
+        from gamingcrypt.minecraft.library import is_minecraft_appid
+        from gamingcrypt.movies.library import is_movie_appid
+        from gamingcrypt.wine.library import is_wine_appid
+
+        if is_movie_appid(appid) or is_minecraft_appid(appid):
+            return None
+        if is_wine_appid(appid):
+            return "Try another start file or Proton / Wine in its ⚙ Options."
+        if is_linux_appid(appid):
+            return "Check its start file in its ⚙ Options."
+        if appid >= EMU_APPID_BASE:
+            return "Try another core in its ⚙ Options - some games also need a BIOS file."
+        return "If it's a Windows game, try another Proton version in its ⚙ Options."
+
+    def game_ended_early(self, appid: int, seconds: float) -> None:
+        """Gone a few seconds after it started - not quit: it most likely crashed. Said as a notice,
+        wherever it was started from (Continue playing, a library - not only on its page)."""
+        tip = self.start_tip(appid)
+        if tip is None:
+            return
+        self.notify(f"{self.game_name(appid)} closed after {max(1, round(seconds))} s - it may have crashed. {tip}",
+                    "⚠")
+
+    def game_didnt_start(self, appid: int) -> None:
+        tip = self.start_tip(appid)
+        if tip is None:
+            return
+        self.notify(f"{self.game_name(appid)} didn't start. {tip}", "⚠")
 
     def game_over(self, appid: int | None = None, failed: bool = False) -> None:
         overlay = getattr(self, "game_volume_osd", None)
