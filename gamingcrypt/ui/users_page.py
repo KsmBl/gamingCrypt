@@ -14,6 +14,8 @@ from gamingcrypt.ui.secret_input import METHOD_LABELS, SecretInput
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button, set_status
 
+PICKED = "picked"  # (the age choice "Chosen games")
+
 
 class NamePage(QWidget):
     """A name, typed on the on-screen keyboard."""
@@ -260,6 +262,85 @@ class RatePage(QWidget):
         return sum(1 for combo in self.combos.values() if combo.currentData() is not None)
 
 
+class ChoosePage(QWidget):
+    """The games a user with "Chosen games" sees: one button per game, ticked or not - each
+    choice is kept right away (ratings.PICKED, with the admin's ratings)."""
+
+    done = Signal(int)  # how many are chosen
+
+    def __init__(self, games_tab, games: list, user):
+        from PySide6.QtWidgets import QScrollArea
+
+        from gamingcrypt import ratings
+        from gamingcrypt.ui.widgets import enable_touch_scroll
+
+        super().__init__()
+        self.games_tab, self.user = games_tab, user
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(40, 20, 40, 20)
+        heading = QLabel(f"Games for {user.name}")
+        heading.setObjectName("title")
+        layout.addWidget(heading)
+        hint = QLabel(f"{user.name} sees only the games ticked here - also games installed later only once "
+                      "you tick them.")
+        hint.setObjectName("cardMeta")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        quick = QHBoxLayout()
+        self.all_button = big_button("Tick all")
+        self.all_button.clicked.connect(lambda: self._set_all(True))
+        quick.addWidget(self.all_button)
+        self.none_button = big_button("Tick none")
+        self.none_button.clicked.connect(lambda: self._set_all(False))
+        quick.addWidget(self.none_button)
+        quick.addStretch()
+        layout.addLayout(quick)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        enable_touch_scroll(scroll)
+        content = QWidget()
+        scroll.setWidget(content)
+        rows = QVBoxLayout(content)
+        rows.setContentsMargins(0, 0, 10, 0)
+        self.buttons: dict[int, QWidget] = {}
+        self.games = {}
+        for game in sorted(games, key=lambda g: g.name.lower()):
+            button = big_button("", checkable=True)
+            button.setChecked(user.id in ratings.picked_for(game, games_tab))
+            self._label(button, game)
+            button.toggled.connect(lambda on, g=game, b=button: self._toggled(g, b, on))
+            rows.addWidget(button)
+            self.buttons[game.appid], self.games[game.appid] = button, game
+        if not games:
+            empty = QLabel("No games installed yet.")
+            empty.setObjectName("cardMeta")
+            rows.addWidget(empty)
+        rows.addStretch()
+        layout.addWidget(scroll, 1)
+        self.done_button = big_button("Done", "primary")
+        self.done_button.clicked.connect(lambda: self.done.emit(self.chosen()))
+        layout.addWidget(self.done_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.setFocusProxy(next(iter(self.buttons.values()), self.done_button))
+
+    @staticmethod
+    def _label(button, game) -> None:
+        button.setText(("✓  " if button.isChecked() else "     ") + game.name)
+
+    def _toggled(self, game, button, on: bool) -> None:
+        from gamingcrypt import ratings
+
+        ratings.pick(game, self.games_tab, self.user.id, on)
+        self._label(button, game)
+
+    def _set_all(self, on: bool) -> None:
+        for button in self.buttons.values():
+            button.setChecked(on)
+
+    def chosen(self) -> int:
+        return sum(1 for button in self.buttons.values() if button.isChecked())
+
+
 class UsersSection(QFrame):
     """The list of users with what can be done with each. ``tab``: the Settings tab (its config,
     its save and its stack of pages); ``admin_check(code) -> bool``: is that the code the admin
@@ -304,7 +385,7 @@ class UsersSection(QFrame):
         me = users.current(self.config)
         self.add_button.setVisible(me.admin)
         self.hint.setText("Each user unlocks the drive with a code of their own. Only the admin can delete games; "
-                          "a user with an age sees only the games rated for it."
+                          "a user with an age sees only the games rated for it - or only the games you choose."
                           if me.admin else f"You're logged in as {me.name}.")
         for user in users.all_users(self.config):
             if not me.admin and user.id != me.id:
@@ -330,7 +411,8 @@ class UsersSection(QFrame):
                     age.addItem(f"Age {years}", years)
                 if user.age is not None and age.findData(user.age) < 0:
                     age.addItem(f"Age {user.age}", user.age)
-                age.setCurrentIndex(max(0, age.findData(user.age)))
+                age.addItem("Chosen games", PICKED)
+                age.setCurrentIndex(max(0, age.findData(PICKED if user.picked else user.age)))
                 age.currentIndexChanged.connect(lambda _i, u=user, c=age: self.set_age(u, c.currentData()))
                 line.addWidget(age)
                 widgets["age"] = age
@@ -375,13 +457,14 @@ class UsersSection(QFrame):
                     widgets["locks"][tab] = button
                 lock_line.addStretch()
                 self.list.addWidget(locks)
-            if me.admin and not user.admin and user.age is not None:
+            if me.admin and not user.admin and (user.age is not None or user.picked):
                 self.list.addWidget(self._rating_line(user, widgets))
             self.rows[user.id] = widgets
         self.update_counts()
 
     def _rating_line(self, user, widgets: dict) -> QWidget:
-        """"Sees 40 of 52 games  ·  3 not rated"  [Rate them] - under a user with an age."""
+        """"Sees 40 of 52 games  ·  3 not rated"  [Rate them] - under a user with an age; "Sees 5 of
+        52 games"  [Choose games] - under one with chosen games."""
         line_widget = QWidget()
         line_widget.setObjectName("menuRow")
         line = QHBoxLayout(line_widget)
@@ -389,8 +472,8 @@ class UsersSection(QFrame):
         sees = QLabel("")
         sees.setObjectName("cardMeta")
         line.addWidget(sees)
-        rate = big_button("Rate them")
-        rate.clicked.connect(self.rate_games)
+        rate = big_button("Choose games" if user.picked else "Rate them")
+        rate.clicked.connect(lambda: self.choose_games(user) if user.picked else self.rate_games())
         line.addWidget(rate)
         line.addStretch()
         widgets["sees"], widgets["rate"] = sees, rate
@@ -415,6 +498,10 @@ class UsersSection(QFrame):
             widgets["sees_row"].setVisible(tab is not None)
             if tab is None:
                 continue
+            if user.picked:
+                seen = sum(1 for g in games if user.id in ratings.picked_for(g, tab))
+                widgets["sees"].setText(f"Sees {seen} of {len(games)} games - the ones you chose")
+                continue
             seen, unrated = ratings.overview(games, tab, user.age)
             not_rated = f"  ·  {len(unrated)} not rated - hidden from {user.name}" if unrated else ""
             widgets["sees"].setText(f"Sees {seen} of {len(games)} games{not_rated}")
@@ -437,6 +524,15 @@ class UsersSection(QFrame):
         self._open(page)
         page.setFocus()
 
+    def choose_games(self, user) -> None:
+        tab, games = self._games()
+        if tab is None:
+            return
+        page = ChoosePage(tab, games, user)
+        page.done.connect(lambda count: self._close(f"{user.name} sees {count} of {len(games)} games"))
+        self._open(page)
+        page.setFocus()
+
     def _saved(self, message: str = "") -> None:
         self.tab.save(self.config)
         users.write_sidecar(self.config)
@@ -455,6 +551,10 @@ class UsersSection(QFrame):
 
     # what the admin does ------------------------------------------------------------------------
     def set_age(self, user, age) -> None:
+        if age == PICKED:
+            users.set_picked(self.config, user.id)
+            self._saved(f"{user.name}: only the games you choose - from their next login")
+            return
         users.set_age(self.config, user.id, age)
         self._saved(f"{user.name}: games for {'any age' if age is None else f'age {age}'}")
 

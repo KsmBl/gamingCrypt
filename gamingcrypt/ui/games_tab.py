@@ -721,6 +721,8 @@ class GamesTab(QStackedWidget):
         self.rate_games = rate_games
         # a user with an age: only the games rated for it (ratings.py) - in every list
         self.age_limit = None if user is None or user.admin else user.age
+        # or only the games the admin chose for them (ratings.PICKED)
+        self.picks_of = user.id if user is not None and not user.admin and user.picked else None
         if user is not None and not user.admin:  # (and what they played, not what the Steam account did)
             from gamingcrypt.ratings import RatedService
 
@@ -1014,15 +1016,18 @@ class GamesTab(QStackedWidget):
 
     def rated(self, games: list) -> list:
         """The games whoever uses the tab may see."""
-        if self.age_limit is None:
-            return games
         from gamingcrypt import ratings
+
+        if not ratings.limited(self):
+            return games
 
         return [g for g in games if ratings.allowed(g, self)]
 
     def refilter(self, kind: str) -> None:
         """A rating came in (a user with an age): what it's about is filtered anew."""
-        if self.age_limit is None:
+        from gamingcrypt import ratings
+
+        if not ratings.limited(self):
             return
         if kind == "romdb":
             self._roms_loaded(self._all_roms)
@@ -1034,7 +1039,7 @@ class GamesTab(QStackedWidget):
 
     def _roms_loaded(self, found: dict) -> None:
         self._all_roms = found
-        if self.age_limit is not None:
+        if self.age_limit is not None or self.picks_of is not None:
             found = {sid: kept for sid, games in found.items() if (kept := self.rated(games))}
         self.roms = found
         for games in found.values():
@@ -1443,7 +1448,8 @@ class GamesTab(QStackedWidget):
             return queue
         queue += [("steam", g) for g in [*self.home.installed, *getattr(self.service, "unrated", [])] if needs(g)]
         needs_for = getattr(self.service, "needs_metadata_for", None)
-        for game in ([*self._all_windows, *self._all_linux] if self.age_limit is not None else self.pc_games()):
+        for game in ([*self._all_windows, *self._all_linux] if self.age_limit is not None or self.picks_of is not None
+                     else self.pc_games()):
             covers = getattr(self, f"{game.KIND}_covers", None)
             if covers is None:
                 continue

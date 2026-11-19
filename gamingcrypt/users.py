@@ -5,11 +5,12 @@ the users the admin adds.
   volume (unlock/keyslots.py). The admin's code is the volume's own, exactly as before there
   were users - a config from before is simply "one admin".
 * The admin manages the users, and is the only one who can delete games.
-* A user can have an age: games rated for older ones aren't shown to them (ratings.py).
+* A user can have an age: games rated for older ones aren't shown to them (ratings.py) - or,
+  instead, see only the games the admin chose for them ("picked").
 * Steam settings, emulator saves and Windows games' saves are each user's own (see steam_settings(),
   emulation/library.EmulationPaths and wine/library.prefix_dir).
 
-In config.json: "users" (a list: id, name, method, slot, age, steam), "admin" (name),
+In config.json: "users" (a list: id, name, method, slot, age, picked, steam), "admin" (name),
 "unlock"."keyring" (the vault and the admin's slot, once there are users). Who is using the
 device right now is "session"."user" - only in memory, never written.
 """
@@ -46,6 +47,7 @@ class User:
     method: str
     admin: bool = False
     age: int | None = None  # None: no limit
+    picked: bool = False  # only the games the admin chose for them (instead of an age)
     locked: tuple[str, ...] = ()  # tabs this user doesn't get (LOCKABLE)
 
     @property
@@ -72,6 +74,7 @@ def all_users(config: dict) -> list[User]:
         found.append(User(str(record["id"]), str(record.get("name") or record["id"]),
                           record.get("method") if record.get("method") in METHODS else "password",
                           age=int(age) if isinstance(age, int) and not isinstance(age, bool) else None,
+                          picked=record.get("picked") is True,
                           locked=tuple(t for t in LOCKABLE if t in (record.get("locked") or ()))))
     return found
 
@@ -121,7 +124,17 @@ def rename(config: dict, user_id: str, name: str) -> str:
 def set_age(config: dict, user_id: str, age: int | None) -> None:
     if user_id == ADMIN:
         raise UserError("The admin has no age limit")
-    _record(config, user_id)["age"] = None if age is None else max(0, int(age))
+    record = _record(config, user_id)
+    record["age"] = None if age is None else max(0, int(age))
+    record.pop("picked", None)  # (one or the other)
+
+
+def set_picked(config: dict, user_id: str) -> None:
+    """From now on the user sees only the games the admin chose for them (ratings.PICKED)."""
+    if user_id == ADMIN:
+        raise UserError("The admin sees every game")
+    record = _record(config, user_id)
+    record["age"], record["picked"] = None, True
 
 
 def set_locked(config: dict, user_id: str, tab: str, locked: bool) -> None:

@@ -125,7 +125,7 @@ def test_age_new_code_and_deleting(qtbot, tab):
     section, cfg = tab.users_section, tab.config
     mia = users.all_users(cfg)[1]
     age = section.rows[mia.id]["age"]
-    assert age.currentData() is None and [age.itemData(i) for i in range(age.count())] == [None, 0, 6, 12, 16, 18]
+    assert age.currentData() is None and [age.itemData(i) for i in range(age.count())] == [None, 0, 6, 12, 16, 18, "picked"]
     age.setCurrentIndex(age.findData(12))
     assert users.get(cfg, mia.id).age == 12 and tab._saved[-1]["users"][0]["age"] == 12
     assert section.rows[mia.id]["age"].currentData() == 12

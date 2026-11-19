@@ -9,6 +9,9 @@ The steps are the German ones (FSK / USK): 0, 6, 12, 16, 18. A game's rating is
 
 A user with an age sees the games rated for that age or below. A game nobody has a rating for
 isn't shown to them: the admin rates it, then it is.
+
+Instead of an age, a user can see only the games the admin chose for them ("Chosen games" in
+Settings -> Users): who a game is for is kept with the admin's ratings (PICKED: user ids).
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ STEPS = (0, 6, 12, 16, 18)
 # ESRB -> the step that's at least as careful (there's no 10 and no 13 / 17 among the steps)
 ESRB = {"EC": 0, "E": 6, "KA": 6, "K-A": 6, "E10+": 12, "E10": 12, "T": 12, "M": 16, "AO": 18}
 MANUAL = "rating"  # in the game's profile: the admin's own rating, as text ("0" is a rating too)
+PICKED = "users"  # in the game's profile: the users with "Chosen games" it's chosen for (their ids)
 
 
 def step_for(age) -> int | None:
@@ -78,8 +82,33 @@ def age_of(game, tab) -> int | None:
     return own if own is not None else automatic(game, tab)
 
 
+def _rated_profiles(tab):
+    return getattr(tab, "rating_profiles", None) or getattr(tab, "profiles", None)  # (the admin's)
+
+
+def picked_for(game, tab) -> list[str]:
+    """The users with "Chosen games" this game is chosen for."""
+    rated = _rated_profiles(tab)
+    found = rated.get(game.appid).get(PICKED) if rated is not None else None
+    return [str(u) for u in found] if isinstance(found, list) else []
+
+
+def pick(game, tab, user_id: str, chosen: bool) -> None:
+    rated = _rated_profiles(tab)
+    now = [u for u in picked_for(game, tab) if u != user_id] + ([user_id] if chosen else [])
+    rated.set(game.appid, PICKED, now or None)
+
+
+def limited(tab) -> bool:
+    """Does whoever uses the tab see only some of the games?"""
+    return getattr(tab, "age_limit", None) is not None or getattr(tab, "picks_of", None) is not None
+
+
 def allowed(game, tab) -> bool:
     """May whoever uses the tab see this game?"""
+    picks_of = getattr(tab, "picks_of", None)
+    if picks_of is not None:
+        return picks_of in picked_for(game, tab)
     limit = getattr(tab, "age_limit", None)
     if limit is None:
         return True
@@ -125,9 +154,10 @@ class RatedService:
             own = played.get(str(game.appid)) or {}
             game.last_played = own.get("last_played")
             game.playtime_minutes = int(own.get("minutes", 0) or 0)
-        if getattr(self._tab, "age_limit", None) is None:
+        if not limited(self._tab):
             return games
-        self.unrated = [g for g in games if getattr(g, "installed", False) and age_of(g, self._tab) is None]
+        if getattr(self._tab, "age_limit", None) is not None:
+            self.unrated = [g for g in games if getattr(g, "installed", False) and age_of(g, self._tab) is None]
         return [g for g in games if allowed(g, self._tab)]
 
     def installed_games(self):

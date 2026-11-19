@@ -27,7 +27,7 @@ def sidecar_path(volume: str) -> Path:
     return Path(os.path.expanduser(volume) + SUFFIX)
 
 
-USER_FIELDS = ("id", "name", "method", "age", "locked", "slot")  # (not their Steam settings: those aren't for a file anyone can read)
+USER_FIELDS = ("id", "name", "method", "age", "picked", "locked", "slot")  # (not their Steam settings: those aren't for a file anyone can read)
 
 
 def write_sidecar(volume: str, unlock_cfg: dict, users: list | None = None, admin: dict | None = None) -> bool:
