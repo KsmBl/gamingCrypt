@@ -89,8 +89,13 @@ class GameDetailPage(QWidget):
         self.power_combo.currentIndexChanged.connect(lambda _i: self._profile_chosen("power_w", self.power_combo))
         self.fps_combo = ComboBox()
         self.fps_combo.currentIndexChanged.connect(lambda _i: self._profile_chosen("fps", self.fps_combo))
-        for row, (caption, combo) in enumerate((("Proton", self.proton_combo), ("Power limit", self.power_combo),
-                                                ("FPS limit", self.fps_combo))):
+        from gamingcrypt.ui.gpu_option import CAPTION, gpu_combo
+
+        self.gpu_combo = gpu_combo(self.profiles, game.appid, lambda text: set_status(self.status, text))
+        rows = [("Proton", self.proton_combo), ("Power limit", self.power_combo), ("FPS limit", self.fps_combo)]
+        if self.gpu_combo is not None:
+            rows.append((CAPTION, self.gpu_combo))
+        for row, (caption, combo) in enumerate(rows):
             label = QLabel(caption)
             label.setMinimumWidth(130)
             combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)

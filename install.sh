@@ -31,6 +31,7 @@ SESSION_FILE="/usr/share/wayland-sessions/gamingcrypt.desktop"
 LIGHTDM_CONF="/etc/lightdm/lightdm.conf.d/50-gamingcrypt.conf"
 GAMING_MODE_ENTRY="$DATA_HOME/applications/gamingcrypt-gaming-mode.desktop"
 MODULES_CONF="/etc/modules-load.d/gamingcrypt-uinput.conf"
+NTSYNC_CONF="/etc/modules-load.d/gamingcrypt-ntsync.conf"
 
 AUTOSTART=0
 SESSION=0
@@ -77,7 +78,7 @@ uninstall() {
     fi
     if [[ -e $HELPER || -e $SUDOERS || -e $UDEV_RULE ]]; then
         info "Removing the sudo helper and controller rules (needs sudo)"
-        sudo rm -f "$SUDOERS" "$HELPER" "$UDEV_RULE" "$MODULES_CONF"
+        sudo rm -f "$SUDOERS" "$HELPER" "$UDEV_RULE" "$MODULES_CONF" "$NTSYNC_CONF"
         sudo rmdir "$(dirname "$HELPER")" 2>/dev/null || true
     fi
     info "Done. Your config (~/.config/gamingcrypt) and cache (~/.cache/gamingcrypt) were kept."
@@ -160,6 +161,7 @@ install_helper() {
     echo "    Allows: sudo -n $HELPER  (mount / list / create / change password of a volume,"
     echo "    always nosuid,nodev, only below /mnt, /media, /run/media or your home;"
     echo "    setting the power limit within the range the hardware reports,"
+    echo "    the graphics at full speed while a game runs that wants it,"
     echo "    choosing another installed system (e.g. Windows) for the next start,"
     echo "    and sharing the Emulation folder over SMB while the upload page is open)"
     if [[ -d /sys/firmware/efi ]] && ! command -v efibootmgr >/dev/null && command -v pacman >/dev/null; then
@@ -331,6 +333,13 @@ install_windows_games() {
     if ! command -v umu-run >/dev/null; then
         sudo pacman -S --needed --noconfirm umu-launcher >/dev/null \
             || warn "could not install umu-launcher (Windows games then start with Proton's own script)"
+    fi
+    # Proton syncs a game's threads through /dev/ntsync when it's there - far less work for
+    # wineserver (CPU-heavy games like GTA IV stutter less); the kernel module isn't loaded by itself
+    if [[ ! -e $NTSYNC_CONF ]] && modinfo ntsync >/dev/null 2>&1; then
+        info "Loading ntsync at every start (faster Windows games, needs sudo)"
+        echo ntsync | sudo tee "$NTSYNC_CONF" >/dev/null
+        sudo modprobe ntsync 2>/dev/null || true
     fi
     # 32-bit Windows games (e.g. GTA San Andreas) draw through a 32-bit Vulkan driver (DXVK):
     # without it they find no GPU and quit right after starting

@@ -158,6 +158,9 @@ def command(runner: Runner, game: WindowsGame, exe: str, home: Path,
     if runner.kind == "wine":
         env["WINEPREFIX"] = str(prefix / "pfx")
         return [str(runner.path), str(target)], env, target.parent
+    # Proton's Xalia (gamepad control of a game's own windows) costs a third of a CPU core in
+    # every game - GamingCrypt already brings the controller, touch and keyboard
+    env["PROTON_USE_XALIA"] = "0"
     umu = which("umu-run")
     if umu:  # Steam's runtime around Proton, as in Steam
         env.update(WINEPREFIX=str(prefix / "pfx"), PROTONPATH=str(runner.path), GAMEID="umu-default",

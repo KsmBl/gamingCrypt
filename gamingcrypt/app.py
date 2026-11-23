@@ -832,6 +832,20 @@ class MainWindow(QMainWindow):
             log.info("app %s: own power limit %s W", appid, profile["power_w"])
             self.apply_power_profile()
         self.apply_fps_limit(profile.get("fps", 0))
+        from gamingcrypt.system import gpu_speed
+
+        if profile.get(gpu_speed.PROFILE_KEY) and not getattr(self, "_gpu_full", False):
+            self.set_gpu_full(True)
+
+    def set_gpu_full(self, full: bool) -> None:
+        """The game's "Graphics: full speed" - on at its start, automatic again when it ends."""
+        from gamingcrypt.system import gpu_speed
+
+        if not gpu_speed.available():
+            return
+        self._gpu_full = full
+        run_async(lambda: gpu_speed.set_full(full), lambda r: log.info("gpu speed %s: %s", full, r[1]),
+                  lambda _e: None, owner=self, pool=self._power_pool)
 
     PLAY_TICK_MS = 60_000
 
@@ -876,6 +890,8 @@ class MainWindow(QMainWindow):
             self.apply_power_profile()  # the watcher is idle again: the Settings value
         self._power_before_game = None
         self.apply_fps_limit(0)
+        if getattr(self, "_gpu_full", False):
+            self.set_gpu_full(False)
 
     def apply_fps_limit(self, fps: int) -> None:
         from gamingcrypt.session.mode import in_gaming_session

@@ -135,9 +135,11 @@ def test_proton_with_umu_without_and_wine(root, home):
     args, env, cwd = runners.command(proton, knight, "hollow_knight.exe", home, which=lambda n: "/usr/bin/umu-run")
     assert args == ["/usr/bin/umu-run", str(knight.path / "hollow_knight.exe")] and cwd == knight.path
     assert env["PROTONPATH"] == str(home / "GE") and env["WINEPREFIX"] == str(library.prefix_dir(knight) / "pfx")
+    assert env["PROTON_USE_XALIA"] == "0"  # a third of a CPU core, and GamingCrypt brings the controller
     args, env, _ = runners.command(proton, knight, "hollow_knight.exe", home, which=lambda n: None)
     assert args == [str(home / "GE" / "proton"), "run", str(knight.path / "hollow_knight.exe")]
     assert env["STEAM_COMPAT_DATA_PATH"] == str(library.prefix_dir(knight))
+    assert env["PROTON_USE_XALIA"] == "0"
     wine = runners.Runner("wine:system", "Wine", "wine", home / "wine")
     args, env, _ = runners.command(wine, knight, "hollow_knight.exe", home)
     assert args == [str(home / "wine"), str(knight.path / "hollow_knight.exe")]

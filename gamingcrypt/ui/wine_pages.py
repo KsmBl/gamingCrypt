@@ -297,8 +297,13 @@ class WindowsGamePage(Movable, QWidget):
 
         self.upscale = UpscaleOption(tab.profiles, game.appid, lambda: self.screen_size(), lambda: self._show_facts())
         self.upscale_combo, self.upscale_note = self.upscale.combo, self.upscale.note
-        for line, (caption, combo) in enumerate((("Start file", self.exe_combo), ("Runs with", self.runner_combo),
-                                                 ("Upscaling", self.upscale_combo))):
+        from gamingcrypt.ui.gpu_option import CAPTION, gpu_combo
+
+        self.gpu_combo = gpu_combo(tab.profiles, game.appid, lambda text: self.say(text))
+        rows = [("Start file", self.exe_combo), ("Runs with", self.runner_combo), ("Upscaling", self.upscale_combo)]
+        if self.gpu_combo is not None:
+            rows.append((CAPTION, self.gpu_combo))
+        for line, (caption, combo) in enumerate(rows):
             label = QLabel(caption)
             label.setObjectName("cardMeta")
             grid.addWidget(label, line, 0)

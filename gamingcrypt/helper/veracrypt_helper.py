@@ -22,7 +22,7 @@ import tempfile
 VERACRYPT = "/usr/bin/veracrypt"  # replaced by install.sh
 # Raised whenever the helper learns something new: GamingCrypt compares it with the
 # installed helper ("helper version") and asks to finish the update when it's older.
-HELPER_VERSION = 4
+HELPER_VERSION = 5
 RYZENADJ = "/usr/bin/ryzenadj"
 EFIBOOTMGR = ["/usr/bin/efibootmgr", "/usr/sbin/efibootmgr"]
 SYS = "/sys"
@@ -200,6 +200,32 @@ def _read_int(path: str) -> int | None:
             return int(fh.read().strip())
     except (OSError, ValueError):
         return None
+
+
+GPU_LEVELS = {"full": "high", "auto": "auto"}
+
+
+def set_gpu_speed(args: list[str], sys_root: str = SYS) -> int:
+    """gpu-speed full | auto: AMD graphics at their top clock (no dips between frames - those are
+    micro-stutters) or back to the driver's own choice."""
+    import glob
+
+    if len(args) != 1 or args[0] not in GPU_LEVELS:
+        print("Error: gamingcrypt helper: usage: gpu-speed full|auto", file=sys.stderr)
+        return 2
+    files = sorted(glob.glob(os.path.join(sys_root, "class/drm/card*/device/power_dpm_force_performance_level")))
+    if not files:
+        print("Error: gamingcrypt helper: no AMD graphics on this device", file=sys.stderr)
+        return 2
+    failed = 0
+    for path in files:
+        try:
+            with open(path, "w") as fh:
+                fh.write(GPU_LEVELS[args[0]])
+        except OSError as exc:
+            print(f"Error: gamingcrypt helper: {path}: {exc}", file=sys.stderr)
+            failed = 1
+    return failed
 
 
 def power_targets(sys_root: str = SYS) -> list[tuple[str, int, int]]:
@@ -659,6 +685,8 @@ def main(argv: list[str]) -> int:
         return 0
     if argv[:1] == ["power-limit"]:
         return set_power_limit(argv[1:])
+    if argv[:1] == ["gpu-speed"]:
+        return set_gpu_speed(argv[1:])
     if argv[:1] == ["boot-next"]:
         return set_boot_next(argv[1:])
     if argv == ["boot-next-clear"]:
