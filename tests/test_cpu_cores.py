@@ -81,3 +81,26 @@ def test_cores_option_saved(qtbot, tmp_path):
     combo.setCurrentIndex(0)
     assert cpu_cores.PROFILE_KEY not in profiles.get(5)
     assert cpu_combo(profiles, 5, sys_root=tmp_path / "none") is None
+
+
+def test_first_core_and_all(tmp_path):
+    root = cpus(tmp_path, "0-15", {c: f"{c},{c + 8}" if c < 8 else f"{c - 8},{c}" for c in range(16)})
+    assert cpu_cores.first_core(root) == [0, 8] and cpu_cores.all_cpus(root) == list(range(16))
+    assert cpu_cores.first_core(tmp_path / "none") == []
+
+
+def test_pin_gamingcrypt_and_the_overlay(tmp_path):
+    import os
+
+    proc = tmp_path / "proc"
+    for pid, comm, tasks in ((100, "gamingcrypt", (100, 101, 102)), (200, "mangoapp", (200, 201)),
+                             (300, "GTAIV.exe", (300,))):
+        (proc / str(pid)).mkdir(parents=True)
+        (proc / str(pid) / "comm").write_text(comm + "\n")
+        for task in tasks:
+            (proc / str(pid) / "task" / str(task)).mkdir(parents=True)
+    (proc / "self").mkdir()
+    moved = {}
+    assert cpu_cores.pin_helpers([0, 8], proc, pid=100, setter=lambda t, c: moved.__setitem__(t, c)) == 5
+    assert moved == {t: [0, 8] for t in (100, 101, 102, 200, 201)}  # never the game
+    assert cpu_cores.pin_helpers([], proc, pid=100, setter=lambda t, c: 1 / 0) == 0

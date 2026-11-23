@@ -10,6 +10,7 @@ of every other core, and Proton (WINE_CPU_TOPOLOGY) shows the game those as its 
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 PROFILE_KEY = "cpu_quiet"
@@ -51,3 +52,61 @@ def available(sys_root: Path = Path("/sys")) -> bool:
 def topology(cpus: list[int]) -> str:
     """Proton's WINE_CPU_TOPOLOGY: how many cores the game sees, and which real ones they are."""
     return f"{len(cpus)}:{','.join(str(c) for c in cpus)}"
+
+
+# --- the other side: GamingCrypt and the overlay onto the first core while such a game runs --------
+
+HELPERS = ("mangoapp",)  # the performance overlay (started by the gaming session)
+
+
+def first_core(sys_root: Path = Path("/sys")) -> list[int]:
+    """The first core's threads (where quiet_cpus leaves out) - [] when unknown."""
+    base = sys_root / "devices/system/cpu"
+    try:
+        online = _cpu_list((base / "online").read_text())
+        siblings = _cpu_list((base / f"cpu{online[0]}/topology/thread_siblings_list").read_text())
+    except (OSError, ValueError, IndexError):
+        return []
+    return [c for c in siblings if c in online] or online[:1]
+
+
+def all_cpus(sys_root: Path = Path("/sys")) -> list[int]:
+    try:
+        return _cpu_list((sys_root / "devices/system/cpu/online").read_text())
+    except (OSError, ValueError):
+        return []
+
+
+def _own_pids(proc: Path, names: tuple[str, ...]) -> list[int]:
+    uid = os.getuid()
+    pids = []
+    for entry in proc.iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            if entry.stat().st_uid == uid and (entry / "comm").read_text().strip() in names:
+                pids.append(int(entry.name))
+        except OSError:
+            continue
+    return pids
+
+
+def pin_helpers(cpus: list[int], proc: Path = Path("/proc"), pid: int | None = None,
+                setter=os.sched_setaffinity) -> int:
+    """Every thread of GamingCrypt and of the overlay onto ``cpus`` (all CPUs again: all_cpus).
+    Threads started later inherit it from the one that starts them. How many threads were moved."""
+    if not cpus:
+        return 0
+    moved = 0
+    for owner in [pid or os.getpid(), *_own_pids(proc, HELPERS)]:
+        try:
+            tasks = [int(t.name) for t in (proc / str(owner) / "task").iterdir()]
+        except OSError:
+            continue
+        for task in tasks:
+            try:
+                setter(task, cpus)
+                moved += 1
+            except OSError:  # (gone meanwhile)
+                continue
+    return moved

@@ -836,6 +836,17 @@ class MainWindow(QMainWindow):
 
         if profile.get(gpu_speed.PROFILE_KEY) and not getattr(self, "_gpu_full", False):
             self.set_gpu_full(True)
+        if appid == getattr(self, "_quiet_game", None):
+            self.pin_to_first_core(True)
+
+    def pin_to_first_core(self, pinned: bool) -> None:
+        """A game on the quiet cores: GamingCrypt and the overlay onto the first core, out of
+        its way (system/cpu_cores) - all cores again when it ends."""
+        from gamingcrypt.system import cpu_cores
+
+        self._pinned = pinned
+        cpus = cpu_cores.first_core() if pinned else cpu_cores.all_cpus()
+        log.info("GamingCrypt and overlay on cpus %s: %s threads", cpus, cpu_cores.pin_helpers(cpus))
 
     def set_gpu_full(self, full: bool) -> None:
         """The game's "Graphics: full speed" - on at its start, automatic again when it ends."""
@@ -892,6 +903,9 @@ class MainWindow(QMainWindow):
         self.apply_fps_limit(0)
         if getattr(self, "_gpu_full", False):
             self.set_gpu_full(False)
+        if getattr(self, "_pinned", False):
+            self.pin_to_first_core(False)
+        self._quiet_game = None
 
     def apply_fps_limit(self, fps: int) -> None:
         from gamingcrypt.session.mode import in_gaming_session
@@ -1485,6 +1499,7 @@ class MainWindow(QMainWindow):
                                      user="" if user.admin else user.id,  # their own saves
                                      cpus=cpus, fps=fps)
         # a 32-bit game holds its FPS limit in DXVK (runners.dxvk_fps_limit): fixed at the start
+        self._quiet_game = game.appid if ok and cpus and runner.kind == "proton" else None
         self._fps_at_start = (game.appid if ok and runner.kind == "proton" and runners.is_32bit(game.path / exe)
                               else None)
         self.upscaling_started(ok)
