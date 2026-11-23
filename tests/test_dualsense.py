@@ -87,3 +87,11 @@ def test_page_saves_and_sends(qtbot):
     none = AdaptiveTriggersSection(cfg, saved.append, send=lambda c: (0, ""), find=lambda: [])
     qtbot.addWidget(none)
     assert "No PS5 controller" in none.connected.text()
+
+
+def test_bump_is_one_zone_of_resistance():
+    bump = ds.effect_bytes(ds.Effect(ds.BUMP, 50, 6))
+    assert bump[0] == 0x21 and int.from_bytes(bump[1:3], "little") == 1 << 5
+    forces = int.from_bytes(bump[3:7], "little")
+    assert forces == 5 << 15  # only zone 5, strength 6
+    assert ds.Effect.from_dict({"effect": "bump"}).kind == ds.BUMP

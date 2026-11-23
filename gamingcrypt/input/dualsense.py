@@ -20,10 +20,12 @@ SONY = 0x054C
 PRODUCTS = {0x0CE6: "DualSense", 0x0DF2: "DualSense Edge"}
 BUS_USB, BUS_BLUETOOTH = 0x03, 0x05
 
-OFF, STOP, RESISTANCE = "off", "stop", "resistance"
+OFF, STOP, BUMP, RESISTANCE = "off", "stop", "bump", "resistance"
 EFFECTS = (  # (id, label, what it does)
     (OFF, "Off", "The trigger moves freely"),
     (STOP, "Stop", "A stop at that point that gives way when pulled harder - like a gun's trigger"),
+    (BUMP, "Bump (both ways)", "A narrow band of resistance at that point: pushed through on the way in, "
+                               "and on the way out the trigger nudges your finger there"),
     (RESISTANCE, "Resistance", "Pushes back from that point to the end"),
 )
 MODE_OFF, MODE_FEEDBACK, MODE_WEAPON = 0x05, 0x21, 0x25
@@ -43,7 +45,7 @@ class Effect:
     def from_dict(cls, data: dict | None) -> "Effect":
         data = data or {}
         kind = data.get("effect", OFF)
-        return cls(kind if kind in (OFF, STOP, RESISTANCE) else OFF,
+        return cls(kind if kind in (OFF, STOP, BUMP, RESISTANCE) else OFF,
                    max(0, min(100, int(data.get("position", 50)))), max(1, min(8, int(data.get("strength", 5)))))
 
 
@@ -59,10 +61,12 @@ def effect_bytes(effect: Effect) -> bytes:
         out[0] = MODE_WEAPON
         out[1:3] = zones.to_bytes(2, "little")
         out[3] = force
-    elif effect.kind == RESISTANCE:
+    elif effect.kind in (RESISTANCE, BUMP):
+        # resistance by position (both ways - the motor pushes the trigger out wherever it's set):
+        # from the point to the end, or (a bump) only the zone at the point
         start = max(0, min(9, zone))
         active = forces = 0
-        for i in range(start, 10):
+        for i in range(start, 10 if effect.kind == RESISTANCE else start + 1):
             active |= 1 << i
             forces |= force << (3 * i)
         out[0] = MODE_FEEDBACK
