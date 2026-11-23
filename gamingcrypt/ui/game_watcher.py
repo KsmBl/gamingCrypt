@@ -15,7 +15,7 @@ from typing import Callable
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from gamingcrypt.steam.running import game_processes, uses_gpu
+from gamingcrypt.steam.running import game_processes, launcher_alive, uses_gpu
 
 log = logging.getLogger("gamingcrypt.games")
 
@@ -59,9 +59,12 @@ class GameWatcher(QObject):
     def __init__(self, processes: Callable[[int], set[int]] = game_processes,
                  gpu: Callable[[set[int]], bool] = uses_gpu,
                  clock: Callable[[], float] = time.monotonic, parent: QObject | None = None,
-                 describe: Callable[[int], str] | None = None):
+                 describe: Callable[[int], str] | None = None,
+                 alive: Callable[[int, set[int]], bool] = launcher_alive):
         super().__init__(parent)
         self.processes = processes
+        self.alive = alive  # while playing: is its launcher still there (cheap) - else the full scan
+        self.last_pids: set[int] = set()
         # appid -> "Compiling shaders…" etc. (set by the app, which knows Steam's folder)
         self.describe = describe
         self.last_phase = ""
@@ -102,6 +105,7 @@ class GameWatcher(QObject):
         self.gpu_at: float | None = None
         self.gone_at: float | None = None
         self.quitting = False
+        self.last_pids = set()
         log.info("waiting for app %s to start", appid)
         self.timer.start(timing.poll_ms)
 
@@ -109,7 +113,9 @@ class GameWatcher(QObject):
         if self.appid is None:
             return
         appid, now = self.appid, self.clock()
-        pids = self.processes(appid)
+        if self.phase == "playing" and self.last_pids and self.alive(appid, self.last_pids):
+            return  # still running - no need to look through every process
+        pids = self.last_pids = self.processes(appid)
         if not pids:
             if self.phase == "launching":
                 if now - self.started_at > self.timing.launch_timeout_s:

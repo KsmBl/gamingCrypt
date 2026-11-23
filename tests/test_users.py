@@ -1,6 +1,7 @@
 """Users: an admin and the people the admin adds - each with a code that opens the same volume."""
 
 import copy
+import os
 import json
 
 import pytest
@@ -14,7 +15,7 @@ FAST = dict(n=2**4, r=8, p=1)  # scrypt as in the app, only cheap
 
 def config(method="pin"):
     cfg = copy.deepcopy(DEFAULTS)
-    cfg["unlock"].update(method=method, volume="/tmp/x.vc", kdf=kdf.new_params(**FAST))
+    cfg["unlock"].update(method=method, volume=f"/tmp/gamingcrypt-test-{os.getpid()}.vc", kdf=kdf.new_params(**FAST))
     return cfg
 
 

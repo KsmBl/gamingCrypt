@@ -1,6 +1,7 @@
 """A user with an age sees only the games rated for it (gamingcrypt/ratings.py)."""
 
 import copy
+import os
 import json
 
 import pytest
@@ -209,7 +210,7 @@ def test_the_app_tells_the_tab_who_and_whether_to_rate(monkeypatch):
 
     monkeypatch.setattr(games_tab, "GamesTab", Probe)
     cfg = copy.deepcopy(DEFAULTS)
-    cfg["unlock"].update(method="pin", volume="/tmp/x.vc", kdf=kdf.new_params(n=16))
+    cfg["unlock"].update(method="pin", volume=f"/tmp/gamingcrypt-test-{os.getpid()}.vc", kdf=kdf.new_params(n=16))
     app.default_pages(cfg)
     assert seen["user"].admin and seen["rate_games"] is False  # nobody with an age
     master = users.admin_master(cfg, "1234", lambda s: True)

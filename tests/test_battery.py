@@ -68,3 +68,13 @@ def test_shell_without_battery(qtbot):
     qtbot.addWidget(shell)
     shell.show()
     assert not shell.battery.isVisible()
+
+
+def test_shell_reads_no_battery_while_hidden_behind_a_game(qtbot):
+    reads = []
+    shell = Shell(battery_reader=lambda: reads.append(1) or BatteryState(50, False, False))
+    qtbot.addWidget(shell)
+    shell.update_battery()
+    assert reads == []  # not shown (a game is in front)
+    shell.show()
+    assert len(reads) == 1 and shell.battery.text() == "🔋 50%"  # read at once when it's back

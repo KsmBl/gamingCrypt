@@ -79,15 +79,22 @@ class Shell(QWidget):
         self.power_menu.boot_into.connect(lambda num: self.power_requested.emit(f"boot:{num}"))
 
     def update_battery(self) -> None:
+        if not self.isVisible():
+            return  # behind a game: nobody sees it (shown again -> showEvent reads it at once)
         state = self.battery_reader() if self.battery_reader else None
         self.battery.setVisible(state is not None)  # desktops without battery: nothing
         if state is None:
             return
         self.battery.setText(state.label)
-        self.battery.setProperty("low", state.low)
-        self.battery.setProperty("charging", state.plugged)
-        self.battery.style().unpolish(self.battery)
-        self.battery.style().polish(self.battery)
+        if (self.battery.property("low"), self.battery.property("charging")) != (state.low, state.plugged):
+            self.battery.setProperty("low", state.low)
+            self.battery.setProperty("charging", state.plugged)
+            self.battery.style().unpolish(self.battery)  # (restyling costs - only when it changed)
+            self.battery.style().polish(self.battery)
+
+    def showEvent(self, event):  # noqa: N802
+        super().showEvent(event)
+        self.update_battery()
 
     def open_power_menu(self) -> None:
         self.power_menu.open_menu()

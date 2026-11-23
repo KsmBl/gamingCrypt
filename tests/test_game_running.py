@@ -595,3 +595,36 @@ def test_quick_timing_gives_up_soon(qtbot):
     clock.now += 21
     w.poll()
     assert events == ["failed"]
+
+
+def test_launcher_alive_reads_only_the_games_processes(tmp_path):
+    from gamingcrypt.steam.running import launcher_alive
+
+    proc = fake_proc(tmp_path, {40: ["reaper", "SteamLaunch", "AppId=620", "--", "game"], 41: ["game.exe"]})
+    assert launcher_alive(620, {40, 41}, proc)
+    assert not launcher_alive(621, {40, 41}, proc)  # (a reused pid of another game)
+    assert not launcher_alive(620, {41, 99}, proc)  # the launcher is gone
+
+
+def test_playing_game_is_followed_without_scanning_every_process(qtbot):
+    game, clock = Game(), Clock()
+    alive = {"launcher": True}
+    scans = []
+    w = GameWatcher(processes=lambda appid: scans.append(appid) or set(game.pids), gpu=lambda p: True,
+                    clock=clock, alive=lambda appid, pids: alive["launcher"])
+    finished = []
+    w.finished.connect(finished.append)
+    w.watch(620)
+    game.pids = {10, 11}
+    w.poll()
+    clock.now += game_watcher.WINDOW_DELAY_S
+    w.poll()
+    assert w.phase == "playing" and len(scans) == 2
+    for _ in range(5):
+        w.poll()
+    assert len(scans) == 2  # its launcher is still there: no full scans while playing
+    alive["launcher"], game.pids = False, set()
+    w.poll()
+    clock.now += game_watcher.EXIT_GRACE_S
+    w.poll()
+    assert finished == [620] and len(scans) == 4

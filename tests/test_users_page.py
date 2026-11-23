@@ -1,6 +1,7 @@
 """Settings -> Security -> Users, and the app with more than one user."""
 
 import copy
+import os
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,7 @@ from tests.test_users import ADMIN_CODE, FAST, Volume, verify
 
 def config():
     cfg = copy.deepcopy(DEFAULTS)
-    cfg["unlock"].update(method="pin", volume="/tmp/x.vc", kdf=kdf.new_params(**FAST))
+    cfg["unlock"].update(method="pin", volume=f"/tmp/gamingcrypt-test-{os.getpid()}.vc", kdf=kdf.new_params(**FAST))
     return cfg
 
 

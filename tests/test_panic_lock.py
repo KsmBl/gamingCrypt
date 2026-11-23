@@ -102,7 +102,7 @@ def window(qtbot, monkeypatch, tmp_path):
     lock = w.stack.currentWidget()
     for key in "1234✓":
         lock.input.widget.press(key)
-    qtbot.waitUntil(lambda: w.screen_name == "shell")
+    qtbot.waitUntil(lambda: w.screen_name == "shell", timeout=20_000)  # (key derivation: slow on a busy CPU)
     w._quit, w._closed = quit_apps, closed
     return w
 

@@ -218,6 +218,7 @@ def test_one_press_one_sleep(qtbot, window):
     """Both 'Power Button' devices report the press - it used to suspend twice."""
     window.power_button()
     window.power_button()
+    qtbot.waitUntil(lambda: bool(window._suspends))  # (in the background - slower on a busy CPU)
     qtbot.wait(100)
     assert window._suspends == [1]
 

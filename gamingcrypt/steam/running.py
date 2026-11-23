@@ -50,6 +50,21 @@ def _parents(proc: Path) -> dict[int, int]:
     return parents
 
 
+def launcher_alive(appid: int, pids: set[int], proc: Path = Path("/proc")) -> bool:
+    """Is the game's launcher (``SteamLaunch AppId=<appid>``) among ``pids`` still running? It
+    lives until the whole game has ended - one small read instead of game_processes' scan of
+    every process (~20 ms on a handheld, every second)."""
+    wanted = f"AppId={int(appid)}".encode()
+    for pid in sorted(pids):  # the launcher started the rest: usually the lowest pid
+        try:
+            args = (proc / str(pid) / "cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        if b"SteamLaunch" in args and wanted in args:
+            return True
+    return False
+
+
 def game_processes(appid: int, proc: Path = Path("/proc")) -> set[int]:
     """The launcher of ``appid`` and everything it started."""
     roots = {pid for pid, app in _launchers(proc).items() if app == appid}

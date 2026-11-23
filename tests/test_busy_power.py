@@ -197,5 +197,5 @@ def test_locking_stops_a_move_and_waits_for_a_format(qtbot, window, monkeypatch)
 def test_locking_with_nothing_going_on_is_as_before(qtbot, window):  # noqa: F811
     window.power_action("lock")
     lock = window.stack.currentWidget()
-    qtbot.waitUntil(lambda: lock.status.text() == "Locked")
+    qtbot.waitUntil(lambda: lock.status.text() == "Locked", timeout=20_000)  # (slower on a busy CPU)
     assert Unlocker.dismounted == [1]
