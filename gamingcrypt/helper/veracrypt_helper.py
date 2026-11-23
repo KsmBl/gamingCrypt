@@ -22,7 +22,7 @@ import tempfile
 VERACRYPT = "/usr/bin/veracrypt"  # replaced by install.sh
 # Raised whenever the helper learns something new: GamingCrypt compares it with the
 # installed helper ("helper version") and asks to finish the update when it's older.
-HELPER_VERSION = 5
+HELPER_VERSION = 6
 RYZENADJ = "/usr/bin/ryzenadj"
 EFIBOOTMGR = ["/usr/bin/efibootmgr", "/usr/sbin/efibootmgr"]
 SYS = "/sys"
@@ -288,14 +288,17 @@ def cpu_info(text: str) -> tuple[int, int, str] | None:
 
 
 def smu_range(family: int, model: int, name: str) -> tuple[int, int] | None:
-    """Allowed watts: U chips (handhelds, thin laptops) up to 28 W, Steam Deck-class 20 W, others 45 W."""
+    """Allowed watts: U chips (handhelds, thin laptops) up to 28 W - Renoir / Lucienne ones (4800U
+    handhelds like the AYANEO 2021, whose own firmware runs them at 35 W) up to 35 W -, Steam
+    Deck-class 20 W, others 45 W."""
     if (family, model) not in SMU_FAMILIES:
         return None
     word = name.split(" with ")[0].split()[-1] if name else ""
-    if SMU_FAMILIES[(family, model)][0] == "Van Gogh":
+    chip = SMU_FAMILIES[(family, model)][0]
+    if chip == "Van Gogh":
         return SMU_MIN_W, 20
     if word.upper().endswith("U"):
-        return SMU_MIN_W, 28
+        return SMU_MIN_W, 35 if chip in ("Renoir", "Lucienne") else 28
     return SMU_MIN_W, 45
 
 

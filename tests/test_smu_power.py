@@ -24,7 +24,8 @@ CPUINFO_INTEL = "processor\t: 0\nvendor_id\t: GenuineIntel\ncpu family\t: 6\nmod
 def test_cpu_detection_and_ranges():
     assert helper.cpu_info(CPUINFO_4800U) == (23, 96, "AMD Ryzen 7 4800U with Radeon Graphics")
     assert helper.cpu_info(CPUINFO_INTEL) is None
-    assert helper.smu_range(23, 96, "AMD Ryzen 7 4800U with Radeon Graphics") == (5, 28)
+    assert helper.smu_range(23, 96, "AMD Ryzen 7 4800U with Radeon Graphics") == (5, 35)
+    assert helper.smu_range(25, 80, "AMD Ryzen 7 5800U with Radeon Graphics") == (5, 28)
     assert helper.smu_range(25, 80, "AMD Ryzen 9 5900HS with Radeon Graphics") == (5, 45)
     assert helper.smu_range(23, 144, "AMD Custom APU 0405") == (5, 20)  # Steam Deck class
     assert helper.smu_range(23, 1, "AMD Ryzen 7 1700") is None  # desktop CPU: no mailbox known
@@ -69,7 +70,7 @@ def test_smu_sets_all_three_limits_in_milliwatts(tmp_path):
     assert state.read_text() == "12\n"  # the UI shows it as the current value
 
 
-@pytest.mark.parametrize("watts", [4, 29, 100])
+@pytest.mark.parametrize("watts", [4, 36, 100])
 def test_smu_refuses_outside_range(watts, tmp_path):
     made = []
     rc = helper.set_smu_power_limit(watts, cpuinfo=CPUINFO_4800U, state_file=None,
@@ -108,7 +109,7 @@ def test_smn_access_through_pci_config(tmp_path):
 def test_ui_side_shows_the_same_range(tmp_path):
     state = tmp_path / "state"
     limit = power.read_limit(tmp_path / "sys", cpuinfo=CPUINFO_4800U, state=state)
-    assert (limit.min_w, limit.max_w, limit.current_w) == (5, 28, 15) and "Renoir" in limit.source
+    assert (limit.min_w, limit.max_w, limit.current_w) == (5, 35, 15) and "Renoir" in limit.source
     state.write_text("9\n")
     assert power.read_limit(tmp_path / "sys", cpuinfo=CPUINFO_4800U, state=state).current_w == 9
     assert power.read_limit(tmp_path / "sys", cpuinfo=CPUINFO_INTEL, state=state) is None

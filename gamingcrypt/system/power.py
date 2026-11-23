@@ -58,7 +58,7 @@ def smu_limit(cpuinfo: str | None = None, state: Path = SMU_STATE) -> PowerLimit
     try:
         current = int(state.read_text().strip())
     except (OSError, ValueError):
-        current = 15 if limits[1] <= 28 else 25  # typical default TDP until set once
+        current = 15 if limits[1] <= 35 else 25  # typical default TDP until set once
     current = max(limits[0], min(limits[1], current))
     return PowerLimit(current, limits[0], limits[1], f"AMD {helper.SMU_FAMILIES[cpu[:2]][0]} SMU")
 
