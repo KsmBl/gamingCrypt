@@ -162,3 +162,14 @@ def no_store_lookups(request, monkeypatch):
         from gamingcrypt.ui.games_tab import GamesTab
 
         monkeypatch.setattr(GamesTab, "fill_facts", lambda self: None)
+
+
+@pytest.fixture(autouse=True)
+def _navigator_listeners_reset():
+    """A page closed without being hidden (the test just ends) leaves no listener behind that
+    would take the controller's input from the tests after it."""
+    from gamingcrypt.ui import navigator
+
+    before = list(navigator.LISTENERS)
+    yield
+    navigator.LISTENERS[:] = before
