@@ -88,7 +88,69 @@ class StickView(QWidget):
         p.drawText(0, 172, 170, 18, Qt.AlignmentFlag.AlignCenter, self.title)
 
 
+class SubPage(QWidget):
+    """One part of the controller settings on its own page (Calibrate, Triggers, Buttons): a title,
+    Done (B too), the section(s). Kept, not rebuilt: shown again and again from the hub."""
+
+    closed = Signal()
+
+    def __init__(self, title: str, widgets: list[QWidget], entered: Callable[[], None],
+                 left: Callable[[], None]):
+        super().__init__()
+        self.kept = True  # (SettingsTab.close_page: hidden, not thrown away)
+        self.entered, self.left = entered, left
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(30, 16, 30, 0)
+        top = QHBoxLayout()
+        heading = QLabel(title)
+        heading.setObjectName("title")
+        top.addWidget(heading)
+        top.addStretch()
+        self.done_button = big_button("Done", "primary")
+        self.done_button.clicked.connect(self.closed.emit)
+        top.addWidget(self.done_button)
+        layout.addLayout(top)
+        from PySide6.QtWidgets import QScrollArea
+
+        from gamingcrypt.ui.widgets import enable_touch_scroll
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        enable_touch_scroll(scroll)
+        content = QWidget()
+        box = QVBoxLayout(content)
+        box.setContentsMargins(10, 10, 10, 20)
+        box.setSpacing(14)
+        for widget in widgets:
+            box.addWidget(widget)
+        box.addStretch()
+        scroll.setWidget(content)
+        layout.addWidget(scroll, 1)
+
+    def showEvent(self, event):  # noqa: N802
+        super().showEvent(event)
+        self.entered()
+
+    def hideEvent(self, event):  # noqa: N802
+        super().hideEvent(event)
+        self.left()
+
+
+TILES = (  # (page, label, what it's for)
+    ("calibrate", "🎯  Calibrate sticks and triggers", "Their range and centre, and the sticks' dead zone"),
+    ("triggers", "🎚  Trigger curves", "For triggers that do little at first, then jump, or are full too early"),
+    ("buttons", "🔁  Remap buttons", "Which button does what - in games and here"),
+)
+
+
 class ControllerPage(QWidget):
+    """Settings → Controller: the controller and the switch for the virtual one, and tiles that
+    open its pages - Calibrate, Trigger curves, Remap buttons (and what SettingsTab adds: test,
+    emulator controls). ``open_page``: show that page (SettingsTab puts it in front)."""
+
+    open_page = Signal(QWidget)
+
     def __init__(self, service, reader_factory=LiveReader):
         super().__init__()
         self.service = service
@@ -101,6 +163,7 @@ class ControllerPage(QWidget):
         self.session: CalibrationSession | None = None
         self.capture: tuple[str, Capture] | None = None
         self._was_running = False
+        self._entered = False
         self._bridge = _Bridge(self)
         self._bridge.event.connect(self.on_event)
 
@@ -127,6 +190,21 @@ class ControllerPage(QWidget):
         self.top = top
         layout.addWidget(top)
 
+        from PySide6.QtWidgets import QGridLayout
+
+        self.tiles_box = QFrame()
+        self.tiles = QGridLayout(self.tiles_box)
+        self.tiles.setContentsMargins(0, 0, 0, 0)
+        self.tiles.setHorizontalSpacing(14)
+        self.tiles.setVerticalSpacing(14)
+        self.tiles.setColumnStretch(0, 1)
+        self.tiles.setColumnStretch(1, 1)
+        self.tile_buttons: dict[str, QWidget] = {}
+        for name, label, text in TILES:
+            self.tile_buttons[name] = self.add_tile(label, text, lambda _=False, n=name: self.open(n))
+        layout.addWidget(self.tiles_box)
+
+        # the pages' sections -------------------------------------------------------------
         sticks = Section("Sticks")
         views = QHBoxLayout()
         self.left_view = StickView("Left stick")
@@ -138,11 +216,11 @@ class ControllerPage(QWidget):
         self.deadzone_value = QLabel()
         self.deadzone_slider = _slider(0, 30, 8)
         _on_change(self.deadzone_slider, self.set_deadzone, lambda v: self.deadzone_value.setText(f"{v}%"))
-        sticks.row("Deadzone", self.deadzone_slider, self.deadzone_value)
+        sticks.row("Dead zone", self.deadzone_slider, self.deadzone_value)
         self.calibration_text = _label()
         sticks.body.addWidget(self.calibration_text)
         cal_row = QHBoxLayout()
-        self.calibrate_button = big_button("Calibrate sticks and triggers", "primary")
+        self.calibrate_button = big_button("Start calibration", "primary")
         self.calibrate_button.clicked.connect(self.start_calibration)
         cal_row.addWidget(self.calibrate_button)
         self.next_button = big_button("Next")
@@ -155,12 +233,10 @@ class ControllerPage(QWidget):
         sticks.body.addLayout(cal_row)
         sticks.body.addWidget(sticks.status)
         self.sticks = sticks
-        layout.addWidget(sticks)
 
         from gamingcrypt.ui.trigger_curves import TriggerSection
 
         self.triggers = TriggerSection(lambda: self.profile, self.save)
-        layout.addWidget(self.triggers)
 
         buttons = Section("Buttons")
         buttons.body.addWidget(_label("Tap Remap, then press the button (or push the stick/trigger) "
@@ -184,16 +260,38 @@ class ControllerPage(QWidget):
         buttons.body.addWidget(reset, alignment=Qt.AlignmentFlag.AlignLeft)
         buttons.body.addWidget(buttons.status)
         self.buttons = buttons
-        layout.addWidget(buttons)
+
+        self.pages = {
+            "calibrate": SubPage("Calibrate sticks and triggers", [sticks], self.enter, self.leave),
+            "triggers": SubPage("Trigger curves", [self.triggers], self.enter, self.leave),
+            "buttons": SubPage("Remap buttons", [buttons], self.enter, self.leave),
+        }
         self._set_calibration_ui(False)
         self.load_device()
+
+    def add_tile(self, label: str, text: str, clicked: Callable) -> QWidget:
+        """A big button with a line on what it's for - next in the grid of two columns."""
+        tile = QFrame()
+        tile.setObjectName("card")
+        box = QVBoxLayout(tile)
+        box.setContentsMargins(18, 14, 18, 14)
+        button = big_button(label)
+        button.clicked.connect(clicked)
+        box.addWidget(button)
+        box.addWidget(_label(text))
+        index = self.tiles.count()
+        self.tiles.addWidget(tile, index // 2, index % 2)
+        return button
+
+    def open(self, name: str) -> None:
+        self.open_page.emit(self.pages[name])
 
     # device -----------------------------------------------------------------
     def load_device(self) -> None:
         self.info = self.service.device()
         has = self.info is not None
-        for section in (self.sticks, self.triggers, self.buttons):
-            section.setVisible(has)
+        for button in self.tile_buttons.values():
+            button.setEnabled(has)
         if not has:
             self.device_label.setText("No controller found. Connect one and tap Rescan.")
             self.profile = None
@@ -205,13 +303,13 @@ class ControllerPage(QWidget):
     def rescan(self) -> None:
         self.stop_reader()
         self.load_device()
-        if self.isVisible():
+        if self._entered:
             self.start_reader()
 
     def set_enabled(self, enabled: bool) -> None:
         ok = self.service.set_enabled(enabled)
-        if enabled and self.isVisible():
-            # Page is open and reads the raw controller - start it when leaving the page.
+        if enabled and self._entered:
+            # a page reads the raw controller - started when it's left
             self.service.stop()
             self._was_running = True
             ok = True
@@ -224,15 +322,20 @@ class ControllerPage(QWidget):
         """The triggers are tried out here: they don't page the menu (navigator) meanwhile."""
         return ev_type == e.EV_ABS and code in (e.ABS_Z, e.ABS_RZ)
 
-    def showEvent(self, event):  # noqa: N802
-        super().showEvent(event)
+    def enter(self) -> None:
+        """One of its pages is shown: the raw controller is read (the virtual one paused)."""
+        if self._entered:
+            return
+        self._entered = True
         if self.keep_triggers not in navigator.LISTENERS:
             navigator.LISTENERS.append(self.keep_triggers)
         self._was_running = self.service.pause()
         self.start_reader()
 
-    def hideEvent(self, event):  # noqa: N802
-        super().hideEvent(event)
+    def leave(self) -> None:
+        if not self._entered:
+            return
+        self._entered = False
         if self.keep_triggers in navigator.LISTENERS:
             navigator.LISTENERS.remove(self.keep_triggers)
         self.stop_reader()
@@ -359,7 +462,7 @@ class ControllerPage(QWidget):
     def ask_reset(self) -> None:
         from gamingcrypt.ui.modal import ask
 
-        ask(self.window(), self.RESET_QUESTION, "Reset", self.reset)
+        ask(self.buttons.window(), self.RESET_QUESTION, "Reset", self.reset)
 
     def reset(self) -> None:
         self.profile = self.service.reset_profile(self.info)

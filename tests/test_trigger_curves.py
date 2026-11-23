@@ -4,7 +4,7 @@ from gamingcrypt.input import evdev as e
 from gamingcrypt.input.profile import (CURVE_POINTS, Profile, Translator, apply_curve, measured_curve,
                                        trigger_curve)
 from gamingcrypt.ui import trigger_curves
-from tests.test_controller_settings import make, push
+from tests.test_controller_settings import make, opened, push
 
 
 def test_curve_from_sliders():
@@ -47,7 +47,7 @@ def test_translator_uses_the_curve():
 
 def test_page_sliders_measure_and_straight(qtbot, monkeypatch):
     page, service, cfg, saved, _ = make(qtbot)
-    page.show()
+    opened(page, "triggers")
     section = page.triggers
     assert section.isVisible() and section.editing == "rt"
     section.start_slider.setValue(20)
@@ -77,8 +77,8 @@ def test_triggers_dont_page_the_menu_on_this_page(qtbot):
     from gamingcrypt.ui import navigator
 
     page, *_ = make(qtbot)
-    page.show()
+    sub = opened(page, "triggers")
     assert any(listener(e.EV_ABS, e.ABS_RZ, 255) for listener in navigator.LISTENERS)
     assert not any(listener(e.EV_ABS, e.ABS_X, 255) for listener in navigator.LISTENERS)  # the rest navigates
-    page.hide()
+    sub.hide()
     assert not any(listener(e.EV_ABS, e.ABS_RZ, 255) for listener in navigator.LISTENERS)

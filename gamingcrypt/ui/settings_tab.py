@@ -189,16 +189,13 @@ class SettingsTab(QStackedWidget):
         # Controller
         layout = page("Controller")
         self.controller_page = ControllerPage(self.input)
+        self.controller_page.open_page.connect(self.open_kept_page)
         layout.addWidget(self.controller_page)
-        self.controller_test_button = big_button("🎮  Controller test")
-        self.controller_test_button.clicked.connect(self.open_controller_test)
-        self.emulator_controls_button = big_button("🕹  Emulator controls")
-        self.emulator_controls_button.clicked.connect(self.open_emulator_controls)
-        buttons = QHBoxLayout()
-        buttons.addWidget(self.controller_test_button)
-        buttons.addWidget(self.emulator_controls_button)
-        buttons.addStretch()
-        layout.addLayout(buttons)
+        self.controller_test_button = self.controller_page.add_tile(
+            "🎮  Controller test", "See every button, stick and trigger as games get them",
+            lambda: self.open_controller_test())
+        self.emulator_controls_button = self.controller_page.add_tile(
+            "🕹  Emulator controls", "What each button is in every emulated system", lambda: self.open_emulator_controls())
         from gamingcrypt.ui.device_buttons import DeviceButtonsSection
 
         self.device_buttons = DeviceButtonsSection(config, save)
@@ -549,10 +546,17 @@ class SettingsTab(QStackedWidget):
         self.addWidget(self.key_page)
         self.setCurrentWidget(self.key_page)
 
+    def open_kept_page(self, page: QWidget) -> None:
+        """A page that stays (the controller's): put in front, Done / B hides it again."""
+        if self.indexOf(page) < 0:
+            self.addWidget(page)
+            page.closed.connect(lambda: self.close_page(""))
+        self.setCurrentWidget(page)
+
     def close_page(self, message: str) -> None:
         page = self.currentWidget()
         self.setCurrentWidget(self.overview)
-        if page is not self.overview:
+        if page is not self.overview and not getattr(page, "kept", False):
             self.removeWidget(page)
             page.deleteLater()
         self.refresh()

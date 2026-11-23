@@ -43,6 +43,13 @@ def make(qtbot, pads=(PAD,), enabled=False):
     return page, service, cfg, saved, remappers
 
 
+def opened(page, name="calibrate"):
+    """One of its pages shown (the raw controller read meanwhile)."""
+    sub = page.pages[name]
+    sub.show()
+    return sub
+
+
 def push(page, *events):
     for event in events:
         page.on_event(*event)
@@ -52,7 +59,7 @@ def push(page, *events):
 def test_no_controller(qtbot):
     page, *_ = make(qtbot, pads=())
     assert "No controller found" in page.device_label.text()
-    assert page.sticks.isHidden() and page.buttons.isHidden()
+    assert not any(button.isEnabled() for button in page.tile_buttons.values())
 
 
 def test_shows_mapping_and_pauses_remapper_while_open(qtbot):
@@ -61,15 +68,15 @@ def test_shows_mapping_and_pauses_remapper_while_open(qtbot):
     assert service.running
     assert "Handheld" in page.device_label.text()
     assert page.rows["a"][0].text() == "South (A)" and page.rows["dpad_up"][0].text() == "Axis Hat Y -"
-    page.show()
+    sub = opened(page, "buttons")
     assert not service.running and FakeReader.instances[-1].running  # raw controller is read, not grabbed
-    page.hide()
+    sub.hide()
     assert service.running and not FakeReader.instances[-1].running
 
 
 def test_live_stick_view(qtbot):
     page, *_ = make(qtbot)
-    page.show()
+    opened(page, "calibrate")
     push(page, (e.EV_ABS, e.ABS_X, 32767), (e.EV_ABS, e.ABS_RY, -32768))
     assert page.left_view.raw[0] == 1.0 and page.left_view.out[0] == 1.0
     assert page.right_view.out[1] == -1.0
@@ -77,7 +84,7 @@ def test_live_stick_view(qtbot):
 
 def test_remap_button(qtbot):
     page, service, cfg, saved, _ = make(qtbot)
-    page.show()
+    opened(page, "buttons")
     page.rows["a"][1].click()
     assert page.rows["a"][0].text() == "Press the button now…" and page.rows["a"][1].text() == "Cancel"
     push(page, (e.EV_KEY, e.BTN_WEST, 1))
@@ -89,7 +96,7 @@ def test_remap_button(qtbot):
 
 def test_remap_cancel_by_tapping_again(qtbot):
     page, *_ = make(qtbot)
-    page.show()
+    opened(page, "buttons")
     page.rows["b"][1].click()
     page.rows["b"][1].click()
     push(page, (e.EV_KEY, e.BTN_WEST, 1))
@@ -98,7 +105,7 @@ def test_remap_cancel_by_tapping_again(qtbot):
 
 def test_trigger_mapped_to_button_and_back_to_axis(qtbot):
     page, *_ = make(qtbot)
-    page.show()
+    opened(page, "buttons")
     page.rows["lt"][1].click()
     push(page, (e.EV_KEY, e.BTN_TL, 1))
     assert page.profile.buttons["lt"] == Source("key", e.BTN_TL) and page.profile.axes["lt"] is None
@@ -109,7 +116,7 @@ def test_trigger_mapped_to_button_and_back_to_axis(qtbot):
 
 def test_calibration_flow(qtbot):
     page, service, cfg, saved, _ = make(qtbot)
-    page.show()
+    opened(page, "calibrate")
     page.calibrate_button.click()
     assert page.next_button.isVisible() and "1/2" in page.calibration_text.text()
     push(page, (e.EV_ABS, e.ABS_X, 600), (e.EV_ABS, e.ABS_X, 400))
@@ -132,7 +139,7 @@ def test_calibration_flow(qtbot):
 
 def test_calibration_cancel_and_deadzone(qtbot):
     page, service, cfg, saved, _ = make(qtbot)
-    page.show()
+    opened(page, "calibrate")
     page.calibrate_button.click()
     page.cancel_cal_button.click()
     assert page.session is None and page.calibrate_button.isVisible()
@@ -142,7 +149,7 @@ def test_calibration_cancel_and_deadzone(qtbot):
 
 def test_reset_to_defaults(qtbot):
     page, service, cfg, saved, _ = make(qtbot)
-    page.show()
+    opened(page, "calibrate")
     page.profile.calibration[e.ABS_X] = AxisCal(1, 0, 2)
     page.save()
     page.reset()
@@ -156,17 +163,17 @@ def test_reset_asks_and_says_what_it_reset(qtbot):
     from gamingcrypt.ui.modal import open_modal
 
     page, service, cfg, saved, _ = make(qtbot)
-    page.show()
+    opened(page, "buttons")
     page.deadzone_slider.setValue(15)
-    button = next(b for b in page.findChildren(QPushButton) if b.text() == "Reset to defaults")
+    button = next(b for b in page.buttons.findChildren(QPushButton) if b.text() == "Reset to defaults")
     button.click()
-    modal = open_modal(page.window())
+    modal = open_modal(page.buttons.window())
     question = modal.content.question.text()
     assert "mapping" in question and "calibration" in question and "dead zone" in question
     modal.content.cancel_button.click()
     assert page.profile.deadzone == 0.15  # cancelled: nothing reset
     button.click()
-    open_modal(page.window()).content.action_button.click()
+    open_modal(page.buttons.window()).content.action_button.click()
     assert PAD.key not in cfg["input"]["profiles"] and "dead zone" in page.buttons.status.text()
 
 
@@ -181,10 +188,10 @@ def test_enable_toggle(qtbot):
 
 def test_enable_while_page_open_starts_on_leave(qtbot):
     page, service, *_ = make(qtbot)
-    page.show()
+    sub = opened(page)
     page.enable_button.click()
     assert not service.running  # we're reading the raw controller right now
-    page.hide()
+    sub.hide()
     assert service.running
 
 
@@ -196,7 +203,7 @@ def test_reader_error_is_shown(qtbot):
     service = InputService(cfg, lambda c: None, finder=lambda: [PAD])
     page = ControllerPage(service, reader_factory=broken)
     qtbot.addWidget(page)
-    page.show()
+    opened(page)
     assert "Permission denied" in page.top.status.text()
 
 
@@ -207,3 +214,21 @@ def test_settings_has_controller_tab(qtbot):
     qtbot.addWidget(tab)
     assert tab.controller_page.service is service
     assert "Handheld" in tab.controller_page.device_label.text()
+
+
+def test_hub_tiles_open_kept_pages_and_b_goes_back(qtbot):
+    cfg = copy.deepcopy(DEFAULTS)
+    service = InputService(cfg, lambda c: None, finder=lambda: [PAD], remapper_factory=FakeRemapper)
+    tab = SettingsTab(cfg, lambda c: None, input_service=service)
+    qtbot.addWidget(tab)
+    tab.show()
+    hub = tab.controller_page
+    assert {"calibrate", "triggers", "buttons"} <= set(hub.tile_buttons)
+    hub.tile_buttons["buttons"].click()
+    assert tab.currentWidget() is hub.pages["buttons"]
+    assert tab.gamepad_back() and tab.currentWidget() is tab.overview
+    hub.tile_buttons["buttons"].click()  # the same page again, kept
+    assert tab.currentWidget() is hub.pages["buttons"]
+    hub.pages["buttons"].done_button.click()
+    assert tab.currentWidget() is tab.overview and tab.indexOf(hub.pages["buttons"]) >= 0
+    assert hub.tiles_box.isAncestorOf(tab.controller_test_button) and hub.tiles_box.isAncestorOf(tab.emulator_controls_button)
