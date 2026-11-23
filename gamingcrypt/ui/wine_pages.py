@@ -234,6 +234,12 @@ class WindowsGamePage(Movable, QWidget):
     def upscale_text(self) -> str:
         return self.upscale.facts()
 
+    def cores_combo(self, tab, game):
+        """CPU cores: Proton only (it shows the game its cores) - None for Linux games."""
+        from gamingcrypt.ui.cpu_option import cpu_combo
+
+        return cpu_combo(tab.profiles, game.appid, lambda text: self.say(text))
+
     def saves_note(self) -> str:
         user = self.tab.user
         own = "" if user is None or user.admin else user.id
@@ -303,6 +309,11 @@ class WindowsGamePage(Movable, QWidget):
         rows = [("Start file", self.exe_combo), ("Runs with", self.runner_combo), ("Upscaling", self.upscale_combo)]
         if self.gpu_combo is not None:
             rows.append((CAPTION, self.gpu_combo))
+        self.cpu_combo = self.cores_combo(tab, game)
+        if self.cpu_combo is not None:
+            from gamingcrypt.ui.cpu_option import CAPTION as CPU_CAPTION
+
+            rows.append((CPU_CAPTION, self.cpu_combo))
         for line, (caption, combo) in enumerate(rows):
             label = QLabel(caption)
             label.setObjectName("cardMeta")
@@ -536,6 +547,9 @@ class LinuxGamePage(WindowsGamePage):
 
     def runs_text(self) -> str:
         return "Runs directly" if self.runner_combo.currentData() in (None, "direct") else "Runs in Steam's runtime"
+
+    def cores_combo(self, tab, game):
+        return None
 
     def saves_note(self) -> str:
         return "Saves and settings: where the game keeps them - usually in your home folder (~/.local/share, ~/.config)"

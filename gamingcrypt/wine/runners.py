@@ -150,8 +150,10 @@ def pick(runners: list[Runner], wanted: str | None) -> Runner | None:
 
 def command(runner: Runner, game: WindowsGame, exe: str, home: Path,
             which: Callable[[str], str | None] = shutil.which,
-            user: str = "") -> tuple[list[str], dict[str, str], Path]:
-    """(program and arguments, environment additions, working folder). ``user``: whose prefix."""
+            user: str = "", cpus: list[int] | None = None,
+            fps: int = 0) -> tuple[list[str], dict[str, str], Path]:
+    """(program and arguments, environment additions, working folder). ``user``: whose prefix.
+    ``cpus``: the only cores the game gets (system/cpu_cores; Proton). ``fps``: its FPS limit."""
     target = game.path / exe
     prefix = prefix_dir(game, user)
     env = {"WINEDEBUG": "-all"}
@@ -161,20 +163,38 @@ def command(runner: Runner, game: WindowsGame, exe: str, home: Path,
     # Proton's Xalia (gamepad control of a game's own windows) costs a third of a CPU core in
     # every game - GamingCrypt already brings the controller, touch and keyboard
     env["PROTON_USE_XALIA"] = "0"
+    if fps and is_32bit(target):
+        env.update(dxvk_fps_limit(fps))
+    pinned: list[str] = []
+    if cpus:
+        from gamingcrypt.system.cpu_cores import topology
+
+        env["WINE_CPU_TOPOLOGY"] = topology(cpus)  # its "first core" is the first of these
+        taskset = which("taskset")
+        if taskset:  # and none of its threads (nor wineserver) on the others
+            pinned = [taskset, "-c", ",".join(str(c) for c in cpus)]
     umu = which("umu-run")
     if umu:  # Steam's runtime around Proton, as in Steam
         env.update(WINEPREFIX=str(prefix / "pfx"), PROTONPATH=str(runner.path), GAMEID="umu-default",
                    STORE="none")
-        return [umu, str(target)], env, target.parent
+        return [*pinned, umu, str(target)], env, target.parent
     steam = next((r for r in steam_roots(home) if r.is_dir()), steam_roots(home)[0])
     env.update(STEAM_COMPAT_DATA_PATH=str(prefix), STEAM_COMPAT_CLIENT_INSTALL_PATH=str(steam))
-    return [str(runner.path / "proton"), "run", str(target)], env, target.parent
+    return [*pinned, str(runner.path / "proton"), "run", str(target)], env, target.parent
+
+
+def dxvk_fps_limit(fps: int) -> dict[str, str]:
+    """The FPS limit inside the game's DXVK. gamescope limits a game through its Vulkan layer,
+    and distributions bring that layer for 64-bit programs only: 32-bit games (GTA IV) ran on
+    past any limit. DXVK (Proton's, and the one mods like FusionFix bring) holds them itself."""
+    return {"DXVK_CONFIG": f"d3d9.maxFrameRate = {int(fps)}; dxgi.maxFrameRate = {int(fps)}"}
 
 
 def launch(game: WindowsGame, exe: str, runner: Runner, data_dir: Path, log_dir: Path,
            popen=subprocess.Popen, home: Path | None = None,
            which: Callable[[str], str | None] = shutil.which,
-           more_env: dict[str, str] | None = None, user: str = "") -> tuple[bool, str]:
+           more_env: dict[str, str] | None = None, user: str = "", cpus: list[int] | None = None,
+           fps: int = 0) -> tuple[bool, str]:
     """Start it like a Steam game (the "reaper" wrapper: gamescope, quick menu, Force quit).
     ``user``: whose prefix - a user's id, "" for the admin."""
     from gamingcrypt.emulation.retroarch import reaper
@@ -182,7 +202,7 @@ def launch(game: WindowsGame, exe: str, runner: Runner, data_dir: Path, log_dir:
     home = home or Path.home()
     if not (game.path / exe).is_file():
         return False, f"{exe} isn't in the game's folder any more - pick the start file in Options"
-    args, extra, cwd = command(runner, game, exe, home, which, user)
+    args, extra, cwd = command(runner, game, exe, home, which, user, cpus, fps)
     prefix_dir(game, user).mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, **extra, **(more_env or {})}

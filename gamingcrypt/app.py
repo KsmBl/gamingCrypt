@@ -1021,6 +1021,8 @@ class MainWindow(QMainWindow):
         if self.game_watcher.active:
             self.game_profiles.set(self.game_watcher.appid, "fps", fps)
             self.apply_fps_limit(fps)
+            if self.game_watcher.appid == getattr(self, "_fps_at_start", None):
+                self.notify("This game takes a new FPS limit from its next start")
 
     def take_screenshot(self) -> None:
         """The quick menu closed and the game is in front again: let gamescope capture it."""
@@ -1472,11 +1474,19 @@ class MainWindow(QMainWindow):
         pads = self.input_service.game_env() if self.input_service is not None else {}
         from gamingcrypt import speedhack, users
 
+        from gamingcrypt.system import cpu_cores
+
         user = users.current(self.config)
+        cpus = cpu_cores.quiet_cpus() if profile.get(cpu_cores.PROFILE_KEY) else []
+        fps = int(profile.get("fps", 0) or 0)
         ok, message = runners.launch(game, exe, runner, data_dir(), config_mod.cache_dir() / "logs",
                                      more_env={**pads, **self.start_upscaling(profile),
                                                **speedhack.game_env(game.appid)},
-                                     user="" if user.admin else user.id)  # their own saves
+                                     user="" if user.admin else user.id,  # their own saves
+                                     cpus=cpus, fps=fps)
+        # a 32-bit game holds its FPS limit in DXVK (runners.dxvk_fps_limit): fixed at the start
+        self._fps_at_start = (game.appid if ok and runner.kind == "proton" and runners.is_32bit(game.path / exe)
+                              else None)
         self.upscaling_started(ok)
         if ok:
             log.info("starting Windows game %s: %s with %s", game.name, exe, runner.label)
