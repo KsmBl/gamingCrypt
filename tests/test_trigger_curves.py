@@ -71,14 +71,3 @@ def test_page_sliders_measure_and_straight(qtbot, monkeypatch):
 def test_shape_slider_both_ways():
     assert trigger_curves.shape_of(0) == 1 and trigger_curves.shape_of(100) == 0.25
     assert trigger_curves.slider_of(trigger_curves.shape_of(-40)) == -40
-
-
-def test_triggers_dont_page_the_menu_on_this_page(qtbot):
-    from gamingcrypt.ui import navigator
-
-    page, *_ = make(qtbot)
-    sub = opened(page, "triggers")
-    assert any(listener(e.EV_ABS, e.ABS_RZ, 255) for listener in navigator.LISTENERS)
-    assert not any(listener(e.EV_ABS, e.ABS_X, 255) for listener in navigator.LISTENERS)  # the rest navigates
-    sub.hide()
-    assert not any(listener(e.EV_ABS, e.ABS_RZ, 255) for listener in navigator.LISTENERS)

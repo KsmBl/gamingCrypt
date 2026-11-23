@@ -6,7 +6,6 @@ from PySide6.QtWidgets import QAbstractButton, QApplication, QComboBox, QLabel, 
 
 COMMON = "LB / RB  Tabs     {menu}  Quick menu"  # {menu}: its button(s) on this device (hotkeys.py)
 MENU = "⊞"  # until the app says which it is
-PAGES = "LT / RT  Page"  # in long lists (navigator.page)
 
 
 def card_hint(widget: QWidget | None) -> str | None:
@@ -52,8 +51,6 @@ def hints_for(widget: QWidget | None, menu: str = MENU) -> str:
         first += "     Ⓨ  Picture"
     if not can_go_back(widget):
         first = first.replace("     Ⓑ  Back", "")
-    if in_list(widget):
-        first += f"     {PAGES}"
     return f"{first}     {COMMON.format(menu=menu)}"
 
 
@@ -75,23 +72,6 @@ def can_go_back(widget: QWidget | None) -> bool:
             return False
         node = node.parentWidget()
     return True  # (not in a tab: a box, the lock screen - their own Back)
-
-
-def in_list(widget: QWidget | None) -> bool:
-    """A card in a grid or list that scrolls: the triggers page through it."""
-    from PySide6.QtWidgets import QScrollArea
-
-    from gamingcrypt.ui.cover_picker import ChoiceCard
-    from gamingcrypt.ui.game_widgets import Tappable
-
-    if not isinstance(widget, (Tappable, ChoiceCard)) and card_hint(widget) is None:
-        return False
-    node = widget.parentWidget()
-    while node is not None:
-        if isinstance(node, QScrollArea):
-            return node.verticalScrollBar().maximum() > 0
-        node = node.parentWidget()
-    return False
 
 
 def has_picture(widget: QWidget | None) -> bool:

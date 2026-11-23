@@ -1,4 +1,5 @@
-"""LT / RT: a screen up / down in long lists, in the same column."""
+"""The triggers (LT / RT, a PS5 controller's L2 / R2 - analog and as buttons) move nothing in
+GamingCrypt: they're for games, and tried out in Settings → Controller."""
 
 import pytest
 
@@ -29,48 +30,16 @@ def tab(qtbot):
     return t
 
 
-def centre(w):
-    return w.mapToGlobal(w.rect().center())
-
-
-def test_triggers_page_through_the_grid(qtbot, tab):
+def test_triggers_move_nothing(qtbot, tab):
     nav = GamepadNavigator(tab)
-    first = tab.home.cards[tab.home.result_appids[1]]  # the second column
+    first = tab.home.cards[tab.home.result_appids[1]]
     nav.focus(first)
-    assert "LT / RT  Page" in hints_for(first)
-    start = centre(first)
-    viewport = first.parentWidget()
-    while viewport is not None and not hasattr(viewport, "verticalScrollBar"):
-        viewport = viewport.parentWidget()
-    height = viewport.viewport().height()
-    nav.on_event(e.EV_KEY, e.BTN_TR2, 1)
-    nav.on_event(e.EV_KEY, e.BTN_TR2, 0)
-    down = nav.focused()
-    assert down is not first and abs(centre(down).x() - start.x()) < 5  # same column
-    assert height * 0.6 < centre(down).y() - start.y() <= height + 400  # about a screen further
-    nav.on_event(e.EV_ABS, e.ABS_Z, 200)  # analog LT
-    nav.on_event(e.EV_ABS, e.ABS_Z, 0)
-    assert nav.focused() is first
-
-
-def test_the_end_of_the_list_and_no_repeat_while_held(qtbot, tab):
-    nav = GamepadNavigator(tab)
-    last = tab.home.cards[tab.home.result_appids[-1]]
-    nav.focus(tab.home.cards[tab.home.result_appids[0]])
-    nav.on_event(e.EV_ABS, e.ABS_RZ, 255)
-    nav.on_event(e.EV_ABS, e.ABS_RZ, 200)  # still held: one page only
-    once = nav.focused()
-    nav.on_event(e.EV_ABS, e.ABS_RZ, 0)
-    for _ in range(20):
-        nav.on_event(e.EV_KEY, e.BTN_TR2, 1)
-        nav.on_event(e.EV_KEY, e.BTN_TR2, 0)
-    assert once is not tab.home.cards[tab.home.result_appids[0]]
-    assert centre(nav.focused()).y() == centre(last).y()  # the last row - and no further
-
-
-def test_outside_lists_nothing_happens(qtbot, tab):
-    nav = GamepadNavigator(tab)
-    nav.focus(tab.home.search)
-    nav.on_event(e.EV_KEY, e.BTN_TR2, 1)
-    assert nav.focused() is tab.home.search
-    assert "Page" not in hints_for(tab.home.search)
+    for ev_type, code, values in ((e.EV_KEY, e.BTN_TR2, (1, 0)), (e.EV_KEY, e.BTN_TL2, (1, 0)),
+                                  (e.EV_ABS, e.ABS_RZ, (255, 128, 0)), (e.EV_ABS, e.ABS_Z, (255, 0))):
+        for value in values:
+            nav.on_event(ev_type, code, value)
+        assert nav.focused() is first, code
+    assert "LT" not in hints_for(first) and "Page" not in hints_for(first)
+    nav.on_event(e.EV_ABS, e.ABS_HAT0Y, 1)  # the rest still moves
+    nav.on_event(e.EV_ABS, e.ABS_HAT0Y, 0)
+    assert nav.focused() is not first

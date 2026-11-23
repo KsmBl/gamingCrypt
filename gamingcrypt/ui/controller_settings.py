@@ -322,18 +322,11 @@ class ControllerPage(QWidget):
         set_status(self.top.status, message if ok else f"Could not start: {self.service.error}", error=not ok)
 
     # live input ----------------------------------------------------------------
-    @staticmethod
-    def keep_triggers(ev_type: int, code: int, _value: int) -> bool:
-        """The triggers are tried out here: they don't page the menu (navigator) meanwhile."""
-        return ev_type == e.EV_ABS and code in (e.ABS_Z, e.ABS_RZ)
-
     def enter(self) -> None:
         """One of its pages is shown: the raw controller is read (the virtual one paused)."""
         if self._entered:
             return
         self._entered = True
-        if self.keep_triggers not in navigator.LISTENERS:
-            navigator.LISTENERS.append(self.keep_triggers)
         self._was_running = self.service.pause()
         self.start_reader()
 
@@ -341,8 +334,6 @@ class ControllerPage(QWidget):
         if not self._entered:
             return
         self._entered = False
-        if self.keep_triggers in navigator.LISTENERS:
-            navigator.LISTENERS.remove(self.keep_triggers)
         self.stop_reader()
         self.cancel_calibration()
         self.triggers.stop_measuring()

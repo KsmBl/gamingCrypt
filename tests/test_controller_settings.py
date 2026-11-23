@@ -40,6 +40,8 @@ def make(qtbot, pads=(PAD,), enabled=False):
     service = InputService(cfg, saved.append, finder=lambda: list(pads), remapper_factory=factory)
     page = ControllerPage(service, reader_factory=FakeReader)
     qtbot.addWidget(page)
+    for sub in page.pages.values():  # (opened on their own in these tests: closed after each)
+        qtbot.addWidget(sub)
     return page, service, cfg, saved, remappers
 
 
@@ -203,6 +205,8 @@ def test_reader_error_is_shown(qtbot):
     service = InputService(cfg, lambda c: None, finder=lambda: [PAD])
     page = ControllerPage(service, reader_factory=broken)
     qtbot.addWidget(page)
+    for sub in page.pages.values():
+        qtbot.addWidget(sub)
     opened(page)
     assert "Permission denied" in page.top.status.text()
 
