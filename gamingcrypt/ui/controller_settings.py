@@ -141,6 +141,7 @@ TILES = (  # (page, label, what it's for)
     ("calibrate", "🎯  Calibrate sticks and triggers", "Their range and centre, and the sticks' dead zone"),
     ("triggers", "🎚  Trigger curves", "For triggers that do little at first, then jump, or are full too early"),
     ("buttons", "🔁  Remap buttons", "Which button does what - in games and here"),
+    ("adaptive", "🔫  Adaptive triggers", "A PS5 controller's triggers push back - e.g. a stop on the aim trigger"),
 )
 
 
@@ -261,10 +262,14 @@ class ControllerPage(QWidget):
         buttons.body.addWidget(buttons.status)
         self.buttons = buttons
 
+        from gamingcrypt.ui.adaptive_triggers import AdaptiveTriggersSection
+
+        self.adaptive = AdaptiveTriggersSection(service.config, service.save)
         self.pages = {
             "calibrate": SubPage("Calibrate sticks and triggers", [sticks], self.enter, self.leave),
             "triggers": SubPage("Trigger curves", [self.triggers], self.enter, self.leave),
             "buttons": SubPage("Remap buttons", [buttons], self.enter, self.leave),
+            "adaptive": SubPage("Adaptive triggers", [self.adaptive], self.adaptive.refresh, lambda: None),
         }
         self._set_calibration_ui(False)
         self.load_device()
@@ -290,8 +295,8 @@ class ControllerPage(QWidget):
     def load_device(self) -> None:
         self.info = self.service.device()
         has = self.info is not None
-        for button in self.tile_buttons.values():
-            button.setEnabled(has)
+        for name, button in self.tile_buttons.items():
+            button.setEnabled(has or name == "adaptive")  # (a PS5 controller may be all there is)
         if not has:
             self.device_label.setText("No controller found. Connect one and tap Rescan.")
             self.profile = None

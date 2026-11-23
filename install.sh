@@ -26,6 +26,7 @@ HELPER="/usr/local/lib/gamingcrypt/veracrypt-helper"
 SUDOERS="/etc/sudoers.d/gamingcrypt"
 UDEV_RULE="/etc/udev/rules.d/71-gamingcrypt-uinput.rules"
 VOLUME_RULE="/etc/udev/rules.d/72-gamingcrypt-volume-keys.rules"
+DUALSENSE_RULE="/etc/udev/rules.d/73-gamingcrypt-dualsense.rules"
 SESSION_BIN="/usr/local/bin/gamingcrypt-session"
 SESSION_FILE="/usr/share/wayland-sessions/gamingcrypt.desktop"
 LIGHTDM_CONF="/etc/lightdm/lightdm.conf.d/50-gamingcrypt.conf"
@@ -78,7 +79,7 @@ uninstall() {
     fi
     if [[ -e $HELPER || -e $SUDOERS || -e $UDEV_RULE ]]; then
         info "Removing the sudo helper and controller rules (needs sudo)"
-        sudo rm -f "$SUDOERS" "$HELPER" "$UDEV_RULE" "$MODULES_CONF" "$NTSYNC_CONF"
+        sudo rm -f "$SUDOERS" "$HELPER" "$UDEV_RULE" "$MODULES_CONF" "$NTSYNC_CONF" "$DUALSENSE_RULE"
         sudo rmdir "$(dirname "$HELPER")" 2>/dev/null || true
     fi
     info "Done. Your config (~/.config/gamingcrypt) and cache (~/.cache/gamingcrypt) were kept."
@@ -386,6 +387,16 @@ install_bluetooth() {
 }
 
 install_input_rules() {
+    # A PS5 controller's adaptive triggers are set through its hidraw device (USB and Bluetooth)
+    if [[ ! -e $DUALSENSE_RULE ]]; then
+        info "Allowing the adaptive triggers of PS5 controllers (needs sudo)"
+        printf '%s\n' \
+            'KERNEL=="hidraw*", ATTRS{idVendor}=="054c", ATTRS{idProduct}=="0ce6|0df2", TAG+="uaccess"' \
+            'KERNEL=="hidraw*", KERNELS=="*054C:0CE6*|*054C:0DF2*", TAG+="uaccess"' \
+            | sudo tee "$DUALSENSE_RULE" >/dev/null
+        sudo udevadm control --reload-rules 2>/dev/null || true
+        sudo udevadm trigger --subsystem-match=hidraw --action=change 2>/dev/null || true
+    fi
     # The virtual controller (calibration + button mapping) is created through /dev/uinput.
     if [[ -w /dev/uinput && -e $UDEV_RULE ]]; then
         return

@@ -22,7 +22,7 @@ import tempfile
 VERACRYPT = "/usr/bin/veracrypt"  # replaced by install.sh
 # Raised whenever the helper learns something new: GamingCrypt compares it with the
 # installed helper ("helper version") and asks to finish the update when it's older.
-HELPER_VERSION = 6
+HELPER_VERSION = 7  # 7: (install.sh) PS5 controllers reachable for their adaptive triggers
 RYZENADJ = "/usr/bin/ryzenadj"
 EFIBOOTMGR = ["/usr/bin/efibootmgr", "/usr/sbin/efibootmgr"]
 SYS = "/sys"

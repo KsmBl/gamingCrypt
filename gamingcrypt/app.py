@@ -117,6 +117,10 @@ class MainWindow(QMainWindow):
         self.adopt_timer.timeout.connect(self.adopt_running_game)
         if in_gaming_session():
             self.adopt_timer.start(3000)
+        self.dualsense_timer = QTimer(self)  # a PS5 controller connected: its adaptive triggers
+        self.dualsense_timer.timeout.connect(self.adaptive_triggers)
+        if in_gaming_session():
+            self.dualsense_timer.start(3000)
         # Device controls (display, power, audio); empty in tests unless given.
         from gamingcrypt.system.controls import SystemControls
 
@@ -838,6 +842,23 @@ class MainWindow(QMainWindow):
             self.set_gpu_full(True)
         if appid == getattr(self, "_quiet_game", None):
             self.pin_to_first_core(True)
+        self.adaptive_triggers(again=True)  # (a game may have talked to the controller itself)
+
+    def adaptive_triggers(self, again: bool = False) -> None:
+        """A PS5 controller connected (looked for every few seconds) gets the adaptive triggers set
+        in Settings - it forgets them when switched off. again: every one, not only new ones."""
+        from gamingcrypt.input import dualsense
+
+        if not self.config.get("input", {}).get("adaptive_triggers"):
+            return
+        found = dualsense.find()
+        seen = getattr(self, "_dualsense_seen", set())
+        new = found if again else [c for c in found if c.path not in seen]
+        self._dualsense_seen = {c.path for c in found}
+        if new:
+            done, error = dualsense.apply(self.config, new)
+            if error:
+                log.info("adaptive triggers: %s", error)
 
     def pin_to_first_core(self, pinned: bool) -> None:
         """A game on the quiet cores: GamingCrypt and the overlay onto the first core, out of

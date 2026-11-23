@@ -59,7 +59,7 @@ def push(page, *events):
 def test_no_controller(qtbot):
     page, *_ = make(qtbot, pads=())
     assert "No controller found" in page.device_label.text()
-    assert not any(button.isEnabled() for button in page.tile_buttons.values())
+    assert [n for n, b in page.tile_buttons.items() if b.isEnabled()] == ["adaptive"]  # a PS5 pad may be all there is
 
 
 def test_shows_mapping_and_pauses_remapper_while_open(qtbot):
