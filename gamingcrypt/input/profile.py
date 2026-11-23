@@ -97,6 +97,57 @@ class AxisCal:
         return cls(int(data["center"]), int(data["min"]), int(data["max"]))
 
 
+CURVE_POINTS = 17  # a trigger curve: this many points, 0 .. 1 evenly over the trigger's raw range
+
+
+def trigger_curve(start: float, full: float, shape: float) -> list[float]:
+    """The output at CURVE_POINTS even steps of the raw trigger: nothing up to ``start``, all from
+    ``full`` (0..1 of the raw range), in between ``t ** shape`` (1 linear, < 1 rises early - for
+    triggers that do little at first, > 1 rises late)."""
+    start, full = max(0.0, min(start, 0.9)), max(0.1, min(full, 1.0))
+    full = max(full, start + 0.05)
+    out = []
+    for i in range(CURVE_POINTS):
+        x = i / (CURVE_POINTS - 1)
+        t = 0.0 if x <= start else 1.0 if x >= full else (x - start) / (full - start)
+        out.append(round(t ** shape, 4))
+    return out
+
+
+def apply_curve(curve: list[float], x: float) -> float:
+    """The curve between its points (straight lines), x and result 0..1."""
+    x = max(0.0, min(1.0, x)) * (len(curve) - 1)
+    i = min(int(x), len(curve) - 2)
+    return max(0.0, min(1.0, curve[i] + (curve[i + 1] - curve[i]) * (x - i)))
+
+
+def measured_curve(samples: list[tuple[float, float]]) -> list[float] | None:
+    """One slow, even pull of a trigger (time, raw 0..1): the curve that makes the output follow
+    how far the trigger is pressed instead of what its sensor says. None: not a usable pull (it
+    has to go from released to fully pressed). Where the sensor reports nothing (a dead start, a
+    stop before the end) no curve can help - those parts stay as they are."""
+    moving = [(t, x) for t, x in samples if x > 0.01]
+    if len(moving) < 5 or max(x for _t, x in moving) < 0.9:
+        return None
+    top = max(x for _t, x in moving)
+    first = moving[0][0]
+    end = next(t for t, x in moving if x >= top - 0.01)
+    if end - first < 0.3:  # pulled in one go: nothing to learn from
+        return None
+    curve = []
+    for i in range(CURVE_POINTS):
+        level = i / (CURVE_POINTS - 1) * top
+        reached = next((t for t, x in moving if x >= level), end) if i else first
+        curve.append(round(min(1.0, (reached - first) / (end - first)), 4))
+    curve[0] = 0.0
+    for i in range(1, CURVE_POINTS):  # never back down
+        curve[i] = max(curve[i], curve[i - 1])
+    if top < 1.0:  # the sensor stops short of its range: full from there on
+        cut = int(top * (CURVE_POINTS - 1))
+        curve = [*curve[:cut + 1], *[1.0] * (CURVE_POINTS - cut - 1)]
+    return curve
+
+
 @dataclass
 class Profile:
     buttons: dict[str, Source] = field(default_factory=dict)
@@ -104,9 +155,15 @@ class Profile:
     calibration: dict[int, AxisCal] = field(default_factory=dict)
     deadzone: float = 0.08
     trigger_deadzone: float = 0.03
+    # lt / rt -> their curve (trigger_curve, measured_curve); none: straight, with trigger_deadzone
+    trigger_curves: dict[str, list[float]] = field(default_factory=dict)
+    # lt / rt -> (start, full, shape) their curve was made from (the sliders); none: measured
+    trigger_shapes: dict[str, tuple[float, float, float]] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
+            "trigger_curves": {k: list(v) for k, v in self.trigger_curves.items()},
+            "trigger_shapes": {k: list(v) for k, v in self.trigger_shapes.items()},
             "buttons": {k: v.to_dict() for k, v in self.buttons.items()},
             "axes": dict(self.axes),
             "calibration": {str(k): v.to_dict() for k, v in self.calibration.items()},
@@ -122,6 +179,10 @@ class Profile:
             calibration={int(k): AxisCal.from_dict(v) for k, v in data.get("calibration", {}).items()},
             deadzone=float(data.get("deadzone", 0.08)),
             trigger_deadzone=float(data.get("trigger_deadzone", 0.03)),
+            trigger_curves={k: [float(x) for x in v] for k, v in data.get("trigger_curves", {}).items()
+                            if k in TRIGGER_AXES and len(v) == CURVE_POINTS},
+            trigger_shapes={k: tuple(float(x) for x in v) for k, v in data.get("trigger_shapes", {}).items()
+                            if k in TRIGGER_AXES and len(v) == 3},
         )
 
 
@@ -211,6 +272,9 @@ class Translator:
         analog = self.profile.axes.get(name)
         if source is not None and source.kind == "abs" and source.code == analog and source.direction > 0:
             value = max(0.0, self.normalized(analog))
+            curve = self.profile.trigger_curves.get(name)
+            if curve:
+                return round(apply_curve(curve, value) * 255)
             dz = self.profile.trigger_deadzone
             value = 0.0 if value <= dz else (value - dz) / (1 - dz)
             return round(value * 255)
@@ -302,7 +366,9 @@ class CalibrationSession:
             noise = max(noise, (max(samples) - min(samples)) / 2 / half)
         profile = Profile(dict(self.profile.buttons), dict(self.profile.axes), calibration,
                           deadzone=round(min(0.3, max(0.03, noise * 1.5 + 0.02)), 3),
-                          trigger_deadzone=self.profile.trigger_deadzone)
+                          trigger_deadzone=self.profile.trigger_deadzone,
+                          trigger_curves=dict(self.profile.trigger_curves),
+                          trigger_shapes=dict(self.profile.trigger_shapes))
         return profile, "Calibration done"
 
 

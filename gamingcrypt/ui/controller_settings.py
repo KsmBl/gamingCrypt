@@ -157,6 +157,11 @@ class ControllerPage(QWidget):
         self.sticks = sticks
         layout.addWidget(sticks)
 
+        from gamingcrypt.ui.trigger_curves import TriggerSection
+
+        self.triggers = TriggerSection(lambda: self.profile, self.save)
+        layout.addWidget(self.triggers)
+
         buttons = Section("Buttons")
         buttons.body.addWidget(_label("Tap Remap, then press the button (or push the stick/trigger) "
                                       "that should act as it."))
@@ -187,7 +192,7 @@ class ControllerPage(QWidget):
     def load_device(self) -> None:
         self.info = self.service.device()
         has = self.info is not None
-        for section in (self.sticks, self.buttons):
+        for section in (self.sticks, self.triggers, self.buttons):
             section.setVisible(has)
         if not has:
             self.device_label.setText("No controller found. Connect one and tap Rescan.")
@@ -223,6 +228,7 @@ class ControllerPage(QWidget):
         super().hideEvent(event)
         self.stop_reader()
         self.cancel_calibration()
+        self.triggers.stop_measuring()
         self.capture = None
         navigator.set_paused(False)
         self.service.resume(self._was_running or self.service.enabled)
@@ -277,6 +283,10 @@ class ControllerPage(QWidget):
                    t.normalized(axes[y]) if axes.get(y) is not None else 0.0)
             done = (out.get((e.EV_ABS, ox), 0) / 32767, out.get((e.EV_ABS, oy), 0) / 32767)
             view.set_values(raw, done, self.profile.deadzone)
+        for name, code in (("lt", e.ABS_Z), ("rt", e.ABS_RZ)):
+            axis = axes.get(name)
+            raw = max(0.0, t.normalized(axis)) if axis is not None else 0.0
+            self.triggers.feed(name, raw, out.get((e.EV_ABS, code), 0) / 255)
 
     # profile ----------------------------------------------------------------------
     def refresh_rows(self) -> None:
@@ -289,6 +299,7 @@ class ControllerPage(QWidget):
         self.deadzone_slider.setValue(dz)
         self.deadzone_slider.blockSignals(False)
         self.deadzone_value.setText(f"{dz}%")
+        self.triggers.refresh()
         calibrated = bool(self.profile.calibration)
         self.calibration_text.setText("Calibrated" if calibrated else "Not calibrated yet (factory ranges are used)")
 
