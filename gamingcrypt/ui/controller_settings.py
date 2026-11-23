@@ -269,7 +269,7 @@ class ControllerPage(QWidget):
             "calibrate": SubPage("Calibrate sticks and triggers", [sticks], self.enter, self.leave),
             "triggers": SubPage("Trigger curves", [self.triggers], self.enter, self.leave),
             "buttons": SubPage("Remap buttons", [buttons], self.enter, self.leave),
-            "adaptive": SubPage("Adaptive triggers", [self.adaptive], self.adaptive.refresh, lambda: None),
+            "adaptive": SubPage("Adaptive triggers", [self.adaptive], self.adaptive.refresh, self.adaptive.stop),
         }
         self._set_calibration_ui(False)
         self.load_device()

@@ -65,29 +65,62 @@ def test_find_and_send(tmp_path):
     assert done == 0 and "Settings → System" in error
 
 
-def test_page_saves_and_sends(qtbot):
+class Reader:
+    def __init__(self, controller):
+        self.values = [(255, 128)]
+        self.closed = False
+
+    def poll(self):
+        return self.values.pop() if self.values else None
+
+    def close(self):
+        self.closed = True
+
+
+def test_page_saves_sends_and_shows_the_triggers(qtbot):
     from gamingcrypt.config import DEFAULTS
     from gamingcrypt.ui.adaptive_triggers import AdaptiveTriggersSection
 
     cfg = copy.deepcopy(DEFAULTS)
+    cfg["input"]["adaptive_triggers"] = {"lt": {"effect": "stop", "position": 50, "strength": 6}}  # (1.0.119's)
     saved, sent = [], []
     pad = ds.Controller("/dev/hidraw3", ds.BUS_BLUETOOTH, "DualSense")
     section = AdaptiveTriggersSection(cfg, saved.append, send=lambda c: sent.append(copy.deepcopy(c)) or (1, ""),
-                                      find=lambda: [pad])
+                                      find=lambda: [pad], reader_factory=Reader)
     qtbot.addWidget(section)
     assert "DualSense (Bluetooth)" in section.connected.text()
-    section.aim_button.click()
-    assert cfg["input"]["adaptive_triggers"]["lt"] == {"effect": "stop", "position": 50, "strength": 6}
-    assert saved and sent[-1]["input"]["adaptive_triggers"]["lt"]["effect"] == "stop"
+    assert section.boxes["lt"].effect() == ds.Effect(ds.STOP, 50, 6)  # the old setting, kept
+    assert section.reader is None and not section.read_timer.isActive()  # nothing read in the background
+    section.refresh()  # its page shown
+    section.read()
+    assert section.boxes["lt"].meter.value == 1.0 and abs(section.boxes["rt"].meter.value - 0.5) < 0.01
+    section.preset_buttons["Machine gun"].click()
+    assert cfg["input"]["adaptive_triggers"]["rt"]["effect"] == "buzz" and cfg["input"]["adaptive_triggers"]["rt"]["speed"] == 25
+    assert saved and sent[-1]["input"]["adaptive_triggers"]["lt"]["effect"] == "bump"
     assert "pull the trigger" in section.status.text()
-    section.boxes["rt"].kind.setCurrentIndex(section.boxes["rt"].kind.findData(ds.RESISTANCE))
-    assert cfg["input"]["adaptive_triggers"]["rt"]["effect"] == "resistance"
-    section.off_button.click()
+    box = section.boxes["rt"]
+    box.kind.setCurrentIndex(box.kind.findData(ds.BOW))
+    shown = {f for f, (caption, _s, _v) in box.rows.items() if caption.isVisibleTo(box)}
+    assert shown == {p[0] for p in ds.PARAMS[ds.BOW]}
+    assert cfg["input"]["adaptive_triggers"]["rt"]["effect"] == "bow"
+    box.rows["snap"][1].setValue(3)
+    assert cfg["input"]["adaptive_triggers"]["rt"]["snap"] == 3
+    section.preset_buttons["Both off"].click()
     assert all(v["effect"] == "off" for v in cfg["input"]["adaptive_triggers"].values())
-    none = AdaptiveTriggersSection(cfg, saved.append, send=lambda c: (0, ""), find=lambda: [])
+    reader = section.reader
+    section.stop()
+    assert reader.closed and section.boxes["lt"].meter.value == 0
+    none = AdaptiveTriggersSection(cfg, saved.append, send=lambda c: (0, ""), find=lambda: [], reader_factory=Reader)
     qtbot.addWidget(none)
-    assert "No PS5 controller" in none.connected.text()
+    assert "No PS5 controller" in none.connected.text() and none.reader is None
 
+
+def test_new_effects_bytes():
+    assert ds.effect_bytes(ds.Effect(ds.BUZZ, 20, 6, speed=25))[0] == 0x26
+    assert ds.effect_bytes(ds.Effect(ds.BOW, 10, 6, end=70, snap=8))[0] == 0x22
+    rising = ds.effect_bytes(ds.Effect(ds.RISING, 10, 2, strength_end=8))
+    forces = int.from_bytes(rising[3:7], "little")
+    assert (forces >> 3) & 7 == 1 and (forces >> 27) & 7 == 7
 
 def test_bump_is_one_zone_of_resistance():
     bump = ds.effect_bytes(ds.Effect(ds.BUMP, 50, 6))
