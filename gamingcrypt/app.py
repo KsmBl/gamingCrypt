@@ -62,6 +62,9 @@ class MainWindow(QMainWindow):
         from gamingcrypt.game_profiles import GameProfiles
 
         self.game_profiles = GameProfiles()
+        from gamingcrypt.companion import Companions
+
+        self.companions = Companions()  # a game's own helper while it runs (gamingcrypt-companion.sh)
         from gamingcrypt.ui.tasks import serial_pool
 
         self._power_pool = serial_pool(self)  # game start/end in quick succession: keep the order
@@ -900,6 +903,8 @@ class MainWindow(QMainWindow):
     def game_ended(self, appid: int | None = None) -> None:
         from gamingcrypt.emulation.library import EMU_APPID_BASE
 
+        # its companion first: it may still turn off what it set (the triggers) - then Settings' are back
+        self.companions.stop(appid)
         self.end_game_refresh()  # the screen's own refresh rate again
         self.stop_upscaling()
         self.adaptive_triggers(again=True)  # the game may have set the triggers: Settings' effects again
@@ -1541,6 +1546,7 @@ class MainWindow(QMainWindow):
             self._windows_started[game.appid] = time.time()
             self._save_watch = getattr(self, "_save_watch", {})
             self._save_watch[game.appid] = (game, "" if user.admin else user.id, started)
+            self.companions.start(game.appid, game.path, config_mod.cache_dir() / "logs")
             self.game_launched(game.appid)
         else:
             log.warning("Windows game %s: %s", game.name, message)
@@ -1574,6 +1580,7 @@ class MainWindow(QMainWindow):
             log.info("starting Linux game %s: %s (%s)", game.name, exe, runner.label)
             self._windows_started = getattr(self, "_windows_started", {})
             self._windows_started[game.appid] = time.time()
+            self.companions.start(game.appid, game.path, config_mod.cache_dir() / "logs")
             self.game_launched(game.appid)
         else:
             log.warning("Linux game %s: %s", game.name, message)
@@ -2488,6 +2495,7 @@ class MainWindow(QMainWindow):
             current.abort()
         if self.input_service is not None:
             self.input_service.stop()  # give the real controller back
+        self.companions.stop()  # (no game outlives GamingCrypt's watch of it - nor its helper)
         udev = getattr(self, "udev", None)
         if udev is not None:  # (watch_udev)
             udev.kill()

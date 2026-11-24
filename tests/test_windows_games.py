@@ -449,6 +449,33 @@ def test_a_running_game_has_the_triggers_to_itself(qtbot, window, monkeypatch):
     assert sent[-1] == ["/dev/hidraw3", "/dev/hidraw5"]  # the game is gone: Settings' effects again
 
 
+def test_a_games_companion_runs_only_while_it_does(qtbot, window, monkeypatch):
+    from gamingcrypt.input import dualsense
+
+    order = []
+    knight = next(g for g in window._games.windows_games if g.name == "Hollow Knight")
+    (knight.path / "gamingcrypt-companion.sh").write_text("while :; do sleep 0.05; done\n")
+    monkeypatch.setattr(dualsense, "find", lambda *a, **k: [dualsense.Controller("/dev/hidraw3", dualsense.BUS_USB,
+                                                                                 "DualSense")])
+    monkeypatch.setattr(dualsense, "apply", lambda config, controllers=None, **k: order.append(
+        "Settings' triggers") or (1, ""))
+    window.config.setdefault("input", {})["adaptive_triggers"] = {"rt": {"effect": "buzz"}}
+    window.launch_windows(knight)
+    assert window.companions.running(knight.appid)  # started with the game
+    window.game_started(knight.appid)
+    stop = window.companions.stop
+    monkeypatch.setattr(window.companions, "stop", lambda *a: order.append("companion ended") or stop(*a))
+    order.clear()
+    window.game_watcher._stop()
+    window.game_ended(knight.appid)
+    assert not window.companions.running(knight.appid)
+    # it may turn off what it set on the controller: before Settings' effects go back, not over them
+    assert order[:2] == ["companion ended", "Settings' triggers"]
+    adventure = next(g for g in window._games.windows_games if g.name == "Big Adventure")
+    window.launch_windows(adventure)
+    assert not window.companions.running(adventure.appid)  # no companion in its folder
+
+
 def test_wine_skips_the_grabbed_controller(qtbot, window, monkeypatch):
     # Wine finds the grabbed (silent) real pad first - GTA's GInput listened to it as player 1
     seen = []
