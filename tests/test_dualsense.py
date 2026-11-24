@@ -152,3 +152,29 @@ def test_bump_is_one_zone_of_resistance():
     forces = int.from_bytes(bump[3:7], "little")
     assert forces == 5 << 15  # only zone 5, strength 6
     assert ds.Effect.from_dict({"effect": "bump"}).kind == ds.BUMP
+
+
+def test_the_page_keeps_changes_while_a_game_has_the_triggers(qtbot):
+    from types import SimpleNamespace
+
+    from PySide6.QtWidgets import QWidget
+
+    from gamingcrypt.config import DEFAULTS
+    from gamingcrypt.ui.adaptive_triggers import AdaptiveTriggersSection
+
+    cfg = copy.deepcopy(DEFAULTS)
+    sent = []
+    pad = ds.Controller("/dev/hidraw3", ds.BUS_USB, "DualSense")
+    game = QWidget()  # (GamingCrypt's window, with a game running)
+    game.game_watcher = SimpleNamespace(active=True)
+    qtbot.addWidget(game)
+    section = AdaptiveTriggersSection(cfg, lambda c: None, send=lambda c: sent.append(1) or (1, ""),
+                                      find=lambda: [pad], reader_factory=Reader)
+    qtbot.addWidget(section)  # (made while the game runs: not even then)
+    section.refresh()
+    section.preset_buttons["Engine"].click()
+    assert sent == [] and "a game is running" in section.status.text()
+    assert cfg["input"]["adaptive_triggers"]["rt"]["effect"] == "rising_buzz"  # kept for after the game
+    game.game_watcher.active = False
+    section.preset_buttons["Machine gun"].click()
+    assert sent == [1]

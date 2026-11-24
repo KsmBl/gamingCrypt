@@ -427,6 +427,28 @@ def test_played_on_here_and_elsewhere_asks_first(qtbot, window):
     assert save_history.for_game(knight).check() == (save_history.SAME, [])
 
 
+def test_a_running_game_has_the_triggers_to_itself(qtbot, window, monkeypatch):
+    from gamingcrypt.input import dualsense
+
+    pads = [dualsense.Controller("/dev/hidraw3", dualsense.BUS_USB, "DualSense")]
+    sent = []
+    monkeypatch.setattr(dualsense, "find", lambda *a, **k: list(pads))
+    monkeypatch.setattr(dualsense, "apply", lambda config, controllers=None, **k: sent.append(
+        [c.path for c in controllers]) or (len(controllers), ""))
+    window.config.setdefault("input", {})["adaptive_triggers"] = {"rt": {"effect": "buzz"}}
+    window.adaptive_triggers()
+    assert sent == [["/dev/hidraw3"]]  # no game: the controller gets Settings' effects
+    knight = next(g for g in window._games.windows_games if g.name == "Hollow Knight")
+    window.launch_windows(knight)
+    window.game_started(knight.appid)
+    pads.append(dualsense.Controller("/dev/hidraw5", dualsense.BUS_BLUETOOTH, "DualSense"))
+    window.adaptive_triggers()  # connected during the game
+    assert sent == [["/dev/hidraw3"]]  # nothing over what the game sets
+    window.game_watcher._stop()
+    window.game_ended(knight.appid)
+    assert sent[-1] == ["/dev/hidraw3", "/dev/hidraw5"]  # the game is gone: Settings' effects again
+
+
 def test_wine_skips_the_grabbed_controller(qtbot, window, monkeypatch):
     # Wine finds the grabbed (silent) real pad first - GTA's GInput listened to it as player 1
     seen = []

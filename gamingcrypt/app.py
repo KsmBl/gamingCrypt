@@ -842,11 +842,13 @@ class MainWindow(QMainWindow):
             self.set_gpu_full(True)
         if appid == getattr(self, "_quiet_game", None):
             self.pin_to_first_core(True)
-        self.adaptive_triggers(again=True)  # (a game may have talked to the controller itself)
 
     def adaptive_triggers(self, again: bool = False) -> None:
         """A PS5 controller connected (looked for every few seconds) gets the adaptive triggers set
-        in Settings - it forgets them when switched off. again: every one, not only new ones."""
+        in Settings - it forgets them when switched off. again: every one, not only new ones.
+        Never while a game runs: the triggers are the game's then - whatever it sets stays, and a
+        game that sets nothing keeps what was there. When it ends, Settings' effects are back
+        (game_ended)."""
         from gamingcrypt.input import dualsense
 
         if not self.config.get("input", {}).get("adaptive_triggers"):
@@ -855,6 +857,8 @@ class MainWindow(QMainWindow):
         seen = getattr(self, "_dualsense_seen", set())
         new = found if again else [c for c in found if c.path not in seen]
         self._dualsense_seen = {c.path for c in found}
+        if self.game_watcher.active:
+            return
         if new:
             done, error = dualsense.apply(self.config, new)
             if error:
@@ -898,6 +902,7 @@ class MainWindow(QMainWindow):
 
         self.end_game_refresh()  # the screen's own refresh rate again
         self.stop_upscaling()
+        self.adaptive_triggers(again=True)  # the game may have set the triggers: Settings' effects again
         self.windows_game_ended(appid)
         started = getattr(self, "_steam_started", {}).pop(appid, None) if appid is not None else None
         if started is not None:  # a user's own play time of a Steam game

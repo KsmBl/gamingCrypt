@@ -277,7 +277,21 @@ class AdaptiveTriggersSection(Section):
         self.save_config(self.config)
         self._send()
 
+    def _game_running(self) -> bool:
+        """A game runs (GamingCrypt's game watcher) - also asked before this page is in the window."""
+        from PySide6.QtWidgets import QApplication
+
+        for window in (self.window(), *QApplication.topLevelWidgets()):
+            watcher = getattr(window, "game_watcher", None)
+            if watcher is not None and getattr(watcher, "active", False):
+                return True
+        return False
+
     def _send(self) -> None:
+        if self._game_running():  # the triggers are the game's while it runs (app.adaptive_triggers)
+            set_status(self.status, "Kept - a game is running, and the triggers are its own until it ends. "
+                                    "Then they go to the controller.")
+            return
         done, error = self.send(self.config)
         if error:
             set_status(self.status, error, error=True)
