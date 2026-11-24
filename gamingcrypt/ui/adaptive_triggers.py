@@ -12,7 +12,7 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QGridLayout, QLabel, QWidget
 
 from gamingcrypt.input import dualsense
-from gamingcrypt.input.dualsense import BOW, BUMP, BUZZ, OFF, RESISTANCE, RISING, STOP, Effect
+from gamingcrypt.input.dualsense import BOW, BUMP, BUZZ, OFF, RESISTANCE, RISING, RISING_BUZZ, STOP, Effect
 from gamingcrypt.ui import theme
 from gamingcrypt.ui.combo import ComboBox
 from gamingcrypt.ui.system_settings import Section, _label, _on_change, _slider
@@ -27,6 +27,7 @@ PRESETS = (  # (name, LT, RT - None: left as it is)
     ("Machine gun", Effect(BUMP, 40, 6), Effect(BUZZ, 20, 6, speed=25)),
     ("Racing", Effect(RISING, 10, 3, strength_end=8), Effect(RESISTANCE, 20, 3)),
     ("Bow", Effect(STOP, 30, 4), Effect(BOW, 10, 6, end=70, snap=8)),
+    ("Engine", Effect(RISING, 10, 2, strength_end=6), Effect(RISING_BUZZ, 10, 1, strength_end=8, speed=40)),
     ("Both off", Effect(OFF), Effect(OFF)),
 )
 
@@ -86,13 +87,20 @@ class TriggerMeter(QWidget):
             end = max(x + 0.1, min(0.8, round(e.end / 10) / 10))
             band(x, end, 120)
             line(end)
-        elif e.kind == BUZZ:  # stripes
-            color = QColor(mark)
-            color.setAlpha(170)
-            p.setBrush(color)
-            pos = box.left() + box.width() * x
+        elif e.kind in (BUZZ, RISING_BUZZ):  # stripes - rising: stronger and taller toward the end
+            left = box.left() + box.width() * x
+            pos = left
             while pos < box.right():
-                p.drawRect(QRectF(pos, box.top(), min(3.0, box.right() - pos), box.height()))
+                if e.kind == RISING_BUZZ:
+                    share = (pos - left) / max(1.0, box.right() - left)
+                    level = e.strength + (e.strength_end - e.strength) * share
+                    alpha, height = int(50 + level * 15), box.height() * (0.35 + 0.65 * level / 8)
+                else:
+                    alpha, height = 170, box.height()
+                color = QColor(mark)
+                color.setAlpha(alpha)
+                p.setBrush(color)
+                p.drawRect(QRectF(pos, box.center().y() - height / 2, min(3.0, box.right() - pos), height))
                 pos += 6.0
         accent = QColor(theme.ACCENT)  # where the trigger is: over the effect, which stays visible
         accent.setAlpha(200)

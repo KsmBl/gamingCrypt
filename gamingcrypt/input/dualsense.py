@@ -26,7 +26,7 @@ PRODUCTS = {0x0CE6: "DualSense", 0x0DF2: "DualSense Edge"}
 BUS_USB, BUS_BLUETOOTH = 0x03, 0x05
 
 OFF, STOP, BUMP, RESISTANCE = "off", "stop", "bump", "resistance"
-RISING, BOW, BUZZ = "rising", "bow", "buzz"
+RISING, BOW, BUZZ, RISING_BUZZ = "rising", "bow", "buzz", "rising_buzz"
 EFFECTS = (  # (id, label, what it does)
     (OFF, "Off", "The trigger moves freely."),
     (STOP, "Stop", "A stop that gives way when pulled harder - like a gun's trigger. Felt pulling in only; "
@@ -37,6 +37,7 @@ EFFECTS = (  # (id, label, what it does)
     (RISING, "Rising resistance", "Gets harder the further you pull - like a real spring or brake pedal."),
     (BOW, "Tension and snap", "Tightens over a range, then gives way with a snap - like a bowstring."),
     (BUZZ, "Buzz", "The trigger vibrates once pulled past that point - a machine gun, an engine."),
+    (RISING_BUZZ, "Rising buzz", "Vibrates harder the further you pull - an engine revving up, a drill biting in."),
 )
 KINDS = tuple(kind for kind, _label, _text in EFFECTS)
 MODE_OFF, MODE_FEEDBACK, MODE_BOW, MODE_WEAPON, MODE_VIBRATION = 0x05, 0x21, 0x22, 0x25, 0x26
@@ -57,6 +58,8 @@ PARAMS = {
           ("strength", "Tension", 1, 8, 1, LEVEL), ("snap", "Snap", 1, 8, 1, LEVEL)),
     BUZZ: (("position", "From", 0, 90, 10, PCT), ("strength", "Strength", 1, 8, 1, LEVEL),
            ("speed", "Speed", 5, 100, 5, HZ)),
+    RISING_BUZZ: (("position", "From", 0, 80, 10, PCT), ("strength", "Strength at first", 1, 8, 1, LEVEL),
+                  ("strength_end", "Strength at the end", 1, 8, 1, LEVEL), ("speed", "Speed", 5, 100, 5, HZ)),
 }
 LIMITS = {"position": (0, 100), "strength": (1, 8), "width": (10, 30), "strength_end": (1, 8),
           "end": (10, 90), "snap": (1, 8), "speed": (1, 255)}
@@ -68,10 +71,10 @@ class Effect:
     position: int = 50  # where it starts: % of the trigger's travel
     strength: int = 5  # 1 .. 8
     width: int = 10  # stop, bump: how long, % of the travel
-    strength_end: int = 8  # rising: at the end of the travel
+    strength_end: int = 8  # rising, rising buzz: at the end of the travel
     end: int = 80  # bow: where it snaps
     snap: int = 5  # bow: how hard it snaps
-    speed: int = 30  # buzz: vibrations a second
+    speed: int = 30  # buzz, rising buzz: vibrations a second
 
     def to_dict(self) -> dict:
         return {"effect": self.kind, "position": self.position, "strength": self.strength, "width": self.width,
@@ -92,6 +95,12 @@ class Effect:
 
 def _zone(percent: int, low: int = 0, high: int = 9) -> int:
     return max(low, min(high, round(percent / 10)))
+
+
+def rising(start: int, first: int, last: int) -> dict[int, int]:
+    """Zone -> strength from ``start`` to the end, ``first`` there, growing evenly to ``last``."""
+    span = max(1, 9 - start)
+    return {z: round(first + (last - first) * (z - start) / span) for z in range(start, 10)}
 
 
 def _by_zone(out: bytearray, strengths: dict[int, int], mode: int = MODE_FEEDBACK) -> None:
@@ -121,10 +130,7 @@ def effect_bytes(effect: Effect) -> bytes:
     elif kind == RESISTANCE:
         _by_zone(out, {z: effect.strength for z in range(_zone(effect.position), 10)})
     elif kind == RISING:
-        start = _zone(effect.position, 0, 8)
-        span = 9 - start
-        _by_zone(out, {z: round(effect.strength + (effect.strength_end - effect.strength) * (z - start) / span)
-                       for z in range(start, 10)})
+        _by_zone(out, rising(_zone(effect.position, 0, 8), effect.strength, effect.strength_end))
     elif kind == BOW:
         start = _zone(effect.position, 0, 7)
         end = max(start + 1, _zone(effect.end, 1, 8))
@@ -134,6 +140,9 @@ def effect_bytes(effect: Effect) -> bytes:
         out[3:5] = pair.to_bytes(2, "little")
     elif kind == BUZZ:
         _by_zone(out, {z: effect.strength for z in range(_zone(effect.position), 10)}, MODE_VIBRATION)
+        out[9] = max(1, min(255, effect.speed))
+    elif kind == RISING_BUZZ:  # the vibration's strength set zone by zone, as the resistance's is for Rising
+        _by_zone(out, rising(_zone(effect.position, 0, 8), effect.strength, effect.strength_end), MODE_VIBRATION)
         out[9] = max(1, min(255, effect.speed))
     else:
         out[0] = MODE_OFF

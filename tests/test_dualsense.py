@@ -105,6 +105,11 @@ def test_page_saves_sends_and_shows_the_triggers(qtbot):
     assert cfg["input"]["adaptive_triggers"]["rt"]["effect"] == "bow"
     box.rows["snap"][1].setValue(3)
     assert cfg["input"]["adaptive_triggers"]["rt"]["snap"] == 3
+    section.preset_buttons["Engine"].click()
+    engine = cfg["input"]["adaptive_triggers"]["rt"]
+    assert engine["effect"] == "rising_buzz" and (engine["strength"], engine["strength_end"], engine["speed"]) == (1, 8, 40)
+    assert {f for f, (caption, _s, _v) in box.rows.items() if caption.isVisibleTo(box)} == {
+        p[0] for p in ds.PARAMS[ds.RISING_BUZZ]}
     section.preset_buttons["Both off"].click()
     assert all(v["effect"] == "off" for v in cfg["input"]["adaptive_triggers"].values())
     reader = section.reader
@@ -121,6 +126,25 @@ def test_new_effects_bytes():
     rising = ds.effect_bytes(ds.Effect(ds.RISING, 10, 2, strength_end=8))
     forces = int.from_bytes(rising[3:7], "little")
     assert (forces >> 3) & 7 == 1 and (forces >> 27) & 7 == 7
+
+def zone_strengths(data):
+    forces = int.from_bytes(data[3:7], "little")
+    active = int.from_bytes(data[1:3], "little")
+    return {z: ((forces >> (3 * z)) & 7) + 1 for z in range(10) if active >> z & 1}
+
+
+def test_rising_buzz_vibrates_harder_further_in():
+    data = ds.effect_bytes(ds.Effect(ds.RISING_BUZZ, 10, 1, strength_end=8, speed=40))
+    assert data[0] == 0x26 and data[9] == 40
+    levels = zone_strengths(data)
+    assert list(levels) == list(range(1, 10)) and levels[1] == 1 and levels[9] == 8
+    assert all(b >= a for a, b in zip(levels.values(), list(levels.values())[1:]))
+    falling = zone_strengths(ds.effect_bytes(ds.Effect(ds.RISING_BUZZ, 50, 8, strength_end=2)))
+    assert falling[5] == 8 and falling[9] == 2  # (the other way round works too)
+    late = zone_strengths(ds.effect_bytes(ds.Effect(ds.RISING_BUZZ, 100, 3, strength_end=7)))
+    assert late == {8: 3, 9: 7}  # from the last possible zone: still rises over two
+    assert ds.Effect.from_dict({"effect": "rising_buzz"}).kind == ds.RISING_BUZZ
+
 
 def test_bump_is_one_zone_of_resistance():
     bump = ds.effect_bytes(ds.Effect(ds.BUMP, 50, 6))
