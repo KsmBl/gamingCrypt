@@ -450,27 +450,33 @@ def test_a_running_game_has_the_triggers_to_itself(qtbot, window, monkeypatch):
 
 
 def test_a_games_companion_runs_only_while_it_does(qtbot, window, monkeypatch):
+    import time
+
     from gamingcrypt.input import dualsense
 
     order = []
     knight = next(g for g in window._games.windows_games if g.name == "Hollow Knight")
-    (knight.path / "gamingcrypt-companion.sh").write_text("while :; do sleep 0.05; done\n")
+    tidied = knight.path / "tidied"
+    # it takes a moment to turn off what it set on the controller when it's ended
+    (knight.path / "gamingcrypt-companion.sh").write_text(
+        f"trap 'sleep 0.5; touch \"{tidied}\"; exit 0' TERM\nwhile :; do sleep 0.05; done\n")
     monkeypatch.setattr(dualsense, "find", lambda *a, **k: [dualsense.Controller("/dev/hidraw3", dualsense.BUS_USB,
                                                                                  "DualSense")])
     monkeypatch.setattr(dualsense, "apply", lambda config, controllers=None, **k: order.append(
-        "Settings' triggers") or (1, ""))
+        ("Settings' triggers", tidied.exists())) or (1, ""))
     window.config.setdefault("input", {})["adaptive_triggers"] = {"rt": {"effect": "buzz"}}
     window.launch_windows(knight)
     assert window.companions.running(knight.appid)  # started with the game
     window.game_started(knight.appid)
-    stop = window.companions.stop
-    monkeypatch.setattr(window.companions, "stop", lambda *a: order.append("companion ended") or stop(*a))
     order.clear()
     window.game_watcher._stop()
+    begun = time.monotonic()
     window.game_ended(knight.appid)
+    assert time.monotonic() - begun < 0.3 and order == []  # not waited for here: GamingCrypt doesn't freeze
     assert not window.companions.running(knight.appid)
-    # it may turn off what it set on the controller: before Settings' effects go back, not over them
-    assert order[:2] == ["companion ended", "Settings' triggers"]
+    # it may turn off what it set on the controller: Settings' effects only after it's done, not under it
+    qtbot.waitUntil(lambda: bool(order), timeout=5000)
+    assert order == [("Settings' triggers", True)]
     adventure = next(g for g in window._games.windows_games if g.name == "Big Adventure")
     window.launch_windows(adventure)
     assert not window.companions.running(adventure.appid)  # no companion in its folder

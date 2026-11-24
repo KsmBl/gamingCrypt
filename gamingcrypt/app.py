@@ -903,11 +903,9 @@ class MainWindow(QMainWindow):
     def game_ended(self, appid: int | None = None) -> None:
         from gamingcrypt.emulation.library import EMU_APPID_BASE
 
-        # its companion first: it may still turn off what it set (the triggers) - then Settings' are back
-        self.companions.stop(appid)
         self.end_game_refresh()  # the screen's own refresh rate again
         self.stop_upscaling()
-        self.adaptive_triggers(again=True)  # the game may have set the triggers: Settings' effects again
+        self.end_companion(appid)  # (and then Settings' trigger effects again)
         self.windows_game_ended(appid)
         started = getattr(self, "_steam_started", {}).pop(appid, None) if appid is not None else None
         if started is not None:  # a user's own play time of a Steam game
@@ -1542,12 +1540,9 @@ class MainWindow(QMainWindow):
         self.upscaling_started(ok)
         if ok:
             log.info("starting Windows game %s: %s with %s", game.name, exe, runner.label)
-            self._windows_started = getattr(self, "_windows_started", {})
-            self._windows_started[game.appid] = time.time()
             self._save_watch = getattr(self, "_save_watch", {})
             self._save_watch[game.appid] = (game, "" if user.admin else user.id, started)
-            self.companions.start(game.appid, game.path, config_mod.cache_dir() / "logs")
-            self.game_launched(game.appid)
+            self.own_game_started(game)
         else:
             log.warning("Windows game %s: %s", game.name, message)
         return ok, message
@@ -1578,10 +1573,7 @@ class MainWindow(QMainWindow):
         self.upscaling_started(ok)
         if ok:
             log.info("starting Linux game %s: %s (%s)", game.name, exe, runner.label)
-            self._windows_started = getattr(self, "_windows_started", {})
-            self._windows_started[game.appid] = time.time()
-            self.companions.start(game.appid, game.path, config_mod.cache_dir() / "logs")
-            self.game_launched(game.appid)
+            self.own_game_started(game)
         else:
             log.warning("Linux game %s: %s", game.name, message)
         return ok, message
@@ -1664,6 +1656,29 @@ class MainWindow(QMainWindow):
             if kind.startswith("error_"):
                 return portable.error_text(kind, values)
         return ""
+
+    def own_game_started(self, game) -> None:
+        """A Windows or Linux game started here: its play time counts from now, its companion
+        (companion.py) runs with it, and the launcher watches for it."""
+        import time
+
+        self._windows_started = getattr(self, "_windows_started", {})
+        self._windows_started[game.appid] = time.time()
+        self.companions.start(game.appid, game.path, config_mod.cache_dir() / "logs")
+        self.game_launched(game.appid)
+
+    def end_companion(self, appid: int | None) -> None:
+        """The ended game's companion is ended - waited for in the background (it may take a moment
+        to turn off what it set on the controller) - and only then Settings' trigger effects go back,
+        so it never turns them off. No companion: they go back right away."""
+        ending = self.companions.take(appid) if appid is not None else []
+        if not ending:
+            self.adaptive_triggers(again=True)  # the game may have set the triggers: Settings' effects again
+            return
+        from gamingcrypt.companion import end
+
+        run_async(lambda: end(ending), lambda _r: self.adaptive_triggers(again=True),
+                  lambda _exc: self.adaptive_triggers(again=True), owner=self)
 
     def windows_game_ended(self, appid: int | None) -> None:
         """Play time and "last played" of a Windows or Linux game (Steam keeps its own games')."""

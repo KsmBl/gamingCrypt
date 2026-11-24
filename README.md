@@ -152,6 +152,12 @@ screen or touch gets the GamePad in its ⚙ Options.
 - Copy a game folder onto the drive, pick its start file and play it with **Proton, Wine or natively**.
 - Each user gets their own saves and settings (their own Wine prefix).
 - The quick menu's **speed slider** works here too, like a speedhack, without restarting the game.
+- **A game's companion**: a `gamingcrypt-companion.sh` in the game's folder runs while the game
+  does. Use it for a mod's Linux side, such as a helper that turns what a game mod reports into
+  DualSense trigger effects. It starts with the game in the game's folder and gets
+  `GAMINGCRYPT_APPID` and `GAMINGCRYPT_GAME_DIR`. When the game ends, it gets a TERM signal so it
+  can turn off what it set, and a KILL after 2 seconds. GamingCrypt's own trigger effects only come
+  back after that. Its output is in `~/.cache/gamingcrypt/logs/companion-<id>.log`.
 
 ### 🧱 Minecraft (Java Edition)
 

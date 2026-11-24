@@ -60,25 +60,39 @@ class Companions:
         log.info("companion of %s started: %s", appid, found)
         return True
 
-    def stop(self, appid: int | None = None) -> None:
-        """End the game's companion (None: every one) - and wait for it, briefly."""
+    def take(self, appid: int | None = None) -> list[tuple[int, subprocess.Popen, Callable]]:
+        """The game's companion (None: every one) - no longer this one's, still running: for end(),
+        which may wait in the background."""
+        taken = []
         for key in ([appid] if appid is not None else list(self._running)):
             proc = self._running.pop(key, None)
-            if proc is None or proc.poll() is not None:
-                continue
-            self._signal(proc, signal.SIGTERM)
-            try:
-                proc.wait(timeout=STOP_WAIT_S)
-            except subprocess.TimeoutExpired:
-                self._signal(proc, signal.SIGKILL)
-                try:
-                    proc.wait(timeout=1)
-                except subprocess.TimeoutExpired:
-                    pass
-            log.info("companion of %s ended", key)
+            if proc is not None and proc.poll() is None:
+                taken.append((key, proc, self._killpg))
+        return taken
 
-    def _signal(self, proc, sig: int) -> None:
+    def stop(self, appid: int | None = None) -> None:
+        """End the game's companion (None: every one) - and wait for it, briefly."""
+        end(self.take(appid))
+
+
+def end(taken: list[tuple[int, subprocess.Popen, Callable]]) -> None:
+    """Ends what Companions.take() gave: TERM first - it may still turn off what it set - and after
+    STOP_WAIT_S, KILL."""
+    for key, proc, killpg in taken:
+        _signal(killpg, proc, signal.SIGTERM)
         try:
-            self._killpg(proc.pid, sig)  # its own session: the script and what it started
-        except (ProcessLookupError, PermissionError):
-            pass
+            proc.wait(timeout=STOP_WAIT_S)
+        except subprocess.TimeoutExpired:
+            _signal(killpg, proc, signal.SIGKILL)
+            try:
+                proc.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                pass
+        log.info("companion of %s ended", key)
+
+
+def _signal(killpg: Callable, proc, sig: int) -> None:
+    try:
+        killpg(proc.pid, sig)  # its own session: the script and what it started
+    except (ProcessLookupError, PermissionError):
+        pass
