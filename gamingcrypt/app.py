@@ -1514,6 +1514,7 @@ class MainWindow(QMainWindow):
         user = users.current(self.config)
         cpus = cpu_cores.quiet_cpus() if profile.get(cpu_cores.PROFILE_KEY) else []
         fps = int(profile.get("fps", 0) or 0)
+        started = time.time()  # (what's written from here on may be its saves: save_locations.learn)
         ok, message = runners.launch(game, exe, runner, data_dir(), config_mod.cache_dir() / "logs",
                                      more_env={**pads, **self.start_upscaling(profile),
                                                **speedhack.game_env(game.appid)},
@@ -1528,6 +1529,8 @@ class MainWindow(QMainWindow):
             log.info("starting Windows game %s: %s with %s", game.name, exe, runner.label)
             self._windows_started = getattr(self, "_windows_started", {})
             self._windows_started[game.appid] = time.time()
+            self._save_watch = getattr(self, "_save_watch", {})
+            self._save_watch[game.appid] = (game, "" if user.admin else user.id, started)
             self.game_launched(game.appid)
         else:
             log.warning("Windows game %s: %s", game.name, message)
@@ -1649,6 +1652,9 @@ class MainWindow(QMainWindow):
         """Play time and "last played" of a Windows or Linux game (Steam keeps its own games')."""
         import time
 
+        watched = getattr(self, "_save_watch", {}).pop(appid, None) if appid is not None else None
+        if watched is not None:
+            self.learn_save_places(*watched)
         started = getattr(self, "_windows_started", {}).pop(appid, None) if appid is not None else None
         if started is None:
             return
@@ -1662,6 +1668,22 @@ class MainWindow(QMainWindow):
             games.reload_linux()
         if hasattr(games, "reload_minecraft"):
             games.reload_minecraft()
+
+    def learn_save_places(self, game, user: str, since: float) -> None:
+        """Where the Windows game that just ended wrote its saves (save_locations.learn) - in the
+        background: it looks through the prefix and the game's folder."""
+        from gamingcrypt import save_locations
+        from gamingcrypt.saves import PrefixSaves
+        from gamingcrypt.ui.tasks import run_async
+
+        def learn() -> list:
+            return save_locations.learn(game, user, since, PrefixSaves(game).listed()[1])
+
+        def learned(new: list) -> None:
+            for place in new:
+                log.info("%s saves in %s", game.name, place.label())
+
+        run_async(learn, learned, lambda exc: log.warning("finding %s's saves: %s", game.name, exc))
 
     def video_tabs(self) -> list:
         """Movies and Shows: what the player plays."""

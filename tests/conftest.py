@@ -165,6 +165,17 @@ def no_store_lookups(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_save_list_download(monkeypatch):
+    """A Windows game's saves page fetches Ludusavi's save list (18 MB): never from the tests."""
+    from gamingcrypt import save_manifest
+
+    real = save_manifest.fetch
+    monkeypatch.setattr(save_manifest, "fetch",
+                        lambda cache=None, get=None, **kw: real(cache, get, **kw) if get is not None
+                        else save_manifest.path(cache).exists())
+
+
+@pytest.fixture(autouse=True)
 def _navigator_listeners_reset():
     """A page closed without being hidden (the test just ends) leaves no listener behind that
     would take the controller's input from the tests after it."""

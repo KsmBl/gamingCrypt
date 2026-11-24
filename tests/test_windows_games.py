@@ -332,6 +332,29 @@ def test_play_time_and_continue(qtbot, window, monkeypatch):
     assert window._launched[-1][0] == "Hollow Knight"
 
 
+def test_where_it_saves_is_learned_after_playing(qtbot, window):
+    from gamingcrypt import save_locations
+    from gamingcrypt.wine import library
+
+    import os
+    import time
+
+    knight = next(g for g in window._games.windows_games if g.name == "Hollow Knight")
+    for top, _dirs, names in os.walk(knight.path):  # copied over long before it's played
+        for name in names:
+            os.utime(os.path.join(top, name), (time.time() - 3600, time.time() - 3600))
+    window.launch_windows(knight)
+    home = library.prefix_dir(knight) / "pfx/drive_c/users/steamuser"
+    save = home / "AppData/LocalLow/Team Cherry/Hollow Knight/user1.dat"
+    save.parent.mkdir(parents=True)
+    save.write_text("the game saved")
+    (home / "AppData/Local/Temp").mkdir(parents=True)
+    (home / "AppData/Local/Temp/x.tmp").write_text("not a save")
+    window.game_ended(knight.appid)
+    qtbot.waitUntil(lambda: bool(save_locations.learned(knight)))
+    assert [p.label() for p in save_locations.learned(knight)] == ["AppData/LocalLow/Team Cherry/Hollow Knight"]
+
+
 def test_wine_skips_the_grabbed_controller(qtbot, window, monkeypatch):
     # Wine finds the grabbed (silent) real pad first - GTA's GInput listened to it as player 1
     seen = []

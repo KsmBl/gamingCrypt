@@ -196,6 +196,11 @@ screen or touch gets the GamePad in its ⚙ Options.
 - *Options → Saves* shows how big each user's saves are and when they last changed.
 - **Back up, restore or delete** saves. Anything that's replaced is backed up first.
 - The admin can copy saves from one user to another.
+- **Where a Windows game saves**: the Saves page shows the actual save folders inside the Wine prefix
+  (or the game's own folder) and how big the saves themselves are. GamingCrypt gets these from
+  [Ludusavi's](https://github.com/mtkennerly/ludusavi-manifest) save list (from PCGamingWiki), which it
+  downloads once and refreshes monthly. For games that aren't on that list, it looks at what the game
+  wrote while it ran. Caches, logs and crash reports don't count. The admin can remove a wrong place.
 
 ### 🕹️ Controller and device
 

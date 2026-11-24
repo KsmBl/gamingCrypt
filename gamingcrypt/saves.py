@@ -50,6 +50,7 @@ class UserSaves:
     changed: float = 0.0  # 0: no saves
     backups: list[Backup] = field(default_factory=list)
     states: list = field(default_factory=list)  # an emulated game: the user's save states (savestates.State)
+    own: int | None = None  # a Windows game: the bytes of the saves themselves (save_locations) - None: not known
 
     @property
     def has_saves(self) -> bool:
@@ -96,6 +97,27 @@ class PrefixSaves:
 
     def snapshot(self, user: str, into: Path) -> None:
         shutil.copytree(wine.prefix_dir(self.game, user), into, symlinks=True)
+
+    def listed(self) -> tuple[str | None, list]:
+        """(its title in the save list, the places the list has for it) - (None, []) when it isn't in it."""
+        from gamingcrypt import save_manifest
+        from gamingcrypt.wine.covers import Covers
+
+        return save_manifest.for_game(self.game, steam_appid=Covers(self.root).known_appid(self.game))
+
+    def places(self) -> tuple[str | None, list]:
+        """(its title in the save list, where it saves: save_locations.Location) - the list's places
+        and what playing found, without what the admin removed."""
+        from gamingcrypt import save_locations
+
+        title, listed = self.listed()
+        return title, save_locations.known(self.game, listed)
+
+    def own(self, user: str, places: list) -> int | None:
+        """The bytes of the saves themselves - None when it isn't known where they are."""
+        from gamingcrypt import save_locations
+
+        return save_locations.measure(self.game, user, places)[0] if places else None
 
     def install(self, source: Path, user: str) -> None:
         """Moves ``source`` (complete, on the same drive) to be the user's prefix."""
@@ -264,10 +286,12 @@ def overview(box, users: list[str]) -> list[UserSaves]:
     except OSError:
         with_backups = []
     named = ["" if name == ADMIN_FOLDER else name for name in with_backups]
+    places = box.places()[1] if isinstance(box, PrefixSaves) else []
     found = []
     for user in dict.fromkeys([*users, *box.owners(), *named]):
         size, changed = box.measure(user) if box.has(user) else (0, 0.0)
-        found.append(UserSaves(user, size, changed, backups(box, user), box_states(box, user)))
+        own = box.own(user, places) if places and box.has(user) else None
+        found.append(UserSaves(user, size, changed, backups(box, user), box_states(box, user), own))
     return found
 
 

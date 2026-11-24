@@ -113,25 +113,54 @@ class SavesPage(QWidget):
         return " ".join(part for part in parts if part)
 
     # what's there ---------------------------------------------------------------------------
+    @property
+    def windows(self) -> bool:
+        """A Windows game: where it saves is shown (save_locations)."""
+        return isinstance(self.box, saves.PrefixSaves)
+
     def reload(self) -> None:
         users = list(self.people()) if self.is_admin else [self.me]
-        box, me, admin = self.box, self.me, self.is_admin
+        box, me, admin, windows = self.box, self.me, self.is_admin, self.windows
 
-        def look() -> list:
+        def look() -> tuple:
             found = saves.overview(box, users)
-            return found if admin else [row for row in found if row.user == me]  # only your own
+            found = found if admin else [row for row in found if row.user == me]  # only your own
+            if not windows:
+                return found, None
+            from gamingcrypt import save_locations
+
+            title, places = box.places()
+            return found, (title, places, bool(save_locations.removed(box.game)))
 
         run_async(look, self._show, lambda exc: self.say(f"Couldn't look at the saves: {exc}", error=True), owner=self)
+        if windows and not getattr(self, "_list_asked", False):
+            self._list_asked = True
+            self.fetch_list()
 
-    def _show(self, found: list) -> None:
+    def fetch_list(self) -> None:
+        """Ludusavi's save list, when it isn't here yet or is old - in the background, then shown."""
+        from gamingcrypt import save_manifest
+
+        before = save_manifest.path().exists()
+
+        def fetched(there: bool) -> None:
+            if there and not before:
+                self.reload()
+
+        run_async(save_manifest.fetch, fetched, lambda _exc: None, owner=self)
+
+    def _show(self, result) -> None:
+        found, where = result
         self.found = found
         self.buttons = {}
         while self.rows.count() > 1:
             widget = self.rows.takeAt(0).widget()
             widget.setParent(None)
             widget.deleteLater()
-        for index, row in enumerate(found):
-            self.rows.insertWidget(index, self._card(row))
+        if where is not None:
+            self.rows.insertWidget(0, self._where_card(*where))
+        for row in found:
+            self.rows.insertWidget(self.rows.count() - 1, self._card(row))
         self.inner.setEnabled(True)
         target = self.buttons.get(self.last_pressed) or next(iter(self.buttons.values()), None)
         if target is not None and self.isVisible():
@@ -146,7 +175,13 @@ class SavesPage(QWidget):
         name = QLabel(self.name_of(row.user))
         name.setObjectName("cardTitle")
         layout.addWidget(name)
-        facts = (f"{format_size(row.size)}  ·  last changed {when(row.changed)}" if row.has_saves else "No saves yet")
+        if not row.has_saves:
+            facts = "No saves yet"
+        elif row.own is not None:  # the saves themselves, and the prefix around them
+            facts = (f"Saves {format_size(row.own)}  ·  {format_size(row.size)} with Wine's files  ·  "
+                     f"last changed {when(row.changed)}")
+        else:
+            facts = f"{format_size(row.size)}  ·  last changed {when(row.changed)}"
         meta = QLabel(facts)
         meta.setObjectName("cardMeta")
         layout.addWidget(meta)
@@ -173,6 +208,70 @@ class SavesPage(QWidget):
             self._button(line, row, "drop", "🗑", lambda b=backup: self.ask_delete_backup(b), which=backup.path.name)
             layout.addLayout(line)
         return card
+
+    def _where_card(self, title: str | None, places: list, any_removed: bool) -> QFrame:
+        """Where the game keeps its saves: from the save list, or found while it was played."""
+        from gamingcrypt.save_locations import LISTED, SETTINGS
+
+        card = QFrame()
+        card.setObjectName("card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(22, 16, 22, 16)
+        layout.setSpacing(10)
+        heading = QLabel("Where it saves")
+        heading.setObjectName("cardTitle")
+        layout.addWidget(heading)
+        if title:
+            source = QLabel(f"From Ludusavi's save list (PCGamingWiki), as “{title}”")
+            source.setObjectName("cardMeta")
+            source.setWordWrap(True)
+            layout.addWidget(source)
+        if not places:
+            unknown = QLabel("Not known yet. GamingCrypt finds out the next time it's played - "
+                             "from what the game writes while it runs.")
+            unknown.setObjectName("cardMeta")
+            unknown.setWordWrap(True)
+            layout.addWidget(unknown)
+        for place in places:
+            line = QHBoxLayout()
+            how = "save list" if place.source == LISTED else "found while playing"
+            if place.kind == SETTINGS:
+                how += " · settings"
+            label = QLabel(f"{place.label()}\n{how}")
+            label.setObjectName("cardMeta")
+            label.setWordWrap(True)
+            line.addWidget(label, 1)
+            if self.is_admin:
+                self._button(line, "", "place", "🗑", lambda p=place: self.ask_remove_place(p),
+                             which=f"{place.root}:{place.path}")
+            layout.addLayout(line)
+        if self.is_admin and any_removed:
+            line = QHBoxLayout()
+            self._button(line, "", "places back", "↺ Show removed places again", self.bring_places_back)
+            line.addStretch()
+            layout.addLayout(line)
+        return card
+
+    def ask_remove_place(self, place) -> None:
+        from gamingcrypt import save_locations
+
+        game = self.game
+        self._ask(f"{place.label()} isn't where {game.name} saves?\nIt's no longer counted - nothing is deleted.",
+                  "🗑 Remove", lambda: self._change_places(lambda: save_locations.remove(game, place), "Removed"),
+                  danger=False)
+
+    def bring_places_back(self) -> None:
+        from gamingcrypt import save_locations
+
+        game = self.game
+        self._change_places(lambda: save_locations.bring_back(game), "Removed places are back")
+
+    def _change_places(self, work, done_text: str) -> None:
+        def finished(_result) -> None:
+            self.say(done_text)
+            self.reload()
+
+        run_async(work, finished, lambda exc: self.say(f"It didn't work: {exc}", error=True), owner=self)
 
     def _state_line(self, row, state) -> QHBoxLayout:
         """Its picture, its slot, when it was saved and how long was played up to it - and 🗑."""
@@ -209,7 +308,7 @@ class SavesPage(QWidget):
 
     def _button(self, layout, row, what: str, text: str, action, kind: str = "", which: str = ""):
         button = big_button(text, kind) if kind else big_button(text)
-        key = (row.user, what, which)
+        key = (row if isinstance(row, str) else row.user, what, which)  # (a user's id: not one of theirs)
 
         def pressed() -> None:
             self.last_pressed = key
