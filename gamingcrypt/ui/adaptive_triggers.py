@@ -202,9 +202,10 @@ class AdaptiveTriggersSection(Section):
     ``refresh`` when its page is shown, ``stop`` when it's left (the live bars)."""
 
     def __init__(self, config: dict, save: Callable[[dict], None], send=dualsense.apply, find=dualsense.find,
-                 reader_factory=dualsense.TriggerReader):
+                 reader_factory=dualsense.TriggerReader, set_charge=dualsense.set_charge_only):
         super().__init__("PS5 controller")
         self.config, self.save_config, self.send, self.find = config, save, send, find
+        self.set_charge = set_charge
         self.reader_factory = reader_factory
         self.reader = None
         self.body.addWidget(_label("A PS5 controller's triggers can push back - a stop on the aim trigger, a brake "
@@ -213,6 +214,15 @@ class AdaptiveTriggersSection(Section):
                                    "Bluetooth."))
         self.connected = _label("")
         self.body.addWidget(self.connected)
+        self.charge_only = big_button("", checkable=True)
+        self.charge_only.setChecked(dualsense.charge_only(config))
+        self._label_charge_only()
+        self.charge_only.toggled.connect(self.set_charge_only)
+        self.body.addWidget(self.charge_only, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.body.addWidget(_label("On a USB cable the controller switches to USB, where its triggers are much weaker. "
+                                   "With this on, it stays on Bluetooth and the cable only charges it. Only while "
+                                   "Bluetooth is on and the controller is paired - otherwise it works over the cable "
+                                   "as usual."))
         lt, rt = dualsense.from_config(config)
         self.boxes = {"lt": TriggerEffectBox("lt", lt, self.changed), "rt": TriggerEffectBox("rt", rt, self.changed)}
         presets = QGridLayout()  # rows of four
@@ -276,6 +286,34 @@ class AdaptiveTriggersSection(Section):
             saved[name] = box.effect().to_dict()
         self.save_config(self.config)
         self._send()
+
+    def _label_charge_only(self) -> None:
+        self.charge_only.setText(("☑" if self.charge_only.isChecked() else "☐")
+                                 + "  Charge only over USB - stays on Bluetooth")
+
+    def set_charge_only(self, on: bool) -> None:
+        from gamingcrypt.ui.tasks import run_async
+
+        self._label_charge_only()
+        self.charge_only.setEnabled(False)
+
+        def done(result) -> None:
+            ok, why = result
+            self.charge_only.setEnabled(True)
+            if not ok:
+                self.charge_only.blockSignals(True)
+                self.charge_only.setChecked(not on)  # as it was
+                self.charge_only.blockSignals(False)
+                self._label_charge_only()
+                set_status(self.status, why, error=True)
+                return
+            self.config.setdefault("input", {})["ps5_charge_only"] = on
+            self.save_config(self.config)
+            set_status(self.status, "A PS5 controller on a cable now only charges - over Bluetooth" if on
+                       else "A PS5 controller on a cable uses it again")
+            QTimer.singleShot(2500, lambda: self.refresh(live=False))  # (it changes connection meanwhile)
+
+        run_async(lambda: self.set_charge(on), done, lambda exc: done((False, str(exc))), owner=self)
 
     def _game_running(self) -> bool:
         """A game runs (GamingCrypt's game watcher) - also asked before this page is in the window."""

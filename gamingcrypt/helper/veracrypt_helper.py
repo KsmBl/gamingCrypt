@@ -22,7 +22,7 @@ import tempfile
 VERACRYPT = "/usr/bin/veracrypt"  # replaced by install.sh
 # Raised whenever the helper learns something new: GamingCrypt compares it with the
 # installed helper ("helper version") and asks to finish the update when it's older.
-HELPER_VERSION = 7  # 7: (install.sh) PS5 controllers reachable for their adaptive triggers
+HELPER_VERSION = 8  # 8: PS5 controllers: charge only over USB (ps5-charge-only)
 RYZENADJ = "/usr/bin/ryzenadj"
 EFIBOOTMGR = ["/usr/bin/efibootmgr", "/usr/sbin/efibootmgr"]
 SYS = "/sys"
@@ -682,6 +682,113 @@ def set_ssh(args: list[str], run=subprocess.run, exists=os.path.exists) -> int:
     return result.returncode
 
 
+# --- PS5 controllers: charge only over USB ---------------------------------------------------------
+# Over a USB cable a DualSense switches to USB, where its adaptive triggers are much weaker than over
+# Bluetooth. With this on, its USB connection is refused (the port still powers it): it stays on
+# Bluetooth and charges. Only while Bluetooth is on and a DualSense is paired - otherwise the cable
+# is its only way in, and it's left alone.
+SONY = "054c"
+PS5_PRODUCTS = ("0ce6", "0df2")  # DualSense, DualSense Edge
+CHARGE_ONLY_RULE = "/etc/udev/rules.d/74-gamingcrypt-ps5-charge-only.rules"
+BLUETOOTHCTL = ["/usr/bin/bluetoothctl", "/bin/bluetoothctl"]
+
+
+def charge_only_rule(helper: str) -> str:
+    return ('ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="054c", '
+            f'ATTR{{idProduct}}=="0ce6|0df2", RUN+="{helper} ps5-charge-only-device %S%p"\n')
+
+
+def _read(path: str) -> str:
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def is_ps5_usb(device: str, sys_root: str = SYS) -> bool:
+    """A DualSense's USB device folder in /sys (nothing else may be switched here)."""
+    real = os.path.realpath(device)
+    if not real.startswith(os.path.join(sys_root, "devices") + "/"):
+        return False
+    return _read(os.path.join(real, "idVendor")) == SONY and _read(os.path.join(real, "idProduct")) in PS5_PRODUCTS
+
+
+def ps5_usb_devices(sys_root: str = SYS) -> list[str]:
+    folder = os.path.join(sys_root, "bus", "usb", "devices")
+    try:
+        names = sorted(os.listdir(folder))
+    except OSError:
+        return []
+    return [os.path.join(folder, n) for n in names if ":" not in n and is_ps5_usb(os.path.join(folder, n), sys_root)]
+
+
+def bluetooth_ready(run=subprocess.run, exists=os.path.exists) -> bool:
+    """Bluetooth is on and a PS5 controller is paired: it can stay on Bluetooth."""
+    ctl = next((p for p in BLUETOOTHCTL if exists(p)), None)
+    if ctl is None:
+        return False
+
+    def ask(*args: str) -> str:
+        try:
+            return run([ctl, *args], capture_output=True, text=True, timeout=3, stdin=subprocess.DEVNULL).stdout
+        except (OSError, subprocess.SubprocessError):
+            return ""
+
+    if "Powered: yes" not in ask("show"):
+        return False
+    paired = ask("devices", "Paired") or ask("paired-devices")
+    return any(word in paired for word in ("DualSense", "Wireless Controller"))
+
+
+def _authorize(device: str, on: bool) -> bool:
+    try:
+        with open(os.path.join(os.path.realpath(device), "authorized"), "w") as f:
+            f.write("1" if on else "0")
+        return True
+    except OSError:
+        return False
+
+
+def charge_only_device(args: list[str], sys_root: str = SYS, run=subprocess.run, exists=os.path.exists) -> int:
+    """(From the udev rule) a DualSense came in over USB: its USB connection refused - when it
+    can stay on Bluetooth."""
+    if len(args) != 1 or not is_ps5_usb(args[0], sys_root):
+        print("Error: gamingcrypt helper: not a PS5 controller", file=sys.stderr)
+        return 2
+    if not bluetooth_ready(run, exists):
+        return 0  # the cable is its only way in: left alone
+    return 0 if _authorize(args[0], False) else 1
+
+
+def set_charge_only(args: list[str], helper: str, sys_root: str = SYS, run=subprocess.run,
+                    exists=os.path.exists, rule: str = CHARGE_ONLY_RULE) -> int:
+    """ps5-charge-only on | off: the udev rule in place (and the controllers on a cable now) - or
+    gone, and those controllers on USB again."""
+    if args not in (["on"], ["off"]):
+        print("Error: gamingcrypt helper: usage: ps5-charge-only on|off", file=sys.stderr)
+        return 2
+    on = args == ["on"]
+    try:
+        if on:
+            with open(rule, "w") as f:
+                f.write(charge_only_rule(helper))
+        elif os.path.exists(rule):
+            os.remove(rule)
+    except OSError as exc:
+        print(f"Error: gamingcrypt helper: {exc}", file=sys.stderr)
+        return 1
+    udevadm = next((p for p in ("/usr/bin/udevadm", "/bin/udevadm") if exists(p)), None)
+    if udevadm is not None:
+        run([udevadm, "control", "--reload-rules"], capture_output=True, text=True)
+    devices = ps5_usb_devices(sys_root)
+    if on and devices and not bluetooth_ready(run, exists):
+        return 0  # (they keep their cable until Bluetooth can take them)
+    for device in devices:
+        _authorize(device, not on)
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if argv == ["version"]:
         print(HELPER_VERSION)
@@ -696,6 +803,10 @@ def main(argv: list[str]) -> int:
         return clear_boot_next()
     if argv[:1] == ["ssh"]:
         return set_ssh(argv[1:])
+    if argv[:1] == ["ps5-charge-only"]:
+        return set_charge_only(argv[1:], os.path.realpath(__file__))
+    if argv[:1] == ["ps5-charge-only-device"]:
+        return charge_only_device(argv[1:])
     if argv[:1] in (["smb-stop"], ["smb-drive-stop"]):
         return smb_unshare("drive" if argv[0] == "smb-drive-stop" else "temp")
     if argv[:1] in (["smb-start"], ["smb-drive-start"]):

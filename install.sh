@@ -27,6 +27,7 @@ SUDOERS="/etc/sudoers.d/gamingcrypt"
 UDEV_RULE="/etc/udev/rules.d/71-gamingcrypt-uinput.rules"
 VOLUME_RULE="/etc/udev/rules.d/72-gamingcrypt-volume-keys.rules"
 DUALSENSE_RULE="/etc/udev/rules.d/73-gamingcrypt-dualsense.rules"
+CHARGE_ONLY_RULE="/etc/udev/rules.d/74-gamingcrypt-ps5-charge-only.rules"  # (Settings: written by the helper)
 SESSION_BIN="/usr/local/bin/gamingcrypt-session"
 SESSION_FILE="/usr/share/wayland-sessions/gamingcrypt.desktop"
 LIGHTDM_CONF="/etc/lightdm/lightdm.conf.d/50-gamingcrypt.conf"
@@ -79,7 +80,7 @@ uninstall() {
     fi
     if [[ -e $HELPER || -e $SUDOERS || -e $UDEV_RULE ]]; then
         info "Removing the sudo helper and controller rules (needs sudo)"
-        sudo rm -f "$SUDOERS" "$HELPER" "$UDEV_RULE" "$MODULES_CONF" "$NTSYNC_CONF" "$DUALSENSE_RULE"
+        sudo rm -f "$SUDOERS" "$HELPER" "$UDEV_RULE" "$MODULES_CONF" "$NTSYNC_CONF" "$DUALSENSE_RULE" "$CHARGE_ONLY_RULE"
         sudo rmdir "$(dirname "$HELPER")" 2>/dev/null || true
     fi
     info "Done. Your config (~/.config/gamingcrypt) and cache (~/.cache/gamingcrypt) were kept."

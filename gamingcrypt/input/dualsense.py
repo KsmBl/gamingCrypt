@@ -229,6 +229,35 @@ def apply(config: dict, controllers: list[Controller] | None = None, opener=open
     return send(lt, rt, controllers, opener)
 
 
+def charge_only(config: dict) -> bool:
+    """On: a PS5 controller on a USB cable only charges and stays on Bluetooth (helper ps5-charge-only)."""
+    return bool(config.get("input", {}).get("ps5_charge_only"))
+
+
+def set_charge_only(on: bool, helper: str | None = None, runner=None, exists=os.path.exists) -> tuple[bool, str]:
+    """Through the GamingCrypt helper (root): the udev rule that refuses a DualSense's USB connection
+    while it can stay on Bluetooth - over USB its triggers are much weaker. (ok, why not)."""
+    import subprocess
+
+    from gamingcrypt.system import helper_status
+    from gamingcrypt.unlock.veracrypt import DEFAULT_HELPER
+
+    helper = helper or DEFAULT_HELPER
+    runner = runner or subprocess.run
+    if not exists(helper):
+        return False, "Run ./install.sh to allow this"
+    if helper_status.outdated(helper, runner, exists):
+        return False, helper_status.OUTDATED
+    try:
+        result = runner(["sudo", "-n", helper, "ps5-charge-only", "on" if on else "off"],
+                        capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, str(exc)
+    if result.returncode != 0:
+        return False, (result.stderr or "").strip().removeprefix("Error: gamingcrypt helper: ") or "It didn't work"
+    return True, ""
+
+
 def triggers(data: bytes) -> tuple[int, int] | None:
     """(L2, R2) 0..255 from an input report - None for other reports.
     USB 0x01: L2, R2 at 5, 6; Bluetooth 0x31 (the full report): at 6, 7."""
