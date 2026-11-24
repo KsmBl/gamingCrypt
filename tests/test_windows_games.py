@@ -355,6 +355,78 @@ def test_where_it_saves_is_learned_after_playing(qtbot, window):
     assert [p.label() for p in save_locations.learned(knight)] == ["AppData/LocalLow/Team Cherry/Hollow Knight"]
 
 
+def _knight_with_saves(window, text):
+    from gamingcrypt import save_locations
+    from gamingcrypt.wine import library
+
+    knight = next(g for g in window._games.windows_games if g.name == "Hollow Knight")
+    save = library.prefix_dir(knight) / "pfx/drive_c/users/steamuser/AppData/LocalLow/Team Cherry/Hollow Knight/user1.dat"
+    save.parent.mkdir(parents=True, exist_ok=True)
+    save.write_text(text)
+    save_locations._change(knight, lambda entry: entry.update(
+        played=[{"root": "home", "path": "AppData/LocalLow/Team Cherry/Hollow Knight"}]))
+    return knight, save
+
+
+def _from_the_desktop(knight, text, parents):
+    """A version made on another device, as a sync would bring it."""
+    import hashlib
+    import json
+
+    from gamingcrypt import save_history
+
+    history = save_history.for_game(knight)
+    digest = hashlib.sha256(text.encode()).hexdigest()
+    (history.folder / "objects" / digest[:2]).mkdir(parents=True, exist_ok=True)
+    (history.folder / "objects" / digest[:2] / digest).write_text(text)
+    version = save_history.Version("desktop-000001", "desktop", "Desktop", 1, parents, 2_000_000_000.0,
+                                   save_history.PLAYED, {"home/AppData/LocalLow/Team Cherry/Hollow Knight/user1.dat":
+                                                         {"hash": digest, "size": len(text)}})
+    (history.folder / "versions").mkdir(parents=True, exist_ok=True)
+    (history.folder / "versions" / "desktop-000001.json").write_text(json.dumps(version.plain()))
+    return version
+
+
+def test_a_version_of_the_saves_after_playing(qtbot, window):
+    from gamingcrypt import save_history
+
+    knight, save = _knight_with_saves(window, "before")
+    window.launch_windows(knight)
+    assert len(save_history.for_game(knight).versions()) == 1  # what was there, before it started
+    save.write_text("after")
+    window.game_ended(knight.appid)
+    qtbot.waitUntil(lambda: len(save_history.for_game(knight).versions()) == 2)
+    assert save_history.for_game(knight).newest_first()[0].why == save_history.PLAYED
+
+
+def test_saves_played_on_elsewhere_are_in_before_it_starts(qtbot, window):
+    from gamingcrypt import save_history
+
+    knight, save = _knight_with_saves(window, "level 1")
+    here = save_history.for_game(knight).record()
+    _from_the_desktop(knight, "level 9", [here.id])
+    assert window.launch_windows(knight)[0]
+    assert save.read_text() == "level 9" and window._launched[-1][0] == "Hollow Knight"
+
+
+def test_played_on_here_and_elsewhere_asks_first(qtbot, window):
+    from gamingcrypt import save_history
+    from gamingcrypt.ui.save_choice import SaveChoice
+
+    knight, save = _knight_with_saves(window, "start")
+    start = save_history.for_game(knight).record()
+    save.write_text("deck went on")
+    _from_the_desktop(knight, "desktop went on", [start.id])
+    assert window.launch_windows(knight) == (True, "")
+    assert window._launched == []  # not before it's decided
+    choice = window.save_choice
+    assert isinstance(choice, SaveChoice) and len(choice.buttons) == 2
+    choice.buttons["desktop-000001"].click()
+    qtbot.waitUntil(lambda: bool(window._launched))
+    assert save.read_text() == "desktop went on"
+    assert save_history.for_game(knight).check() == (save_history.SAME, [])
+
+
 def test_wine_skips_the_grabbed_controller(qtbot, window, monkeypatch):
     # Wine finds the grabbed (silent) real pad first - GTA's GInput listened to it as player 1
     seen = []

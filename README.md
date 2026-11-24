@@ -201,6 +201,12 @@ screen or touch gets the GamePad in its ⚙ Options.
   [Ludusavi's](https://github.com/mtkennerly/ludusavi-manifest) save list (from PCGamingWiki), which it
   downloads once and refreshes monthly. For games that aren't on that list, it looks at what the game
   wrote while it ran. Caches, logs and crash reports don't count. The admin can remove a wrong place.
+- **Save history** for Windows games: after each session, the save files themselves (not the
+  whole Wine folder) are kept as a version, with the 20 newest versions' files stored. *↩ Use* on
+  the Saves page goes back to one, and the saves as they are now stay in the history. Each version
+  records which device made it and which version it came from. Before a game starts, GamingCrypt
+  puts newer saves from another device in place first. If the game was played on both, it asks
+  which saves to play with. (Bringing the other device's versions over comes in a later release.)
 
 ### 🕹️ Controller and device
 

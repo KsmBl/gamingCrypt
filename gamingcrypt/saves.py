@@ -51,6 +51,9 @@ class UserSaves:
     backups: list[Backup] = field(default_factory=list)
     states: list = field(default_factory=list)  # an emulated game: the user's save states (savestates.State)
     own: int | None = None  # a Windows game: the bytes of the saves themselves (save_locations) - None: not known
+    history: list = field(default_factory=list)  # a Windows game: its newest versions (save_history.Version)
+    versions: int = 0  # ... how many there are
+    head: str | None = None  # ... which of them the files here are
 
     @property
     def has_saves(self) -> bool:

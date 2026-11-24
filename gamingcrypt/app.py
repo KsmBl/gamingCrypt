@@ -1486,8 +1486,9 @@ class MainWindow(QMainWindow):
                                          or windows)
 
     # Windows games (Proton / Wine) ---------------------------------------------------------------
-    def launch_windows(self, game) -> tuple[bool, str]:
-        """Its start file with the chosen Proton / Wine (the newest Proton when nothing was chosen)."""
+    def launch_windows(self, game, check_saves: bool = True) -> tuple[bool, str]:
+        """Its start file with the chosen Proton / Wine (the newest Proton when nothing was chosen).
+        ``check_saves``: first the user's newest saves (save_history) - False once that's decided."""
         import time
 
         from gamingcrypt.ui.tour import data_dir
@@ -1512,6 +1513,10 @@ class MainWindow(QMainWindow):
         from gamingcrypt.system import cpu_cores
 
         user = users.current(self.config)
+        if check_saves:
+            problem = self.saves_before_play(game, "" if user.admin else user.id)
+            if problem is not None:
+                return problem
         cpus = cpu_cores.quiet_cpus() if profile.get(cpu_cores.PROFILE_KEY) else []
         fps = int(profile.get("fps", 0) or 0)
         started = time.time()  # (what's written from here on may be its saves: save_locations.learn)
@@ -1677,13 +1682,63 @@ class MainWindow(QMainWindow):
         from gamingcrypt.ui.tasks import run_async
 
         def learn() -> list:
-            return save_locations.learn(game, user, since, PrefixSaves(game).listed()[1])
+            from gamingcrypt import save_history
+
+            new = save_locations.learn(game, user, since, PrefixSaves(game).listed()[1])
+            version = save_history.for_game(game, user).record(save_history.PLAYED)  # (with what was just learned)
+            if version is not None:
+                log.info("%s: saves version %s (%d files)", game.name, version.id, len(version.files))
+            return new
 
         def learned(new: list) -> None:
             for place in new:
                 log.info("%s saves in %s", game.name, place.label())
 
         run_async(learn, learned, lambda exc: log.warning("finding %s's saves: %s", game.name, exc))
+
+    def saves_before_play(self, game, user: str) -> tuple[bool, str] | None:
+        """Before a Windows game starts: the user's newest saves of it (save_history). None: start it.
+        Played on elsewhere from these saves: those are put in first. Played on here and elsewhere:
+        the user picks which to play with - the game starts after that."""
+        from gamingcrypt import save_history
+
+        try:
+            history = save_history.for_game(game, user)
+            state, found = history.check()
+            if state == save_history.NEWER:
+                history.take(found[0].id)
+                self.notify(f"{game.name}: the saves from {found[0].device_name} are in", "💾")
+        except (OSError, save_history.HistoryError) as exc:
+            log.warning("%s: saves before playing: %s", game.name, exc)
+            return False, f"Couldn't get the newest saves ready: {exc}"
+        if state != save_history.CONFLICT:
+            return None
+        self.ask_which_saves(game, user, history, found)
+        return True, ""
+
+    def ask_which_saves(self, game, user: str, history, versions: list) -> None:
+        """Played on here and elsewhere since the saves were last the same: which to play with."""
+        from gamingcrypt.ui.modal import show_modal
+        from gamingcrypt.ui.save_choice import SaveChoice
+        from gamingcrypt.ui.tasks import run_async
+
+        def close() -> None:
+            modal.close_modal()
+
+        def chosen(version) -> None:
+            close()
+
+            def started(_chosen) -> None:
+                ok, message = self.launch_windows(game, check_saves=False)
+                if not ok:
+                    self.notify(message, "⚠")
+
+            run_async(lambda: history.choose(version.id), started,
+                      lambda exc: self.notify(f"{game.name}: the saves weren't changed - {exc}", "⚠"))
+
+        box = SaveChoice(game.name, versions, history.me[0], chosen, close)
+        modal = show_modal(self, box, close)
+        self.save_choice = box
 
     def video_tabs(self) -> list:
         """Movies and Shows: what the player plays."""

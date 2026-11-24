@@ -15,6 +15,7 @@ from gamingcrypt.ui.widgets import big_button, enable_touch_scroll, set_status
 
 
 STATE_PICTURE = QSize(96, 64)  # a save state's picture in its line
+HISTORY_SHOWN = 6  # a Windows game: the newest versions of each user's saves shown
 
 
 def when(timestamp: float) -> str:
@@ -127,9 +128,14 @@ class SavesPage(QWidget):
             found = found if admin else [row for row in found if row.user == me]  # only your own
             if not windows:
                 return found, None
-            from gamingcrypt import save_locations
+            from gamingcrypt import save_history, save_locations
 
             title, places = box.places()
+            me_device = save_history.device()
+            for row in found:
+                history = save_history.History(box.game, row.user, places, me_device)
+                versions = history.newest_first()
+                row.history, row.versions, row.head = versions[:HISTORY_SHOWN], len(versions), history.head
             return found, (title, places, bool(save_locations.removed(box.game)))
 
         run_async(look, self._show, lambda exc: self.say(f"Couldn't look at the saves: {exc}", error=True), owner=self)
@@ -199,6 +205,12 @@ class SavesPage(QWidget):
             layout.addWidget(heading)
             for state in row.states:
                 layout.addLayout(self._state_line(row, state))
+        if row.history:
+            heading = QLabel(f"History · {row.versions} version{'s' if row.versions != 1 else ''}")
+            heading.setObjectName("cardMeta")
+            layout.addWidget(heading)
+            for version in row.history:
+                layout.addLayout(self._version_line(row, version))
         for backup in row.backups:
             line = QHBoxLayout()
             label = QLabel(f"Backup of {when(backup.made)}  ·  {format_size(backup.size)}")
@@ -208,6 +220,36 @@ class SavesPage(QWidget):
             self._button(line, row, "drop", "🗑", lambda b=backup: self.ask_delete_backup(b), which=backup.path.name)
             layout.addLayout(line)
         return card
+
+    def _version_line(self, row, version) -> QHBoxLayout:
+        """A version of the saves: where and when it was made, why - "↩ Use" to play on from it."""
+        from gamingcrypt import save_history
+        from gamingcrypt.ui.save_choice import describe
+
+        why = {save_history.PLAYED: "played", save_history.RESTORED: "gone back to",
+               save_history.CHOSEN: "chosen", save_history.FOUND: "changed outside the game"}.get(version.why, "")
+        now = "  ·  now" if version.id == row.head else ""
+        line = QHBoxLayout()
+        label = QLabel(f"{describe(version, save_history.device()[0])}  ·  {why}{now}")
+        label.setObjectName("cardMeta")
+        label.setWordWrap(True)
+        line.addWidget(label, 1)
+        if version.id != row.head and version.kept:
+            self._button(line, row, "version", "↩ Use", lambda: self.ask_go_back(row, version), which=version.id)
+        return line
+
+    def ask_go_back(self, row, version) -> None:
+        from gamingcrypt import save_history
+
+        box, game = self.box, self.game
+        user = row.user
+
+        def go_back() -> None:
+            save_history.History(game, user, box.places()[1]).go_back(version.id)
+
+        self._ask(f"Play on from the saves of {when(version.made)}?\nThe saves as they are now stay in the history.",
+                  "↩ Use", lambda: self._run("Putting the saves back…", go_back, "Those are the saves now ✓"),
+                  danger=False)
 
     def _where_card(self, title: str | None, places: list, any_removed: bool) -> QFrame:
         """Where the game keeps its saves: from the save list, or found while it was played."""
